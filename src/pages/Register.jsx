@@ -1,79 +1,221 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
-import { Mail, Lock, User, UserCircle } from 'lucide-react';
-
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  User,
+  Phone,
+  CheckSquare,
+  Square,
+  ArrowRight,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import AuthLayout from "../components/layout/AuthLayout";
 function Register() {
+  const [showPassword, setShowPassword] = useState(false);
+  const [role, setRole] = useState("student");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const handleRegister = (e) => {
+    e.preventDefault();
+    if (!termsAccepted) return;
+    setIsLoading(true);
+    setTimeout(() => {
+      setIsLoading(false);
+      navigate("/login");
+    }, 1500);
+  };
+  const roles = [
+    { id: "student", label: "Student", desc: "Find & apply to universities" },
+    { id: "agent", label: "Agent", desc: "Manage student applications" },
+    { id: "agency", label: "Agency", desc: "Manage your agent team" },
+    {
+      id: "university",
+      label: "Uni Rep",
+      desc: "Review applications & profiles",
+    },
+  ];
   return (
-    <div className="min-h-screen bg-darkBlue flex items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/30 rounded-full blur-[120px]" />
-      
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md glass p-8 rounded-3xl relative z-10"
-      >
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-400 to-blue-400 bg-clip-text text-transparent mb-2">
-            Create Account
-          </h1>
-          <p className="text-slate-400">Join Admify to start your journey.</p>
-        </div>
-
-        <form className="space-y-6">
-          <div className="space-y-4">
-            <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Full Name" 
-                className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+    <AuthLayout
+      title="Create Account"
+      subtitle="Join the AI-powered education revolution."
+    >
+      {" "}
+      <form onSubmit={handleRegister} className="space-y-5">
+        {" "}
+        {/* Role Selection Grid */}{" "}
+        <div className="grid grid-cols-2 gap-3 mb-6 relative">
+          {" "}
+          {roles.map((r) => (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              key={r.id}
+              type="button"
+              onClick={() => setRole(r.id)}
+              className={`flex flex-col items-start p-3 rounded-xl border text-left transition-colors relative z-10 overflow-hidden ${role === r.id ? "border-primary-500 text-white" : "bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/50 text-slate-400"}`}
+            >
+              {" "}
+              {role === r.id && (
+                <motion.div
+                  layoutId="active-register-role"
+                  className="absolute inset-0 bg-primary-900/30 shadow-[0_0_15px_rgba(124,58,237,0.2)] -z-10"
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                />
+              )}{" "}
+              <span className="text-sm font-bold mb-1">{r.label}</span>{" "}
+              <span
+                className={`text-[10px] leading-tight hidden sm:block ${role === r.id ? "text-primary-200" : "text-slate-500"}`}
+              >
+                {r.desc}
+              </span>{" "}
+            </motion.button>
+          ))}{" "}
+        </div>{" "}
+        {/* Inputs */}{" "}
+        <div className="space-y-4">
+          {" "}
+          <div className="flex flex-col sm:flex-row gap-4">
+            {" "}
+            <motion.div
+              whileTap={{ scale: 0.99 }}
+              className="relative group flex-1"
+            >
+              {" "}
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-primary-400 transition-colors z-10" />{" "}
+              <input
+                type="text"
+                required
+                placeholder="Full Name"
+                className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
+              />{" "}
+            </motion.div>{" "}
+            <motion.div
+              whileTap={{ scale: 0.99 }}
+              className="relative group flex-1"
+            >
+              {" "}
+              <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-primary-400 transition-colors z-10" />{" "}
+              <input
+                type="tel"
+                placeholder="Phone Number"
+                className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
+              />{" "}
+            </motion.div>{" "}
+          </div>{" "}
+          <motion.div whileTap={{ scale: 0.99 }} className="relative group">
+            {" "}
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-primary-400 transition-colors z-10" />{" "}
+            <input
+              type="email"
+              required
+              placeholder="Email address"
+              className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
+            />{" "}
+          </motion.div>{" "}
+          <motion.div whileTap={{ scale: 0.99 }} className="relative group">
+            {" "}
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-primary-400 transition-colors z-10" />{" "}
+            <input
+              type={showPassword ? "text" : "password"}
+              required
+              placeholder="Create Password"
+              className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-12 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
+            />{" "}
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-primary-400 transition-colors z-10 p-1"
+            >
+              {" "}
+              {showPassword ? (
+                <EyeOff className="w-5 h-5" />
+              ) : (
+                <Eye className="w-5 h-5" />
+              )}{" "}
+            </button>{" "}
+          </motion.div>{" "}
+        </div>{" "}
+        {/* Terms */}{" "}
+        <div className="flex items-start gap-3 mt-4">
+          {" "}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            type="button"
+            onClick={() => setTermsAccepted(!termsAccepted)}
+            className="mt-1 flex-shrink-0 text-slate-500 hover:text-primary-400 transition-colors"
+          >
+            {" "}
+            {termsAccepted ? (
+              <CheckSquare className="w-5 h-5 text-primary-500" />
+            ) : (
+              <Square className="w-5 h-5" />
+            )}{" "}
+          </motion.button>{" "}
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {" "}
+            By creating an account, you agree to Admify's{" "}
+            <a href="#" className="text-primary-400 hover:underline">
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a href="#" className="text-primary-400 hover:underline">
+              Privacy Policy
+            </a>
+            .{" "}
+          </p>{" "}
+        </div>{" "}
+        {/* Submit */}{" "}
+        <motion.button
+          whileHover={termsAccepted ? { scale: 1.01 } : {}}
+          whileTap={termsAccepted ? { scale: 0.98 } : {}}
+          type="submit"
+          disabled={isLoading || !termsAccepted}
+          className="w-full py-3.5 mt-2 bg-gradient-to-r from-primary-600 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none relative overflow-hidden"
+        >
+          {" "}
+          <AnimatePresence mode="wait">
+            {" "}
+            {isLoading ? (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"
               />
-            </div>
-
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input 
-                type="email" 
-                placeholder="Email address" 
-                className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
-              />
-            </div>
-            
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <input 
-                type="password" 
-                placeholder="Password" 
-                className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
-              />
-            </div>
-
-            <div className="relative">
-              <UserCircle className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-              <select className="w-full bg-slate-800/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-slate-200 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all appearance-none">
-                <option value="student">Student</option>
-                <option value="agent">Agent</option>
-              </select>
-            </div>
-          </div>
-
-          <Link to="/student" className="block w-full">
-            <button type="button" className="w-full py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-medium transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)]">
-              Create Account
-            </button>
-          </Link>
-        </form>
-
-        <p className="text-center text-slate-400 mt-8 text-sm">
-          Already have an account?{' '}
-          <Link to="/login" className="text-primary-400 hover:text-primary-300 font-medium">
-            Sign in
-          </Link>
-        </p>
-      </motion.div>
-    </div>
+            ) : (
+              <motion.div
+                key="text"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="flex items-center gap-2"
+              >
+                {" "}
+                Create Account <ArrowRight className="w-5 h-5" />{" "}
+              </motion.div>
+            )}{" "}
+          </AnimatePresence>{" "}
+        </motion.button>{" "}
+        {/* Footer */}{" "}
+        <p className="text-center text-slate-500 text-sm mt-8">
+          {" "}
+          Already have an account?{" "}
+          <Link
+            to="/login"
+            className="text-primary-400 hover:text-primary-300 font-bold transition-colors hover:underline underline-offset-4"
+          >
+            {" "}
+            Sign in{" "}
+          </Link>{" "}
+        </p>{" "}
+      </form>{" "}
+    </AuthLayout>
   );
 }
-
 export default Register;
