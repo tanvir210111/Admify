@@ -1,14 +1,23 @@
 import React from "react";
 import DashboardCard from "../../components/ui/DashboardCard";
 import { Users, FileText, CheckCircle, TrendingUp } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
+
 function AgentDashboard() {
+  const { user } = useAuth();
+  const fullName = user?.user_metadata?.full_name || "Agent";
+  const firstName = fullName.split(" ")[0];
+  
   return (
     <div className="space-y-8">
       {" "}
       <div>
         {" "}
-        <h1 className="text-3xl font-bold text-white mb-2">
-          Agency Overview
+        <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+          Welcome back, {firstName}{" "}
+          <span className="inline-block animate-wave origin-[70%_70%]">
+            👋
+          </span>
         </h1>{" "}
         <p className="text-slate-400">
           Track your students' progress and agency performance.

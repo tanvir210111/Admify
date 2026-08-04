@@ -16,7 +16,7 @@ function AnimatedCounter({ from = 0, to, duration = 2, suffix = "" }) {
         if (!startTime) startTime = time;
         const progress = Math.min((time - startTime) / (duration * 1000), 1);
 
-        s = 1 - Math.pow(1 - progress, 3);
+        const easeOutProgress = 1 - Math.pow(1 - progress, 3);
 
         setCount(Math.floor(easeOutProgress * (to - from) + from));
 

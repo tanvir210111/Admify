@@ -1,26 +1,58 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import AuthLayout from "../components/layout/AuthLayout";
+import { supabase } from "../lib/supabase";
+import toast from "react-hot-toast";
 
 function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("student");
   const [isLoading, setIsLoading] = useState(false);
+  
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  const from = location.state?.from?.pathname || "/student/dashboard";
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+      
+      toast.success("Welcome back!");
+      
+      // If we got redirected here by ProtectedRoute, send them back to where they wanted to go
+      if (location.state?.from) {
+        navigate(from);
+      } else {
+        // Otherwise route based on their selected role
+        if (role === "student") navigate("/student/dashboard");
+        else if (role === "agent") navigate("/agent/dashboard");
+        else if (role === "agency") navigate("/agency/dashboard");
+        else if (role === "university") navigate("/university/dashboard");
+      }
+    } catch (error) {
+      if (error.message === "Email not confirmed") {
+        toast.error("Please verify your email address first. Check your inbox!", { duration: 5000 });
+      } else {
+        toast.error(error.message || "Invalid login credentials.");
+      }
+    } finally {
       setIsLoading(false);
-      if (role === "student") navigate("/student/dashboard");
-      else if (role === "agent") navigate("/agent/dashboard");
-      else if (role === "agency") navigate("/agency/dashboard");
-      else if (role === "university") navigate("/university/dashboard");
-    }, 1500);
+    }
   };
 
   const roles = ["student", "agent", "agency", "university"];
@@ -63,6 +95,8 @@ function Login() {
             <input
               type="email"
               required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
               className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3.5 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner"
             />
@@ -73,6 +107,8 @@ function Login() {
             <input
               type={showPassword ? "text" : "password"}
               required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
               className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3.5 pl-12 pr-12 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner"
             />
@@ -96,7 +132,8 @@ function Login() {
             <input
               type="checkbox"
               id="remember-me"
-              onClick={(e) => e.stopPropagation()}
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
               className="w-4 h-4 rounded border-slate-600 text-primary-500 focus:ring-primary-500 focus:ring-offset-slate-900 bg-slate-800/50 transition-all cursor-pointer"
             />
             <label
@@ -117,11 +154,11 @@ function Login() {
 
         {/* Submit */}
         <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
+          whileHover={rememberMe ? { scale: 1.01 } : {}}
+          whileTap={rememberMe ? { scale: 0.98 } : {}}
           type="submit"
-          disabled={isLoading}
-          className="w-full py-3.5 mt-2 bg-gradient-to-r from-primary-600 to-blue-600 hover:from-primary-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed overflow-hidden relative border border-primary-500/30"
+          disabled={isLoading || !rememberMe}
+          className="w-full py-3.5 mt-2 bg-gradient-to-r from-primary-600 to-blue-600 hover:from-primary-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden relative border border-primary-500/30"
         >
           <AnimatePresence mode="wait">
             {isLoading ? (

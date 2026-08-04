@@ -1,5 +1,5 @@
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Target,
@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../../context/AuthContext";
 
 const studentNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/student/dashboard" },
@@ -33,6 +34,13 @@ const studentNavItems = [
 
 function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   return (
     <>
@@ -102,13 +110,13 @@ function Sidebar({ isOpen, onClose }) {
         </nav>
 
         <div className="p-4 mt-auto border-t border-white/10">
-          <Link
-            to="/login"
+          <button
+            onClick={handleLogout}
             className="flex w-full items-center gap-3 px-4 py-3 text-slate-300 hover:bg-red-500/10 hover:text-red-400 rounded-xl transition-all group"
           >
             <LogOut className="w-5 h-5 text-slate-300 group-hover:text-red-400 group-hover:-translate-x-1 transition-transform" />
             <span className="font-medium">Logout</span>
-          </Link>
+          </button>
         </div>
       </motion.aside>
     </>

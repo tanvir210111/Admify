@@ -1,27 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, User, GraduationCap, Lock, Globe, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 function SettingsPage() {
+  const { user } = useAuth();
+  
   const [tab, setTab] = useState('profile');
-  const [name, setName] = useState('Alex Doe');
-  const [email, setEmail] = useState('alex.doe@student.admify.com');
-  const [gpa, setGpa] = useState('3.8');
-  const [ielts, setIelts] = useState('7.5');
-  const [country, setCountry] = useState('United States');
-  const [course, setCourse] = useState('Computer Science');
+  const [name, setName] = useState(user?.user_metadata?.full_name || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [gpa, setGpa] = useState('');
+  const [ielts, setIelts] = useState('');
+  const [country, setCountry] = useState('');
+  const [course, setCourse] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSave = (e) => {
+  // Sync state if user changes
+  useEffect(() => {
+    if (user) {
+      setName(user.user_metadata?.full_name || '');
+      setEmail(user.email || '');
+    }
+  }, [user]);
+
+  const handleSave = async (e) => {
     e.preventDefault();
-    toast.success("Settings saved successfully!", {
-      style: {
-        borderRadius: "10px",
-        background: "#1e293b",
-        color: "#fff",
-        border: "1px solid rgba(51, 65, 85, 0.5)"
+    setIsLoading(true);
+
+    try {
+      // If we are on profile tab, update auth user metadata
+      if (tab === 'profile') {
+        const { error } = await supabase.auth.updateUser({
+          data: { full_name: name }
+        });
+
+        if (error) throw error;
+        
+        // Note: Email updates require confirmation in Supabase by default
+        if (email !== user?.email) {
+          toast.success("Name updated. Email update requires confirmation.", { icon: "ℹ️" });
+        } else {
+          toast.success("Profile saved successfully!");
+        }
+      } else {
+        // Save other tabs (mock for now since they are empty)
+        toast.success("Settings saved successfully!");
       }
-    });
+    } catch (error) {
+      toast.error(error.message || "Failed to save settings");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -192,9 +223,14 @@ function SettingsPage() {
             <div className="pt-4 border-t border-slate-800 flex justify-end">
               <button
                 type="submit"
-                className="px-6 py-3.5 bg-gradient-to-r from-primary-600 to-blue-600 hover:from-primary-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] flex items-center gap-2"
+                disabled={isLoading}
+                className="px-6 py-3.5 bg-gradient-to-r from-primary-600 to-blue-600 hover:from-primary-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                <Save className="w-5 h-5" /> Save Changes
+                {isLoading ? (
+                  <>Saving...</>
+                ) : (
+                  <><Save className="w-5 h-5" /> Save Changes</>
+                )}
               </button>
             </div>
           </form>

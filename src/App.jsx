@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 import ChatWidget from "./components/chat/ChatWidget";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
@@ -8,6 +9,8 @@ import ForgotPassword from "./pages/ForgotPassword";
 import AdminLogin from "./pages/AdminLogin";
 
 import DashboardLayout from "./components/layout/DashboardLayout";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 import StudentDashboard from "./pages/dashboards/StudentDashboard";
 import AgentDashboard from "./pages/dashboards/AgentDashboard";
@@ -60,6 +63,7 @@ import MarketingLayout from "./components/layout/MarketingLayout";
 import FeaturesPage from "./pages/marketing/FeaturesPage";
 import PricingPage from "./pages/marketing/PricingPage";
 import UniversitySearchPage from "./pages/marketing/UniversitySearchPage";
+import UniversityDetailPage from "./pages/marketing/UniversityDetailPage";
 import AIDocumentPrepPage from "./pages/marketing/AIDocumentPrepPage";
 import AboutUsPage from "./pages/marketing/AboutUsPage";
 import CareersPage from "./pages/marketing/CareersPage";
@@ -68,8 +72,10 @@ import ContactPage from "./pages/marketing/ContactPage";
 
 function App() {
   return (
-    <Router>
-      <Routes>
+    <AuthProvider>
+      <Toaster position="top-right" />
+      <Router>
+        <Routes>
         <Route path="/" element={<LandingPage />} />
 
         {/* Marketing/Product pages wrapped in MarketingLayout */}
@@ -77,6 +83,7 @@ function App() {
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/university-search" element={<UniversitySearchPage />} />
+          <Route path="/university/:id" element={<UniversityDetailPage />} />
           <Route path="/ai-document-prep" element={<AIDocumentPrepPage />} />
           <Route path="/about" element={<AboutUsPage />} />
           <Route path="/careers" element={<CareersPage />} />
@@ -91,17 +98,19 @@ function App() {
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/student/admin/login" element={<AdminLogin />} />
 
-        {/* Dashboard Routes wrapped in DashboardLayout */}
-        <Route path="/student" element={<DashboardLayout />}>
-          <Route path="dashboard" element={<StudentDashboard />} />
-          <Route path="recommendations" element={<RecommendationPage />} />
-          <Route path="wallet" element={<WalletPage />} />
-          <Route path="universities" element={<UniversityPage />} />
-          <Route path="scholarships" element={<ScholarshipsPage />} />
-          <Route path="applications" element={<ApplicationsPage />} />
-          <Route path="documents" element={<DocumentsPage />} />
-          <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+        {/* Dashboard Routes wrapped in ProtectedRoute and DashboardLayout */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/student" element={<DashboardLayout />}>
+            <Route path="dashboard" element={<StudentDashboard />} />
+            <Route path="recommendations" element={<RecommendationPage />} />
+            <Route path="wallet" element={<WalletPage />} />
+            <Route path="universities" element={<UniversityPage />} />
+            <Route path="scholarships" element={<ScholarshipsPage />} />
+            <Route path="applications" element={<ApplicationsPage />} />
+            <Route path="documents" element={<DocumentsPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
         </Route>
 
         {/* Agent Portal Nested Routes */}
@@ -150,9 +159,10 @@ function App() {
         </Route>
       </Routes>
 
-      {/* Global 24/7 Chat Widget — visible on all pages */}
-      <ChatWidget />
-    </Router>
+        {/* Global 24/7 Chat Widget — visible on all pages */}
+        <ChatWidget />
+      </Router>
+    </AuthProvider>
   );
 }
 

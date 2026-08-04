@@ -7,28 +7,28 @@ function UniversityPage() {
       country: "USA",
       students: "16,000+",
       type: "Private",
-      img: "https://picsum.photos/seed/stanford/600/400",
+      img: "/stanford-university.png",
     },
     {
       name: "University of Oxford",
       country: "UK",
       students: "24,000+",
       type: "Public",
-      img: "https://picsum.photos/seed/oxford/600/400",
+      img: "/university-of-oxford.webp",
     },
     {
       name: "ETH Zurich",
       country: "Switzerland",
       students: "22,000+",
       type: "Public",
-      img: "https://picsum.photos/seed/zurich/600/400",
+      img: "/eth-zurich.jpg",
     },
     {
       name: "University of Toronto",
       country: "Canada",
-      students: "90,000+",
+      students: "97,000+",
       type: "Public",
-      img: "https://picsum.photos/seed/toronto/600/400",
+      img: "/university-of-toronto.jpg",
     },
   ];
   return (
@@ -71,7 +71,7 @@ function UniversityPage() {
               <img
                 src={uni.img}
                 alt={uni.name}
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                className={`w-full h-full group-hover:scale-110 transition-transform duration-700 ${uni.name === 'Stanford University' ? 'object-contain bg-white p-4' : 'object-cover'}`}
               />{" "}
             </div>{" "}
             <div className="p-5">

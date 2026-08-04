@@ -6,7 +6,7 @@ const universities = [
     name: "Stanford University",
     loc: "California, USA",
     rank: "#2 Global",
-    img: "https://picsum.photos/seed/stanford/600/400",
+    img: "/stanford-university.png",
     fee: "$55,000/yr",
     match: "High",
   },
@@ -14,7 +14,7 @@ const universities = [
     name: "University of Oxford",
     loc: "Oxford, UK",
     rank: "#1 Global",
-    img: "https://picsum.photos/seed/oxford/600/400",
+    img: "/university-of-oxford.webp",
     fee: "£35,000/yr",
     match: "High",
   },
@@ -22,7 +22,7 @@ const universities = [
     name: "University of Toronto",
     loc: "Ontario, Canada",
     rank: "#21 Global",
-    img: "https://picsum.photos/seed/toronto/600/400",
+    img: "/university-of-toronto.jpg",
     fee: "$45,000/yr",
     match: "Medium",
   },
@@ -30,7 +30,7 @@ const universities = [
     name: "ETH Zurich",
     loc: "Zurich, Switzerland",
     rank: "#7 Global",
-    img: "https://picsum.photos/seed/zurich/600/400",
+    img: "/eth-zurich.jpg",
     fee: "CHF 1,500/yr",
     match: "High",
   },
@@ -100,7 +100,7 @@ function Universities() {
                 <img
                   src={uni.img}
                   alt={uni.name}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                  className={`w-full h-full group-hover:scale-110 transition-transform duration-700 ${uni.name === 'Stanford University' ? 'object-contain bg-white p-6' : 'object-cover'}`}
                 />{" "}
                 {/* AI Label */}{" "}
                 <div className="absolute top-4 left-4 z-20 px-3 py-1 bg-primary-600 text-white font-bold border border-primary-400/50 uppercase tracking-widest flex items-center gap-1.5 shadow-lg">

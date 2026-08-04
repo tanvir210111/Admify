@@ -13,21 +13,64 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import AuthLayout from "../components/layout/AuthLayout";
+import { supabase } from "../lib/supabase";
+import toast from "react-hot-toast";
+
 function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("student");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Form State
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  
   const navigate = useNavigate();
-  const handleRegister = (e) => {
+
+  const handleRegister = async (e) => {
     e.preventDefault();
-    if (!termsAccepted) return;
+    if (!termsAccepted) {
+      toast.error("Please accept the Terms of Service.");
+      return;
+    }
+    
+    if (!phone || phone.trim() === "") {
+      toast.error("Phone number is required.");
+      return;
+    }
+    
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone,
+            role,
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      // Force sign out so they have to manually log in
+      await supabase.auth.signOut();
+
+      toast.success("Account created! Please log in to continue.");
       navigate("/login");
-    }, 1500);
+    } catch (error) {
+      toast.error(error.message || "Failed to create account.");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
   const roles = [
     { id: "student", label: "Student", desc: "Find & apply to universities" },
     { id: "agent", label: "Agent", desc: "Manage student applications" },
@@ -89,6 +132,8 @@ function Register() {
               <input
                 type="text"
                 required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
                 placeholder="Full Name"
                 className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
               />{" "}
@@ -101,6 +146,9 @@ function Register() {
               <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-primary-400 transition-colors z-10" />{" "}
               <input
                 type="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 placeholder="Phone Number"
                 className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
               />{" "}
@@ -112,6 +160,8 @@ function Register() {
             <input
               type="email"
               required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
               className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
             />{" "}
@@ -122,6 +172,8 @@ function Register() {
             <input
               type={showPassword ? "text" : "password"}
               required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="Create Password"
               className="w-full relative z-0 bg-slate-800/50 border border-slate-700/50 rounded-xl py-3 pl-12 pr-12 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:bg-slate-800/50 transition-all shadow-inner text-sm"
             />{" "}
@@ -171,10 +223,10 @@ function Register() {
         </div>{" "}
         {/* Submit */}{" "}
         <motion.button
-          whileHover={termsAccepted ? { scale: 1.01 } : {}}
-          whileTap={termsAccepted ? { scale: 0.98 } : {}}
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.98 }}
           type="submit"
-          disabled={isLoading || !termsAccepted}
+          disabled={isLoading}
           className="w-full py-3.5 mt-2 bg-gradient-to-r from-primary-600 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none relative overflow-hidden"
         >
           {" "}

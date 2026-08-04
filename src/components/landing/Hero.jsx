@@ -235,9 +235,9 @@ function Hero() {
                     <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-slate-600 shadow-md">
                       {" "}
                       <img
-                        src="https://picsum.photos/seed/stanford/100/100"
+                        src="/stanford-university.png"
                         alt="Stanford"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain bg-white p-2"
                       />{" "}
                     </div>{" "}
                     <div>

@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, SlidersHorizontal, MapPin, DollarSign, Award, CheckCircle, Sparkles, Filter, ChevronDown, Landmark } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 
 function UniversitySearchPage() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCountry, setActiveCountry] = useState("all");
   const [activeDegree, setActiveDegree] = useState("all");
@@ -349,10 +352,19 @@ function UniversitySearchPage() {
 
                   {/* Card Actions */}
                   <div className="flex gap-3 border-t border-slate-850 pt-5">
-                    <button className="flex-grow py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl text-xs md:text-sm transition-all border border-primary-500/50 shadow-[0_0_12px_rgba(124,58,237,0.2)]">
+                    <button 
+                      onClick={() => {
+                        toast.success(`Checking eligibility for ${uni.name}...`);
+                        setTimeout(() => navigate('/register'), 1500);
+                      }}
+                      className="flex-grow py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl text-xs md:text-sm transition-all border border-primary-500/50 shadow-[0_0_12px_rgba(124,58,237,0.2)]"
+                    >
                       Check AI Eligibility
                     </button>
-                    <button className="px-4 py-3 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-300 font-bold rounded-xl text-xs md:text-sm transition-all">
+                    <button 
+                      onClick={() => navigate('/university/' + uni.name.toLowerCase().replace(/ /g, '-'))}
+                      className="px-4 py-3 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-300 font-bold rounded-xl text-xs md:text-sm transition-all"
+                    >
                       Details
                     </button>
                   </div>
@@ -379,12 +391,20 @@ function UniversitySearchPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { country: "United States", stats: "1,200+ Courses", desc: "World leaders in research & innovation.", color: "from-blue-600/20 to-indigo-600/20 border-blue-500/20" },
-              { country: "Canada", stats: "800+ Courses", desc: "Easy PGWP, high quality of living.", color: "from-red-600/20 to-rose-600/20 border-red-500/20" },
-              { country: "United Kingdom", stats: "950+ Courses", desc: "Fast 1-year master's degrees.", color: "from-purple-600/20 to-pink-600/20 border-purple-500/20" },
-              { country: "Australia", stats: "600+ Courses", desc: "Great post-study work opportunities.", color: "from-amber-600/20 to-orange-600/20 border-amber-500/20" }
+              { country: "United States", code: "usa", stats: "1,200+ Courses", desc: "World leaders in research & innovation.", color: "from-blue-600/20 to-indigo-600/20 border-blue-500/20" },
+              { country: "Canada", code: "canada", stats: "800+ Courses", desc: "Easy PGWP, high quality of living.", color: "from-red-600/20 to-rose-600/20 border-red-500/20" },
+              { country: "United Kingdom", code: "uk", stats: "950+ Courses", desc: "Fast 1-year master's degrees.", color: "from-purple-600/20 to-pink-600/20 border-purple-500/20" },
+              { country: "Australia", code: "australia", stats: "600+ Courses", desc: "Great post-study work opportunities.", color: "from-amber-600/20 to-orange-600/20 border-amber-500/20" }
             ].map((item, idx) => (
-              <div key={idx} className={`glass bg-gradient-to-br ${item.color} p-6 rounded-2xl border flex flex-col justify-between h-48 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02]`}>
+              <div 
+                key={idx} 
+                onClick={() => {
+                  setActiveCountry(item.code);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  toast.success(`Filtering for ${item.country}`);
+                }}
+                className={`cursor-pointer glass bg-gradient-to-br ${item.color} p-6 rounded-2xl border flex flex-col justify-between h-48 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02]`}
+              >
                 <div>
                   <h4 className="text-white font-extrabold text-lg">{item.country}</h4>
                   <span className="text-[10px] font-black uppercase text-primary-400 tracking-wide mt-1.5 inline-block">

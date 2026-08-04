@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useAuth } from "../../context/AuthContext";
 import {
   Target,
   Clock,
@@ -20,6 +21,9 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 function StudentDashboard() {
+  const { user } = useAuth();
+  const fullName = user?.user_metadata?.full_name || "Student";
+  const firstName = fullName.split(" ")[0];
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
@@ -174,14 +178,14 @@ function StudentDashboard() {
           {" "}
           <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
             {" "}
-            Welcome back, Alex{" "}
+            Welcome back, {firstName}{" "}
             <span className="inline-block animate-wave origin-[70%_70%]">
               👋
             </span>{" "}
           </h1>{" "}
           <p className="text-slate-400 text-lg">
             Your profile is{" "}
-            <strong className="text-primary-400">85% complete</strong>. Let's
+            <strong className="text-primary-400">0% complete</strong>. Let's
             finish your application strategy!
           </p>{" "}
         </div>{" "}
@@ -218,14 +222,14 @@ function StudentDashboard() {
                 {" "}
                 <Target className="w-6 h-6" />{" "}
               </div>{" "}
-              <span className="px-2.5 py-1 bg-green-500/10 text-green-400 text-xs font-bold rounded-lg border border-green-500/20">
-                +12%
+              <span className="px-2.5 py-1 bg-slate-500/10 text-slate-400 text-xs font-bold rounded-lg border border-slate-500/20">
+                0%
               </span>{" "}
             </div>{" "}
             <p className="text-slate-400 text-sm font-medium mb-1">
               Overall Profile Match
             </p>{" "}
-            <h3 className="text-3xl font-black text-white">92%</h3>{" "}
+            <h3 className="text-3xl font-black text-white">0%</h3>{" "}
           </motion.div>{" "}
           <motion.div
             variants={itemVariants}
@@ -246,11 +250,11 @@ function StudentDashboard() {
             <div className="flex gap-4">
               {" "}
               <div>
-                <span className="text-2xl font-black text-white">3.8</span>
+                <span className="text-2xl font-black text-white">-</span>
                 <span className="text-slate-500 text-sm ml-1">GPA</span>
               </div>{" "}
               <div>
-                <span className="text-2xl font-black text-white">7.5</span>
+                <span className="text-2xl font-black text-white">-</span>
                 <span className="text-slate-500 text-sm ml-1">IELTS</span>
               </div>{" "}
             </div>{" "}
@@ -267,15 +271,15 @@ function StudentDashboard() {
                 {" "}
                 <FileText className="w-6 h-6" />{" "}
               </div>{" "}
-              <span className="px-2.5 py-1 bg-yellow-500/10 text-yellow-400 text-xs font-bold rounded-lg border border-yellow-500/20">
-                2 Pending
+              <span className="px-2.5 py-1 bg-slate-500/10 text-slate-400 text-xs font-bold rounded-lg border border-slate-500/20">
+                0 Pending
               </span>{" "}
             </div>{" "}
             <p className="text-slate-400 text-sm font-medium mb-1">
               Active Applications
             </p>{" "}
             <h3 className="text-3xl font-black text-white">
-              3{" "}
+              0{" "}
               <span className="text-base text-slate-500 font-normal">
                 Submissions
               </span>
@@ -301,7 +305,7 @@ function StudentDashboard() {
               Wallet Credits
             </p>{" "}
             <h3 className="text-3xl font-black text-white">
-              2,450{" "}
+              0{" "}
               <span className="text-base text-slate-500 font-normal">CR</span>
             </h3>{" "}
           </motion.div>{" "}
@@ -362,10 +366,10 @@ function StudentDashboard() {
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     {" "}
                     <span className="text-4xl font-black text-white">
-                      78%
+                      0%
                     </span>{" "}
                     <span className="text-xs text-primary-300 uppercase tracking-widest font-bold">
-                      Success
+                      Data Needed
                     </span>{" "}
                   </div>{" "}
                 </div>{" "}
@@ -377,11 +381,10 @@ function StudentDashboard() {
                     <div>
                       {" "}
                       <h4 className="text-white font-bold text-sm mb-1">
-                        Strong Academic Background
+                        No Data Available
                       </h4>{" "}
                       <p className="text-slate-400 text-xs leading-relaxed">
-                        Your 3.8 GPA puts you in the top 15% of applicants for
-                        your targeted Master's programs.
+                        Please complete your academic profile (GPA, IELTS/TOEFL) to receive an AI Admission Prediction.
                       </p>{" "}
                     </div>{" "}
                   </div>{" "}
@@ -391,11 +394,10 @@ function StudentDashboard() {
                     <div>
                       {" "}
                       <h4 className="text-white font-bold text-sm mb-1">
-                        Improvement Area: SOP
+                        Action Required
                       </h4>{" "}
                       <p className="text-slate-400 text-xs leading-relaxed">
-                        Your draft SOP needs more focus on career goals. Use the
-                        AI SOP Generator to restructure your narrative.
+                        Upload your draft SOP to get personalized feedback and restructuring suggestions.
                       </p>{" "}
                     </div>{" "}
                   </div>{" "}
