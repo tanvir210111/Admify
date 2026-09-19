@@ -83,6 +83,7 @@ function App() {
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/university-search" element={<UniversitySearchPage />} />
+          <Route path="/universities" element={<UniversitySearchPage />} />
           <Route path="/university/:id" element={<UniversityDetailPage />} />
           <Route path="/ai-document-prep" element={<AIDocumentPrepPage />} />
           <Route path="/about" element={<AboutUsPage />} />
@@ -101,6 +102,7 @@ function App() {
         {/* Dashboard Routes wrapped in ProtectedRoute and DashboardLayout */}
         <Route element={<ProtectedRoute />}>
           <Route path="/student" element={<DashboardLayout />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<StudentDashboard />} />
             <Route path="recommendations" element={<RecommendationPage />} />
             <Route path="wallet" element={<WalletPage />} />
@@ -108,6 +110,8 @@ function App() {
             <Route path="scholarships" element={<ScholarshipsPage />} />
             <Route path="applications" element={<ApplicationsPage />} />
             <Route path="documents" element={<DocumentsPage />} />
+            <Route path="sop" element={<DocumentsPage />} />
+            <Route path="lor" element={<DocumentsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
@@ -157,6 +161,9 @@ function App() {
           <Route path="reports" element={<AdmReports />} />
           <Route path="settings" element={<AdmSettings />} />
         </Route>
+
+        {/* Catch-all fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
         {/* Global 24/7 Chat Widget — visible on all pages */}
