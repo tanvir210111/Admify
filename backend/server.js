@@ -20,7 +20,14 @@ import adminRoutes from './routes/adminRoutes.js';
 // Middleware imports
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
-// Load environment variables
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables from backend directory and fallback to cwd
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config();
 
 const app = express();
