@@ -3,25 +3,29 @@ import { Settings, User, GraduationCap, Lock, Globe, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 
 function SettingsPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   
   const [tab, setTab] = useState('profile');
-  const [name, setName] = useState(user?.user_metadata?.full_name || '');
+  const [name, setName] = useState(user?.user_metadata?.full_name || user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
-  const [gpa, setGpa] = useState('');
-  const [ielts, setIelts] = useState('');
-  const [country, setCountry] = useState('');
-  const [course, setCourse] = useState('');
+  const [gpa, setGpa] = useState(user?.gpa || '');
+  const [ielts, setIelts] = useState(user?.ielts || '');
+  const [country, setCountry] = useState(user?.targetCountry || '');
+  const [course, setCourse] = useState(user?.targetCourse || '');
   const [isLoading, setIsLoading] = useState(false);
 
   // Sync state if user changes
   useEffect(() => {
     if (user) {
-      setName(user.user_metadata?.full_name || '');
+      setName(user.user_metadata?.full_name || user.name || '');
       setEmail(user.email || '');
+      if (user.gpa) setGpa(user.gpa);
+      if (user.ielts) setIelts(user.ielts);
+      if (user.targetCountry) setCountry(user.targetCountry);
+      if (user.targetCourse) setCourse(user.targetCourse);
     }
   }, [user]);
 
@@ -30,22 +34,20 @@ function SettingsPage() {
     setIsLoading(true);
 
     try {
-      // If we are on profile tab, update auth user metadata
       if (tab === 'profile') {
-        const { error } = await supabase.auth.updateUser({
-          data: { full_name: name }
+        const res = await api.put('/api/users/profile', {
+          name,
+          gpa,
+          ielts,
+          targetCountry: country,
+          targetCourse: course,
         });
 
-        if (error) throw error;
-        
-        // Note: Email updates require confirmation in Supabase by default
-        if (email !== user?.email) {
-          toast.success("Name updated. Email update requires confirmation.", { icon: "ℹ️" });
-        } else {
-          toast.success("Profile saved successfully!");
+        if (updateUser && res?.data?.user) {
+          updateUser(res.data.user);
         }
+        toast.success("Profile saved successfully!");
       } else {
-        // Save other tabs (mock for now since they are empty)
         toast.success("Settings saved successfully!");
       }
     } catch (error) {

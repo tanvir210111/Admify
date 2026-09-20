@@ -3,10 +3,11 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import AuthLayout from "../components/layout/AuthLayout";
-import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 
 function Login() {
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("student");
   const [isLoading, setIsLoading] = useState(false);
@@ -25,12 +26,7 @@ function Login() {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
+      await login(email, password, role);
       
       toast.success("Welcome back!");
       
@@ -45,11 +41,7 @@ function Login() {
         else if (role === "university") navigate("/university/dashboard");
       }
     } catch (error) {
-      if (error.message === "Email not confirmed") {
-        toast.error("Please verify your email address first. Check your inbox!", { duration: 5000 });
-      } else {
-        toast.error(error.message || "Invalid login credentials.");
-      }
+      toast.error(error.message || "Invalid login credentials.");
     } finally {
       setIsLoading(false);
     }

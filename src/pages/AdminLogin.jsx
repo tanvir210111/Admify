@@ -2,17 +2,29 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, ShieldCheck, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../context/AuthContext";
+import toast from "react-hot-toast";
+
 function AdminLogin() {
+  const { adminLogin } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const navigate = useNavigate();
-  const handleLogin = (e) => {
+
+  const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await adminLogin(email, password);
+      toast.success("Administrator clearance granted");
       navigate("/admin/dashboard");
-    }, 1500);
+    } catch (err) {
+      toast.error(err.message || "Invalid administrator credentials");
+    } finally {
+      setIsLoading(false);
+    }
   };
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 md:p-6 relative overflow-hidden font-sans">
@@ -74,24 +86,26 @@ function AdminLogin() {
             >
               {" "}
               <motion.div whileTap={{ scale: 0.99 }} className="relative group">
-                {" "}
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-red-500 transition-colors z-10" />{" "}
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-red-500 transition-colors z-10" />
                 <input
                   type="email"
                   required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="Admin Email"
                   className="w-full relative z-0 bg-slate-950 border border-slate-700/50 rounded-xl py-3.5 pl-12 pr-4 text-white font-bold placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/50 focus:bg-slate-950 transition-all shadow-inner font-mono text-sm"
-                />{" "}
-              </motion.div>{" "}
+                />
+              </motion.div>
               <motion.div whileTap={{ scale: 0.99 }} className="relative group">
-                {" "}
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-red-500 transition-colors z-10" />{" "}
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-red-500 transition-colors z-10" />
                 <input
                   type={showPassword ? "text" : "password"}
                   required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Admin Password"
                   className="w-full relative z-0 bg-slate-950 border border-slate-700/50 rounded-xl py-3.5 pl-12 pr-12 text-white font-bold placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/50 focus:bg-slate-950 transition-all shadow-inner font-mono text-sm"
-                />{" "}
+                />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}

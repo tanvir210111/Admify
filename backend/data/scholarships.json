@@ -1,0 +1,54 @@
+[
+  {
+    "title": "Global Excellence Initiative",
+    "sponsor": "Admify Foundation",
+    "amount": "$15,000",
+    "coverage": "Partial Tuition",
+    "eligibility": "GPA 3.7+ & IELTS 7.5+",
+    "deadline": "June 15, 2026",
+    "match": "98%",
+    "type": "merit",
+    "status": "Eligible",
+    "country": "Global",
+    "description": "Recognizing outstanding academic leaders pursuing computer science, AI, and data science degrees globally."
+  },
+  {
+    "title": "Women in STEM Leaders",
+    "sponsor": "TechForward Alliance",
+    "amount": "Full Tuition",
+    "coverage": "100% Tuition",
+    "eligibility": "Female applicants, CS/Engineering",
+    "deadline": "July 01, 2026",
+    "match": "95%",
+    "type": "subject",
+    "status": "Eligible",
+    "country": "USA / Canada / UK",
+    "description": "Empowering women leaders in software engineering, applied sciences, and artificial intelligence."
+  },
+  {
+    "title": "Dean's Graduate Fellowship",
+    "sponsor": "Stanford University",
+    "amount": "$25,000 / Yr",
+    "coverage": "Tuition + Stipend",
+    "eligibility": "Top 5% Graduate applicants",
+    "deadline": "Aug 10, 2026",
+    "match": "92%",
+    "type": "merit",
+    "status": "Eligible",
+    "country": "USA",
+    "description": "Full graduate fellowship with research assistantship provisions for master and doctoral scholars."
+  },
+  {
+    "title": "International Talents Grant",
+    "sponsor": "Global Education Fund",
+    "amount": "$10,000",
+    "coverage": "One-time Grant",
+    "eligibility": "Developing countries, GPA 3.5+",
+    "deadline": "June 30, 2026",
+    "match": "88%",
+    "type": "need",
+    "status": "Apply Now",
+    "country": "Global",
+    "description": "Providing equitable financial assistance to gifted international applicants transitioning to study abroad."
+  }
+]

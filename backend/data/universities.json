@@ -1,0 +1,156 @@
+[
+  {
+    "slug": "stanford-university",
+    "name": "Stanford University",
+    "location": "Stanford, California, USA",
+    "country": "usa",
+    "type": "Private",
+    "logo": "/stanford-university.png",
+    "coverImage": "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&q=80&w=2000",
+    "rank": "QS World Rank #3",
+    "acceptanceRate": "4%",
+    "totalStudents": "17,000+",
+    "internationalPct": "24%",
+    "about": "Stanford University is a private research university in Stanford, California. The campus occupies 8,180 acres, among the largest in the United States.",
+    "history": "Founded in 1885 by Leland and Jane Stanford in memory of their only child, Leland Stanford Jr.",
+    "programs": [
+      { "name": "Computer Science", "degree": "B.S. / M.S. / Ph.D." },
+      { "name": "Business Administration", "degree": "MBA" },
+      { "name": "Engineering", "degree": "B.S. / M.S." },
+      { "name": "Medicine", "degree": "M.D." }
+    ],
+    "facultyStudentRatio": "5:1",
+    "intakeSeasons": ["Fall (September)"],
+    "admissionReqs": {
+      "gpa": "Average 3.96 unweighted GPA",
+      "testScores": "SAT: 1470-1570 | ACT: 34-35 (Test Optional)",
+      "englishProficiency": "TOEFL iBT: 100+ | IELTS: 7.5+",
+      "documents": ["Common Application", "Stanford Questions", "High School Transcript", "2 Teacher Evaluations"]
+    },
+    "applicationDeadline": "Nov 1 (Early) | Jan 5 (Regular)",
+    "costs": {
+      "tuition": "$61,731 / year",
+      "housingAndFood": "$19,922 / year",
+      "studentFees": "$2,298 / year",
+      "booksAndSupplies": "$1,305 / year",
+      "totalEstimated": "$85,256 / year"
+    },
+    "scholarshipsList": [
+      { "name": "Institutional Need-Based Aid", "amount": "Up to 100% of demonstrated need", "description": "Meets 100% demonstrated financial need." },
+      { "name": "Knight-Hennessy Scholars", "amount": "Full tuition + stipend", "description": "Fully funded graduate fellowship across all disciplines." }
+    ],
+    "tags": ["STEM Certified", "Direct Integration", "Top Research Lab"],
+    "featured": true
+  },
+  {
+    "slug": "university-of-toronto",
+    "name": "University of Toronto",
+    "location": "Toronto, Ontario, Canada",
+    "country": "canada",
+    "type": "Public",
+    "logo": "/university-of-toronto.jpg",
+    "coverImage": "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&q=80&w=2000",
+    "rank": "QS World Rank #21",
+    "acceptanceRate": "43%",
+    "totalStudents": "97,000+",
+    "internationalPct": "28%",
+    "about": "The University of Toronto is a public research university in Toronto, Ontario, Canada, located on the grounds that surround Queen's Park.",
+    "programs": [
+      { "name": "Applied Computing", "degree": "M.Sc." },
+      { "name": "Computer Science", "degree": "B.Sc. / Ph.D." },
+      { "name": "Management & Finance", "degree": "MBA" }
+    ],
+    "facultyStudentRatio": "18:1",
+    "intakeSeasons": ["Fall (September)", "Winter (January)"],
+    "admissionReqs": {
+      "gpa": "Minimum 3.3/4.0",
+      "englishProficiency": "IELTS: 7.0+ (min 6.5 subscores)",
+      "documents": ["Transcripts", "Statement of Intent", "2 Reference Letters"]
+    },
+    "applicationDeadline": "January 15",
+    "costs": {
+      "tuition": "$58,160 CAD / year",
+      "housingAndFood": "$16,500 CAD / year",
+      "totalEstimated": "$77,000 CAD / year"
+    },
+    "scholarshipsList": [
+      { "name": "Lester B. Pearson International Scholarship", "amount": "Full tuition, books, incidental fees, and full residence support", "description": "Most prestigious undergraduate scholarship for international students." }
+    ],
+    "tags": ["AI Hub", "Top Global Faculty", "Fast Visa Track"],
+    "featured": true
+  },
+  {
+    "slug": "university-of-oxford",
+    "name": "University of Oxford",
+    "location": "Oxford, Oxfordshire, UK",
+    "country": "uk",
+    "type": "Public",
+    "logo": "/university-of-oxford.webp",
+    "coverImage": "https://images.unsplash.com/photo-1580983218765-f663bec07b37?auto=format&fit=crop&q=80&w=2000",
+    "rank": "QS World Rank #1",
+    "acceptanceRate": "14%",
+    "totalStudents": "26,000+",
+    "internationalPct": "46%",
+    "about": "The University of Oxford is a collegiate research university in Oxford, England with evidence of teaching from 1096.",
+    "programs": [
+      { "name": "Advanced Computer Science", "degree": "M.Sc." },
+      { "name": "Philosophy, Politics & Economics (PPE)", "degree": "B.A." },
+      { "name": "Mathematical Modelling & Scientific Computing", "degree": "M.Sc." }
+    ],
+    "facultyStudentRatio": "10:1",
+    "intakeSeasons": ["Michaelmas Term (October)"],
+    "admissionReqs": {
+      "gpa": "First-class or strong upper second-class undergraduate degree",
+      "englishProficiency": "IELTS: 7.5 (min 7.0 each component)",
+      "documents": ["Statement of Purpose", "CV", "3 Academic References"]
+    },
+    "applicationDeadline": "December 6 (First round) | January 24 (Final)",
+    "costs": {
+      "tuition": "£36,000 / year",
+      "housingAndFood": "£15,500 / year",
+      "totalEstimated": "£53,500 / year"
+    },
+    "scholarshipsList": [
+      { "name": "Clarendon Fund", "amount": "Full tuition and living stipend", "description": "Oxford's flagship scholarship scheme covering all graduate applicants." }
+    ],
+    "tags": ["Historic Prestige", "Collegiate System", "World #1"],
+    "featured": true
+  },
+  {
+    "slug": "eth-zurich",
+    "name": "ETH Zurich",
+    "location": "Zurich, Switzerland",
+    "country": "germany",
+    "type": "Public",
+    "logo": "/eth-zurich.jpg",
+    "coverImage": "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&q=80&w=2000",
+    "rank": "QS World Rank #7",
+    "acceptanceRate": "27%",
+    "totalStudents": "24,500+",
+    "internationalPct": "40%",
+    "about": "ETH Zurich is a public research university in Zurich, Switzerland, focusing on technology, science, and engineering.",
+    "programs": [
+      { "name": "Data Science", "degree": "M.Sc." },
+      { "name": "Robotics, Systems & Control", "degree": "M.Sc." },
+      { "name": "Computer Science", "degree": "M.Sc." }
+    ],
+    "facultyStudentRatio": "15:1",
+    "intakeSeasons": ["Autumn Semester (September)"],
+    "admissionReqs": {
+      "gpa": "Excellent bachelor degree in relevant field",
+      "englishProficiency": "IELTS: 7.0 or TOEFL iBT: 100+",
+      "documents": ["Curriculum Vitae", "Letter of Motivation", "GRE General Test"]
+    },
+    "applicationDeadline": "December 15",
+    "costs": {
+      "tuition": "1,460 CHF / year",
+      "housingAndFood": "20,000 CHF / year",
+      "totalEstimated": "22,000 CHF / year"
+    },
+    "scholarshipsList": [
+      { "name": "Excellence Scholarship & Opportunity Programme (ESOP)", "amount": "Full study & living costs (12,000 CHF per semester) + tuition waiver", "description": "Awarded to the top master applicants with outstanding results." }
+    ],
+    "tags": ["Ultra Low Tuition", "Continental Europe #1", "High Tech Hub"],
+    "featured": true
+  }
+]

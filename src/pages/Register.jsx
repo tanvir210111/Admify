@@ -13,10 +13,11 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import AuthLayout from "../components/layout/AuthLayout";
-import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 
 function Register() {
+  const { register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("student");
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -45,22 +46,13 @@ function Register() {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      await register({
+        name: fullName,
         email,
         password,
-        options: {
-          data: {
-            full_name: fullName,
-            phone,
-            role,
-          }
-        }
+        phone,
+        role,
       });
-
-      if (error) throw error;
-
-      // Force sign out so they have to manually log in
-      await supabase.auth.signOut();
 
       toast.success("Account created! Please log in to continue.");
       navigate("/login");
