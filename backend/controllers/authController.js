@@ -16,8 +16,12 @@ export const register = async (req, res, next) => {
     }
 
     // Disallow arbitrary self-registration as admin through public register
-    const validRoles = ['student', 'agent', 'agency', 'university'];
-    const assignedRole = validRoles.includes(role.toLowerCase()) ? role.toLowerCase() : 'student';
+    const validRoles = ['student', 'agent', 'agency', 'university', 'university representative'];
+    const cleanRole = role ? role.toLowerCase().trim() : 'student';
+    let assignedRole = validRoles.includes(cleanRole) ? cleanRole : 'student';
+    if (assignedRole === 'university representative') {
+      assignedRole = 'university';
+    }
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
@@ -81,11 +85,16 @@ export const login = async (req, res, next) => {
     }
 
     // If a role was specified in the login request, verify it matches
-    if (role && user.role !== role.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        message: `This account is registered as '${user.role}', not '${role}'. Please switch role tabs.`,
-      });
+    if (role) {
+      const normalize = (r) => (r === 'university representative' || r === 'uni rep' ? 'university' : r);
+      const reqRole = normalize(role.toLowerCase().trim());
+      const userRole = normalize(user.role.toLowerCase().trim());
+      if (reqRole !== userRole) {
+        return res.status(403).json({
+          success: false,
+          message: `This account is registered as '${user.role}', not '${role}'. Please switch role tabs.`,
+        });
+      }
     }
 
     const token = generateToken(user._id);

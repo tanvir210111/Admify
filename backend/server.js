@@ -23,9 +23,6 @@ import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 // Load environment variables
 dotenv.config();
 
-// Connect to MongoDB
-connectDB();
-
 const app = express();
 
 // HTTP Request Logger
@@ -41,7 +38,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // CORS configuration for production and development
 const allowedOrigins = (
-  process.env.CLIENT_URL || 'https://admify.world,https://www.admify.world,http://localhost:5173,http://localhost:3000'
+  process.env.CLIENT_URL ||
+  'https://admify.world,https://www.admify.world,http://localhost:5173,http://localhost:3000'
 )
   .split(',')
   .map((origin) => origin.trim())
@@ -53,6 +51,8 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     if (
       allowedOrigins.includes(origin) ||
+      origin === 'https://admify.world' ||
+      origin === 'http://admify.world' ||
       origin.endsWith('.admify.world') ||
       process.env.NODE_ENV !== 'production'
     ) {
@@ -116,10 +116,17 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`[Admify API] Server running in ${process.env.NODE_ENV || 'production'} mode on port ${PORT}`);
-  });
-}
+const startServer = async () => {
+  // Connect to MongoDB
+  await connectDB();
+
+  if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+      console.log(`[Admify API] Server running in ${process.env.NODE_ENV || 'production'} mode on port ${PORT}`);
+    });
+  }
+};
+
+startServer();
 
 export default app;
