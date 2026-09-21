@@ -220,9 +220,8 @@ function MessageBubble({ msg, mode }) {
   );
 }
 
-// ── Main Widget ─────────────────────────────────────────────────────────────
-export default function ChatWidget() {
-  const { pathname } = useLocation();
+// ── Main Widget Inner Component ─────────────────────────────────────────────
+function ChatWidgetContent() {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState("ai"); // "ai" | "agent"
   const [inputValue, setInputValue] = useState("");
@@ -260,16 +259,18 @@ export default function ChatWidget() {
   // Focus input when opened
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 300);
+      const timer = setTimeout(() => inputRef.current?.focus(), 300);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
   // Agent greeting when switching to agent mode
   useEffect(() => {
+    let timer;
     if (mode === "agent" && !agentHasGreeted) {
       setAgentConnecting(true);
       setAgentHasGreeted(true);
-      setTimeout(() => {
+      timer = setTimeout(() => {
         setAgentConnecting(false);
         setAgentMessages([
           {
@@ -281,6 +282,7 @@ export default function ChatWidget() {
         ]);
       }, 2000);
     }
+    return () => clearTimeout(timer);
   }, [mode, agentHasGreeted]);
 
   const handleOpen = () => {
@@ -330,12 +332,6 @@ export default function ChatWidget() {
     setMode(newMode);
     setIsTyping(false);
   };
-
-  // Hide chat widget completely on admin and agent portals
-  // Must remain AFTER all hooks to adhere strictly to the Rules of Hooks
-  if (pathname.startsWith("/admin") || pathname.startsWith("/agent")) {
-    return null;
-  }
 
   return (
     <>
@@ -595,4 +591,15 @@ export default function ChatWidget() {
       </AnimatePresence>
     </>
   );
+}
+
+export default function ChatWidget() {
+  const { pathname } = useLocation();
+
+  // Hide chat widget completely on admin and agent portals
+  if (pathname.startsWith("/admin") || pathname.startsWith("/agent")) {
+    return null;
+  }
+
+  return <ChatWidgetContent />;
 }
