@@ -233,9 +233,6 @@ export default function ChatWidget() {
   const [agentConnecting, setAgentConnecting] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-
-  if (pathname.startsWith("/admin") || pathname.startsWith("/agent")) return null;
-
   const now = () => {
     const d = new Date();
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -333,6 +330,12 @@ export default function ChatWidget() {
     setMode(newMode);
     setIsTyping(false);
   };
+
+  // Hide chat widget completely on admin and agent portals
+  // Must remain AFTER all hooks to adhere strictly to the Rules of Hooks
+  if (pathname.startsWith("/admin") || pathname.startsWith("/agent")) {
+    return null;
+  }
 
   return (
     <>
