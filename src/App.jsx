@@ -102,7 +102,7 @@ function App() {
         {/* Dashboard Routes wrapped in ProtectedRoute and DashboardLayout */}
         <Route element={<ProtectedRoute />}>
           <Route path="/student" element={<DashboardLayout />}>
-            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route index element={<Navigate to="/student/dashboard" replace />} />
             <Route path="dashboard" element={<StudentDashboard />} />
             <Route path="recommendations" element={<RecommendationPage />} />
             <Route path="wallet" element={<WalletPage />} />
@@ -119,7 +119,7 @@ function App() {
 
         {/* Agent Portal Nested Routes */}
         <Route path="/agent" element={<AgentLayout />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route index element={<Navigate to="/agent/dashboard" replace />} />
           <Route path="dashboard" element={<AgeDashboard />} />
           <Route path="students" element={<AgeStudents />} />
           <Route path="applications" element={<AgeApplications />} />
@@ -145,7 +145,7 @@ function App() {
 
         {/* Admin Portal Nested Routes */}
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<AdmDashboard />} />
           <Route path="students" element={<AdmStudents />} />
           <Route path="agents" element={<AdmAgents />} />
