@@ -5,7 +5,9 @@
  * Automatically attaches JWT authentication tokens from localStorage to protected requests.
  */
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+export const API_BASE_URL =
+  (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) ||
+  'https://api.admify.world';
 
 /**
  * Helper to construct an absolute or relative endpoint URL
@@ -13,7 +15,9 @@ export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
  * @returns {string}
  */
 export const getApiUrl = (endpoint = '') => {
-  if (!API_BASE_URL) return endpoint;
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint;
+  }
   const base = API_BASE_URL.replace(/\/+$/, '');
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   return `${base}${path}`;
