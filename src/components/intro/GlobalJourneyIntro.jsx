@@ -11,6 +11,7 @@ import {
   getFlightArc,
 } from "./worldMapData";
 import CountryFlagPatterns from "./CountryFlagPatterns";
+import GlobalFutureScene from "./GlobalFutureScene";
 
 // Realistic commercial airplane silhouette (fuselage, swept wings, engines, tail)
 function AirplaneSilhouette({ size = 20, className = "", style = {} }) {
@@ -95,6 +96,29 @@ export default function GlobalJourneyIntro({ onComplete }) {
     return isMobile ? DESTINATIONS.filter((d) => d.isMajor) : DESTINATIONS;
   }, [isMobile]);
 
+  // Current active destination for mobile compact indicator
+  const activeDestination = useMemo(() => {
+    if (phase < 3) {
+      return { name: "Dhaka (Origin)", isLanded: false, isOrigin: true };
+    }
+    // Sort destinations by arrival duration
+    const sorted = [...DESTINATIONS].sort(
+      (a, b) => (FLIGHT_DURATIONS[a.id] || 11000) - (FLIGHT_DURATIONS[b.id] || 11000)
+    );
+    // Find the next destination that has not landed yet
+    const nextInFlight = sorted.find((d) => !landedDestinations[d.id]);
+    if (nextInFlight) {
+      return { name: nextInFlight.name, isLanded: false, isOrigin: false };
+    }
+    const lastLanded = sorted[sorted.length - 1];
+    return { name: lastLanded?.name || "Global Network", isLanded: true, isOrigin: false };
+  }, [phase, landedDestinations]);
+
+  // Number of landed destinations
+  const landedCount = useMemo(() => {
+    return Object.values(landedDestinations).filter(Boolean).length;
+  }, [landedDestinations]);
+
   // Handle Skip Intro
   const handleSkip = () => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -110,6 +134,12 @@ export default function GlobalJourneyIntro({ onComplete }) {
 
   // Phase Orchestration
   useEffect(() => {
+    // Preload earth imagery for seamless transitions
+    const img1 = new Image();
+    img1.src = "/earth_sunrise_horizon.jpg";
+    const img2 = new Image();
+    img2.src = "/realistic_satellite_world_map.jpg";
+
     // Accessibility check: prefers-reduced-motion
     if (
       typeof window !== "undefined" &&
@@ -178,10 +208,8 @@ export default function GlobalJourneyIntro({ onComplete }) {
 
       if (allLanded) {
         // All airplanes have reached their destination countries!
-        // Move to Phase 4: Full visualization, branding and 3.5s hold
-        setTimeout(() => {
-          setPhase(4);
-        }, 500);
+        // Immediately transition to Scene 2 with zero gap!
+        setPhase(4);
         return;
       }
 
@@ -196,26 +224,17 @@ export default function GlobalJourneyIntro({ onComplete }) {
     };
   }, [phase]);
 
-  // Phase 4: Hold for 3.5 seconds after animation completes, then smoothly redirect to homepage
-  useEffect(() => {
-    if (phase !== 4) return;
-
-    const holdTimer = setTimeout(() => {
-      try {
-        sessionStorage.setItem("admify_intro_seen", "true");
-        window.dispatchEvent(new Event("admify_intro_finished"));
-      } catch (e) {}
-      setPhase(5);
-
-      const completeTimer = setTimeout(() => {
-        if (onComplete) onComplete();
-      }, 950);
-
-      return () => clearTimeout(completeTimer);
-    }, 3500);
-
-    return () => clearTimeout(holdTimer);
-  }, [phase, onComplete]);
+  // Handle CTA button click from Scene 2 to enter homepage
+  const handleEnterApp = () => {
+    try {
+      sessionStorage.setItem("admify_intro_seen", "true");
+      window.dispatchEvent(new Event("admify_intro_finished"));
+    } catch (e) {}
+    setPhase(5);
+    setTimeout(() => {
+      if (onComplete) onComplete();
+    }, 450);
+  };
 
   // Compute position and rotation for ALL 20 airplanes
   const airplaneTransforms = useMemo(() => {
@@ -265,20 +284,24 @@ export default function GlobalJourneyIntro({ onComplete }) {
   }, [phase, flightsProgress]);
 
   return (
-    <motion.div
-      initial={{ opacity: 1, filter: "blur(0px)" }}
-      animate={{
-        opacity: phase === 5 ? 0 : 1,
-        scale: phase === 5 ? 1.025 : 1,
-        filter: phase === 5 ? "blur(8px)" : "blur(0px)",
-      }}
-      transition={{ duration: 0.95, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed inset-0 h-screen h-[100dvh] w-screen flex flex-col md:flex-row items-stretch justify-between overflow-hidden select-none bg-[#020614] z-[9999]"
-      style={{
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif",
-      }}
-    >
+    <AnimatePresence>
+      {phase < 4 && (
+        <motion.div
+          key="map-scene"
+          initial={{ opacity: 1, filter: "blur(0px)" }}
+          animate={{
+            opacity: phase === 5 ? 0 : 1,
+            scale: phase === 5 ? 1.025 : 1,
+            filter: phase === 5 ? "blur(8px)" : "blur(0px)",
+          }}
+          exit={{ opacity: 0, scale: 1.01 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          className="fixed inset-0 h-screen h-[100dvh] w-screen flex flex-col md:flex-row items-stretch justify-between overflow-hidden select-none bg-[#020614] z-[9999]"
+          style={{
+            fontFamily:
+              "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif",
+          }}
+        >
       {/* ── Realistic Space & Atmospheric Background ── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {/* Deep Ocean & Space Radial Gradient */}
@@ -309,16 +332,47 @@ export default function GlobalJourneyIntro({ onComplete }) {
         ))}
       </div>
 
+      {/* ── Mobile Top Branding Bar (Compact, minimal height ~40px) ── */}
+      <header className="md:hidden relative z-30 w-full px-4 pt-3 pb-2 flex items-center justify-between shrink-0 bg-gradient-to-b from-[#020614]/90 via-[#020614]/60 to-transparent">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.4)] p-0.5 overflow-hidden shrink-0">
+            <img
+              src="/logo-mark.png"
+              alt="Admify Logo"
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-extrabold tracking-wider text-white leading-tight">
+              ADMIFY
+            </span>
+            <span className="text-[8px] font-bold tracking-wider uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-400 leading-none">
+              Global Study Journey
+            </span>
+          </div>
+        </div>
+
+        {/* Minimal progress count badge */}
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-900/80 border border-cyan-500/25 text-[9px] font-semibold text-cyan-300">
+          <AirplaneSilhouette size={9} className="text-cyan-400" style={{ transform: "rotate(90deg)" }} />
+          <span>{landedCount} / {DESTINATIONS.length}</span>
+        </div>
+      </header>
+
       {/* =========================================================================
-          1. LEFT-SIDE FLIGHT LIST — EXACT FORMAT: Dhaka → ✈ → Destination
+          1. LEFT-SIDE FLIGHT LIST (DESKTOP ONLY) — EXACT FORMAT: Dhaka → ✈ → Destination
           ========================================================================= */}
-      <aside className="relative z-30 w-full md:w-64 lg:w-72 md:h-full p-3 md:py-5 md:pl-6 md:pr-3 flex flex-col justify-between shrink-0 bg-slate-950/50 md:bg-slate-950/30 md:border-r border-slate-800/50 backdrop-blur-md">
+      <aside className="hidden md:flex relative z-30 md:w-64 lg:w-72 md:h-full p-3 md:py-5 md:pl-6 md:pr-3 flex-col justify-between shrink-0 md:bg-slate-950/30 md:border-r border-slate-800/50 backdrop-blur-md">
         <div>
           {/* Top Brand Header on Left Side */}
           <div className="mb-2.5 pb-2 border-b border-slate-800/70">
             <div className="flex items-center gap-2 mb-0.5">
-              <div className="w-6 h-6 md:w-7 md:h-7 rounded-lg bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_12px_rgba(99,102,241,0.6)] border border-white/25 shrink-0">
-                <span className="text-white font-black text-xs md:text-sm leading-none">A</span>
+              <div className="w-8 h-8 rounded-lg bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.4)] p-1 overflow-hidden shrink-0">
+                <img
+                  src="/logo-mark.png"
+                  alt="Admify Logo"
+                  className="w-full h-full object-contain"
+                />
               </div>
               <span className="text-sm md:text-base font-extrabold tracking-wider text-white leading-tight">
                 ADMIFY
@@ -399,29 +453,19 @@ export default function GlobalJourneyIntro({ onComplete }) {
             })}
           </div>
         </div>
-
-        {/* Mobile-only Skip button placement */}
-        <div className="md:hidden mt-2 pt-2 border-t border-slate-800/40 flex justify-end">
-          <button
-            onClick={handleSkip}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-slate-900/80 text-xs font-semibold text-slate-300"
-          >
-            <span>Skip Intro</span>
-            <ArrowRight className="w-3 h-3 text-cyan-400" />
-          </button>
-        </div>
       </aside>
 
       {/* =========================================================================
           CENTER / RIGHT: REALISTIC WORLD MAP + NATIONAL FLAG-COLORED COUNTRIES
           ========================================================================= */}
-      <main className="relative flex-1 h-full flex flex-col items-center justify-center p-2 md:p-6 overflow-hidden">
-        {/* Large SVG Map Container */}
-        <svg
-          viewBox="0 0 1000 500"
-          className="w-full h-full max-h-[560px] md:max-h-[640px] object-contain overflow-visible"
-        >
-          <defs>
+      <main className="relative flex-1 w-full h-full flex flex-col items-center justify-between md:justify-center p-1 sm:p-2 md:p-6 overflow-hidden min-h-0">
+        {/* World Map SVG Container: Takes majority of screen height on mobile */}
+        <div className="relative w-full flex-1 min-h-0 flex items-center justify-center overflow-visible">
+          <svg
+            viewBox="0 0 1000 500"
+            className="w-full h-full max-h-[58vh] sm:max-h-[62vh] md:max-h-[640px] object-contain overflow-visible"
+          >
+            <defs>
             {/* Active Flight Trail Gradient */}
             <linearGradient id="activeFlightTrail" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.25" />
@@ -450,11 +494,15 @@ export default function GlobalJourneyIntro({ onComplete }) {
 
           {/* Smooth Camera Movement: Starts slightly focused around Bangladesh, smoothly zooms out */}
           <motion.g
-            initial={{ scale: 1.15, x: -75, y: -20 }}
+            initial={{
+              scale: isMobile ? 1.22 : 1.15,
+              x: isMobile ? -50 : -75,
+              y: isMobile ? -10 : -20,
+            }}
             animate={{
-              scale: phase >= 3 ? 1.0 : 1.15,
-              x: phase >= 3 ? 0 : -75,
-              y: phase >= 3 ? 0 : -20,
+              scale: phase >= 3 ? (isMobile ? 1.05 : 1.0) : (isMobile ? 1.22 : 1.15),
+              x: phase >= 3 ? (isMobile ? -20 : 0) : (isMobile ? -50 : -75),
+              y: phase >= 3 ? 0 : (isMobile ? -10 : -20),
             }}
             transition={{ duration: 2.8, ease: [0.16, 1, 0.3, 1] }}
           >
@@ -468,21 +516,35 @@ export default function GlobalJourneyIntro({ onComplete }) {
               <line x1="750" y1="30" x2="750" y2="470" stroke="#93C5FD" strokeDasharray="3 6" />
             </g>
 
-            {/* 2. REALISTIC WORLD MAP BASE (Natural Earth landmass in dark night earth tone) */}
+            {/* 2. REALISTIC PHOTOREALISTIC SATELLITE WORLD MAP BASE */}
             <motion.g
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 1.8, ease: "easeOut" }}
             >
+              {/* Photorealistic Satellite Texture */}
+              <image
+                href="/realistic_satellite_world_map.jpg"
+                x="0"
+                y="0"
+                width="1000"
+                height="500"
+                preserveAspectRatio="none"
+                style={{
+                  filter: "brightness(0.92) contrast(1.18) saturate(1.15)",
+                }}
+              />
+
+              {/* Luminous Coastline & Continent Atmospheric Glow Overlay */}
               <path
                 d={WORLD_LAND_PATH}
-                fill="#0C1938"
-                stroke="rgba(59, 130, 246, 0.3)"
-                strokeWidth="0.85"
+                fill="none"
+                stroke="rgba(56, 189, 248, 0.35)"
+                strokeWidth="0.8"
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 style={{
-                  filter: "drop-shadow(0 2px 14px rgba(4, 10, 28, 0.95))",
+                  filter: "drop-shadow(0 0 6px rgba(56, 189, 248, 0.45))",
                 }}
               />
             </motion.g>
@@ -743,61 +805,77 @@ export default function GlobalJourneyIntro({ onComplete }) {
             )}
           </motion.g>
         </svg>
+        </div>
 
-        {/* =========================================================================
-            CENTRAL HIERARCHY (Positioned in lower-middle at bottom: 15-18% of viewport):
-              [ADMIFY LOGO]
-                  ADMIFY
-              AI-Powered Global Study Guidance
-              ↓
-              Your Journey. Your University. Your Future.
-            ========================================================================= */}
-        <AnimatePresence>
-          {phase >= 4 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, filter: "blur(6px)" }}
-              transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute bottom-[15%] sm:bottom-[17%] md:bottom-[18%] inset-x-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none z-30"
-            >
-              {/* 1. Central Admify Logo Mark + ADMIFY Title */}
+        {/* ── Mobile Active Destination Indicator & Progress (Below Map) ── */}
+        <div className="md:hidden w-full flex flex-col items-center justify-center shrink-0 z-30 pt-1 pb-1">
+          {/* Active Flight Pill (Smooth fade before phase 4) */}
+          <AnimatePresence mode="wait">
+            {phase < 4 && (
               <motion.div
-                initial={{ opacity: 0, y: 12, scale: 0.92 }}
+                key={activeDestination.name}
+                initial={{ opacity: 0, y: 4, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-                className="flex items-center gap-2.5 mb-1.5"
+                exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                transition={{ duration: 0.25 }}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/90 border border-cyan-500/35 backdrop-blur-md shadow-[0_0_12px_rgba(6,182,212,0.15)]"
               >
-                <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_22px_rgba(99,102,241,0.75)] border border-white/30">
-                  <span className="text-white font-black text-sm md:text-base leading-none">A</span>
-                </div>
-                <span className="text-lg md:text-xl font-extrabold tracking-wider text-white leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-                  ADMIFY
+                <span className="text-[10.5px] font-bold text-cyan-400">Dhaka</span>
+                <span className="text-[8.5px] text-slate-500">→</span>
+                <AirplaneSilhouette
+                  size={11}
+                  className={`text-cyan-300 ${phase === 3 && !activeDestination.isLanded ? "animate-pulse" : ""}`}
+                  style={{
+                    transform: "rotate(90deg)",
+                    filter: "drop-shadow(0 0 4px #06B6D4)",
+                  }}
+                />
+                <span className="text-[8.5px] text-slate-500">→</span>
+                <span className="text-[10.5px] font-bold text-white tracking-wide truncate max-w-[150px]">
+                  {activeDestination.name}
                 </span>
+                {activeDestination.isLanded && (
+                  <span className="w-3 h-3 rounded-full bg-cyan-500/20 border border-cyan-400/60 flex items-center justify-center text-cyan-400 ml-0.5">
+                    <Check className="w-2 h-2" />
+                  </span>
+                )}
               </motion.div>
+            )}
+          </AnimatePresence>
 
-              {/* 2. AI-Powered Global Study Guidance Tagline */}
-              <motion.p
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                className="text-[11px] md:text-xs font-bold tracking-widest uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 mb-2.5 drop-shadow-[0_2px_8px_rgba(6,182,212,0.5)]"
-              >
-                AI-Powered Global Study Guidance
-              </motion.p>
+          {/* Subtle Progress Dots (10 major destinations) */}
+          <div className="flex items-center gap-1.5 mt-1.5 mb-1">
+            {DESTINATIONS.filter((d) => d.isMajor).map((dest) => {
+              const isLanded = landedDestinations[dest.id];
+              const isFlying = phase === 3 && !isLanded;
+              return (
+                <span
+                  key={dest.id}
+                  title={dest.name}
+                  className={`transition-all duration-300 rounded-full ${
+                    isLanded
+                      ? "w-2.5 h-1 bg-cyan-400 shadow-[0_0_6px_#06B6D4]"
+                      : isFlying
+                      ? "w-1.5 h-1.5 bg-sky-300 animate-pulse"
+                      : "w-1.5 h-1.5 bg-slate-700/60"
+                  }`}
+                />
+              );
+            })}
+          </div>
+        </div>
 
-              {/* 3. Main Headline: Your Journey. Your University. Your Future. strictly in ONE line */}
-              <motion.h1
-                initial={{ opacity: 0, y: 14, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.9, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                className="whitespace-nowrap text-base sm:text-xl md:text-2xl lg:text-3xl xl:text-[34px] font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-blue-100 drop-shadow-[0_4px_24px_rgba(0,0,0,0.95)] max-w-none px-4 leading-normal"
-              >
-                Your Journey. Your University. Your Future.
-              </motion.h1>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* ── Mobile Skip Intro (Safe Bottom Area) ── */}
+        <div className="md:hidden w-full pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-0.5 flex justify-center shrink-0 z-30">
+          <button
+            onClick={handleSkip}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-white/15 bg-slate-900/80 active:bg-slate-800 backdrop-blur-md text-[11px] font-semibold text-slate-300 active:text-white transition-all shadow-md cursor-pointer"
+            aria-label="Skip introduction"
+          >
+            <span>Skip Intro</span>
+            <ArrowRight className="w-3 h-3 text-cyan-400" />
+          </button>
+        </div>
 
         {/* Desktop Skip Intro Button (Bottom Right - chat widget is hidden during intro) */}
         <div className="hidden md:block absolute bottom-8 right-8 z-40">
@@ -812,5 +890,12 @@ export default function GlobalJourneyIntro({ onComplete }) {
         </div>
       </main>
     </motion.div>
+      )}
+
+      {/* ── Scene 2: Design 4 – Minimal Center Focus ("A Global Future Awaits You") ── */}
+      {phase >= 4 && phase < 5 && (
+        <GlobalFutureScene key="future-scene" onEnter={handleEnterApp} />
+      )}
+    </AnimatePresence>
   );
 }

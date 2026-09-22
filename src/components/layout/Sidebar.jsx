@@ -65,8 +65,12 @@ function Sidebar({ isOpen, onClose }) {
       >
         <div className="px-8 mb-10 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-blue-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
-              <span className="text-white text-lg font-black">A</span>
+            <div className="w-9 h-9 rounded-xl bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-lg shadow-cyan-500/20 p-1 overflow-hidden shrink-0">
+              <img
+                src="/logo-mark.png"
+                alt="Admify Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">
               Admify

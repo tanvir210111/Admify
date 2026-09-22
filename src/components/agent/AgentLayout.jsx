@@ -57,12 +57,16 @@ export default function AgentLayout() {
         {/* Logo */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 flex-shrink-0">
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
-              <span className="text-white font-black text-lg">A</span>
+            <div className="w-9 h-9 rounded-xl bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-lg shadow-cyan-500/25 p-1 overflow-hidden shrink-0">
+              <img
+                src="/logo-mark.png"
+                alt="Admify Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <p className="text-white font-extrabold text-base leading-none">Admify</p>
-              <p className="text-blue-400 text-[9px] font-bold uppercase tracking-widest mt-0.5">Agent Portal</p>
+              <p className="text-cyan-400 text-[9px] font-bold uppercase tracking-widest mt-0.5">Agent Portal</p>
             </div>
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="xl:hidden text-slate-500 hover:text-white p-1 transition-colors">

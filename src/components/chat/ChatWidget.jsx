@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import {
   X,
   MessageCircle,
@@ -16,6 +16,7 @@ import {
   Smile,
   ArrowLeft,
   Circle,
+  GripHorizontal,
 } from "lucide-react";
 
 // ── AI smart reply engine ──────────────────────────────────────────────────
@@ -223,6 +224,8 @@ function MessageBubble({ msg, mode }) {
 // ── Main Widget Inner Component ─────────────────────────────────────────────
 function ChatWidgetContent() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragControls = useDragControls();
   const [mode, setMode] = useState("ai"); // "ai" | "agent"
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -336,55 +339,86 @@ function ChatWidgetContent() {
   return (
     <>
       {/* ── Floating Button ─────────────────────────────── */}
+      {/* ── Floating Button (Freely Draggable Anywhere) ─────────────────────────────── */}
       <AnimatePresence>
         {!isOpen && (
-          <motion.button
-            key="chat-btn"
+          <motion.div
+            key="chat-btn-wrapper"
+            drag
+            dragMomentum={false}
+            dragElastic={0.08}
+            onDragStart={() => setIsDragging(true)}
+            onDragEnd={() => setTimeout(() => setIsDragging(false), 120)}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.93 }}
-            onClick={handleOpen}
-            className="fixed bottom-24 right-6 z-[9999] w-16 h-16 rounded-full bg-gradient-to-br from-primary-500 to-blue-600 shadow-[0_8px_40px_rgba(124,58,237,0.55)] flex items-center justify-center border border-white/20 group"
-            aria-label="Open chat"
+            className="fixed bottom-24 right-6 z-[9999] touch-none cursor-grab active:cursor-grabbing select-none"
+            title="Drag anywhere to move freely • Click to open chat"
           >
-            <MessageCircle className="w-7 h-7 text-white group-hover:scale-110 transition-transform" />
-            {unreadCount > 0 && (
-              <motion.span
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-slate-950 shadow"
-              >
-                {unreadCount}
-              </motion.span>
-            )}
-            {/* Pulse ring */}
-            <span className="absolute inset-0 rounded-full bg-primary-500/30 animate-ping" />
-          </motion.button>
+            <button
+              onClick={() => {
+                if (!isDragging) handleOpen();
+              }}
+              className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 via-cyan-500 to-indigo-600 shadow-[0_8px_40px_rgba(6,182,212,0.45)] flex items-center justify-center border border-white/20 group relative cursor-pointer"
+              aria-label="Open chat"
+            >
+              <MessageCircle className="w-7 h-7 text-white group-hover:scale-110 transition-transform" />
+              {unreadCount > 0 && (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-slate-950 shadow"
+                >
+                  {unreadCount}
+                </motion.span>
+              )}
+              {/* Pulse ring */}
+              <span className="absolute inset-0 rounded-full bg-cyan-400/30 animate-ping pointer-events-none" />
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Chat Window ─────────────────────────────────── */}
+      {/* ── Chat Window (Freely Draggable via Header) ─────────────────────────────────── */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             key="chat-window"
+            drag
+            dragListener={false}
+            dragControls={dragControls}
+            dragMomentum={false}
+            dragElastic={0.08}
             initial={{ opacity: 0, scale: 0.85, y: 30, originX: 1, originY: 1 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 30 }}
             transition={{ type: "spring", stiffness: 350, damping: 30 }}
-            className="fixed bottom-24 right-6 z-[9999] w-[370px] max-w-[calc(100vw-1.5rem)] h-[580px] max-h-[calc(100vh-5rem)] flex flex-col rounded-3xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.7)] border border-slate-700/60"
+            className="fixed bottom-24 right-6 z-[9999] w-[370px] max-w-[calc(100vw-1.5rem)] h-[580px] max-h-[calc(100vh-5rem)] flex flex-col rounded-3xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.7)] border border-slate-700/60 touch-none"
             style={{ background: "linear-gradient(180deg, #0f1a2e 0%, #0a1220 100%)" }}
           >
-            {/* ── Header ── */}
-            <div className="relative bg-gradient-to-r from-primary-900/80 to-blue-900/80 backdrop-blur-sm border-b border-white/10 flex-shrink-0">
+            {/* ── Header with Drag Handle ── */}
+            <div
+              onPointerDown={(e) => dragControls.start(e)}
+              className="relative bg-gradient-to-r from-[#0d1629] via-[#091122] to-[#0d1629] border-b border-white/10 flex-shrink-0 cursor-grab active:cursor-grabbing select-none"
+              title="Drag header to move chat window freely"
+            >
+              {/* Top Drag Handle Indicator Bar */}
+              <div className="flex items-center justify-center pt-2 pb-0.5 opacity-40 hover:opacity-100 transition-opacity">
+                <div className="w-12 h-1 rounded-full bg-slate-400/60" />
+              </div>
+
               {/* Top bar */}
-              <div className="flex items-center justify-between px-5 pt-4 pb-3">
+              <div className="flex items-center justify-between px-5 pt-2 pb-3">
                 <div className="flex items-center gap-3">
                   <div className="relative">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-blue-600 flex items-center justify-center shadow-lg">
-                      <span className="text-white font-black text-lg">A</span>
+                    <div className="w-10 h-10 rounded-xl bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-lg p-1 overflow-hidden">
+                      <img
+                        src="/logo-mark.png"
+                        alt="Admify Logo"
+                        className="w-full h-full object-contain"
+                      />
                     </div>
                     <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-slate-900" />
                   </div>
@@ -398,19 +432,24 @@ function ChatWidgetContent() {
                 </div>
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+                  aria-label="Close chat"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* Mode tabs */}
-              <div className="flex mx-4 mb-3 bg-black/30 rounded-xl p-1 gap-1">
+              <div
+                onPointerDown={(e) => e.stopPropagation()}
+                className="flex mx-4 mb-3 bg-black/30 rounded-xl p-1 gap-1 cursor-default"
+              >
                 <button
                   onClick={() => switchMode("ai")}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
                     mode === "ai"
-                      ? "bg-gradient-to-r from-primary-600 to-blue-600 text-white shadow-md"
+                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-md"
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
@@ -621,8 +660,20 @@ export default function ChatWidget() {
     };
   }, []);
 
-  // Hide chat widget completely on admin, agent portals, or while intro is active
-  if (pathname.startsWith("/admin") || pathname.startsWith("/agent") || introActive) {
+  const isAuthPage =
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/forgot-password" ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/register");
+
+  // Hide chat widget completely on auth pages, admin, agent portals, or while intro is active
+  if (
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/agent") ||
+    isAuthPage ||
+    introActive
+  ) {
     return null;
   }
 

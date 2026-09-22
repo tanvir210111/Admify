@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Globe, Mail, MessageCircle, ArrowRight, ShieldCheck } from "lucide-react";
+import { Globe, Mail, MessageCircle, ArrowRight } from "lucide-react";
 function Footer() {
   return (
     <footer className="relative z-10 border-t border-slate-700/50 bg-slate-950 pt-24 pb-12">
@@ -16,12 +16,13 @@ function Footer() {
               className="text-3xl font-extrabold bg-gradient-to-r from-primary-400 to-blue-400 bg-clip-text text-transparent inline-block mb-6 flex items-center gap-2"
             >
               {" "}
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-blue-600 flex items-center justify-center shadow-lg">
-                {" "}
-                <span className="text-white text-lg leading-none font-black">
-                  A
-                </span>{" "}
-              </div>{" "}
+              <div className="w-9 h-9 rounded-xl bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-lg p-1 overflow-hidden shrink-0">
+                <img
+                  src="/logo-mark.png"
+                  alt="Admify Logo"
+                  className="w-full h-full object-contain"
+                />
+              </div>
               Admify{" "}
             </Link>{" "}
             <p className="text-slate-300 mb-8 leading-relaxed font-light text-lg">
@@ -168,13 +169,6 @@ function Footer() {
             <a href="#" className="hover:text-white transition-colors">
               Terms of Service
             </a>{" "}
-            <Link
-              to="/admin/login"
-              className="flex items-center gap-1.5 text-slate-500 hover:text-red-400 transition-colors text-xs font-medium"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Admin Portal
-            </Link>{" "}
           </div>{" "}
         </div>{" "}
       </div>{" "}

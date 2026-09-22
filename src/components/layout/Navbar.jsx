@@ -24,12 +24,13 @@ function Navbar() {
           className="text-2xl font-bold bg-gradient-to-r from-primary-400 to-blue-400 bg-clip-text text-transparent flex items-center gap-2"
         >
           {" "}
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-blue-600 flex items-center justify-center shadow-[0_0_15px_rgba(124,58,237,0.5)]">
-            {" "}
-            <span className="text-white text-lg leading-none font-black">
-              A
-            </span>{" "}
-          </div>{" "}
+          <div className="w-9 h-9 rounded-xl bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.35)] overflow-hidden p-1 shrink-0">
+            <img
+              src="/logo-mark.png"
+              alt="Admify Logo"
+              className="w-full h-full object-contain"
+            />
+          </div>
           Admify{" "}
         </Link>{" "}
         <div className="hidden md:flex gap-8 items-center text-sm font-medium">

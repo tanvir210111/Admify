@@ -161,8 +161,12 @@ function AdminSidebar({ active, setActive, isOpen, onClose }) {
         {/* Logo */}
         <div className="flex items-center justify-between px-5 py-5 border-b border-white/5">
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
-              <span className="text-white font-black text-lg">A</span>
+            <div className="w-9 h-9 rounded-xl bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-lg shadow-cyan-500/25 p-1 overflow-hidden shrink-0">
+              <img
+                src="/logo-mark.png"
+                alt="Admify Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <p className="text-white font-extrabold text-lg leading-none">Admify</p>

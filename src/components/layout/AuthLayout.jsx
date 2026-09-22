@@ -72,20 +72,20 @@ function AuthLayout({ children, title, subtitle }) {
         <div className="flex justify-center mb-8">
           {" "}
           <Link to="/" className="flex items-center gap-3 group">
-            {" "}
             <motion.div
-              whileHover={{ rotate: 180, scale: 1.1 }}
-              transition={{ duration: 0.6, type: "spring" }}
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(124,58,237,0.4)] group-hover:shadow-[0_0_30px_rgba(124,58,237,0.6)]"
+              whileHover={{ scale: 1.08 }}
+              transition={{ duration: 0.3 }}
+              className="w-11 h-11 rounded-xl bg-[#070b1a] border border-cyan-500/40 p-1.5 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)] group-hover:shadow-[0_0_30px_rgba(6,182,212,0.7)] overflow-hidden shrink-0"
             >
-              {" "}
-              <span className="text-white text-xl font-black origin-center block">
-                A
-              </span>{" "}
-            </motion.div>{" "}
+              <img
+                src="/logo-mark.png"
+                alt="Admify Logo"
+                className="w-full h-full object-contain"
+              />
+            </motion.div>
             <span className="text-3xl font-extrabold text-white tracking-tight">
               Admify
-            </span>{" "}
+            </span>
           </Link>{" "}
         </div>{" "}
         {/* Card */}{" "}
