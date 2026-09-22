@@ -25,6 +25,7 @@ function LandingPage() {
   const handleIntroComplete = () => {
     try {
       sessionStorage.setItem("admify_intro_seen", "true");
+      window.dispatchEvent(new Event("admify_intro_finished"));
     } catch {}
     setShowIntro(false);
   };

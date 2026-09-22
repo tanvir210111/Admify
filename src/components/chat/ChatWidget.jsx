@@ -595,9 +595,34 @@ function ChatWidgetContent() {
 
 export default function ChatWidget() {
   const { pathname } = useLocation();
+  const [introActive, setIntroActive] = useState(() => {
+    try {
+      return pathname === "/" && sessionStorage.getItem("admify_intro_seen") !== "true";
+    } catch {
+      return false;
+    }
+  });
 
-  // Hide chat widget completely on admin and agent portals
-  if (pathname.startsWith("/admin") || pathname.startsWith("/agent")) {
+  useEffect(() => {
+    const checkIntro = () => {
+      try {
+        const seen = sessionStorage.getItem("admify_intro_seen") === "true";
+        if (seen) setIntroActive(false);
+      } catch {}
+    };
+
+    const handleIntroEnd = () => setIntroActive(false);
+    window.addEventListener("admify_intro_finished", handleIntroEnd);
+    const interval = setInterval(checkIntro, 400);
+
+    return () => {
+      window.removeEventListener("admify_intro_finished", handleIntroEnd);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Hide chat widget completely on admin, agent portals, or while intro is active
+  if (pathname.startsWith("/admin") || pathname.startsWith("/agent") || introActive) {
     return null;
   }
 

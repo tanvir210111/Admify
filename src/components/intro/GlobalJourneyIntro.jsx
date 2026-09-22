@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import {
   ORIGIN,
   DESTINATIONS,
   WORLD_LAND_PATH,
   BANGLADESH_BORDER_PATH,
   CITY_LIGHTS,
+  DESTINATION_COUNTRY_PATHS,
   getFlightArc,
 } from "./worldMapData";
+import CountryFlagPatterns from "./CountryFlagPatterns";
 
 // Realistic commercial airplane silhouette (fuselage, swept wings, engines, tail)
 function AirplaneSilhouette({ size = 20, className = "", style = {} }) {
@@ -30,44 +32,46 @@ function AirplaneSilhouette({ size = 20, className = "", style = {} }) {
   );
 }
 
-// Distance-based flight durations for simultaneous launch (all take off together at t = 3.8s)
+// Distance-based flight durations for simultaneous launch (all take off together at t = 4.0s)
+// Total intro time target: 18 - 24 seconds
 const FLIGHT_DURATIONS = {
-  // East Asia (Quickest arrival: ~7.2s - 7.6s)
-  kr: 7200,
-  jp: 7600,
+  // East Asia (Quickest arrival: ~8.6s - 9.0s -> lands at ~12.6s - 13.0s)
+  kr: 8600,
+  jp: 9000,
 
-  // Europe (Medium arrival: ~8.6s - 9.8s)
-  fi: 8600,
-  at: 8800,
-  se: 8900,
-  de: 9000,
-  it: 9000,
-  ch: 9100,
-  dk: 9200,
-  no: 9300,
-  nl: 9400,
-  be: 9400,
-  fr: 9500,
-  es: 9600,
-  uk: 9700,
-  ie: 9800,
+  // Europe (Medium arrival: ~10.2s - 12.0s -> lands at ~14.2s - 16.0s)
+  fi: 10200,
+  at: 10400,
+  se: 10600,
+  de: 10800,
+  it: 10800,
+  ch: 11000,
+  dk: 11000,
+  no: 11200,
+  nl: 11300,
+  be: 11300,
+  fr: 11500,
+  es: 11600,
+  uk: 11800,
+  ie: 12000,
 
-  // Oceania (Longer arrival: ~10.2s - 10.8s)
-  au: 10200,
-  nz: 10800,
+  // Oceania (Longer arrival: ~12.2s - 12.6s -> lands at ~16.2s - 16.6s)
+  au: 12200,
+  nz: 12600,
 
-  // North America (Longest arrival: ~11.4s - 11.8s)
-  ca: 11400,
-  us: 11800,
+  // North America (Longest arrival: ~12.8s - 13.0s -> lands at ~16.8s - 17.0s)
+  ca: 12800,
+  us: 13000,
 };
 
 export default function GlobalJourneyIntro({ onComplete }) {
-  // Phases:
-  // 1: World Map Fade-in (0 - 2.0s)
-  // 2: Bangladesh Border Illuminate & Dhaka Origin Activate (2.0 - 3.8s)
-  // 3: ALL AIRPLANES LAUNCH TOGETHER & Fly to Destinations (3.8 - 15.6s)
-  // 4: All Flights Landed + Central Headline & Admify Branding Prominent (15.6 - 19.5s)
-  // 5: Dissolve Transition to Homepage (19.5 - 20.2s)
+  // Timeline:
+  // Phase 1: World Map Fade-in (0 - 2.0s)
+  // Phase 2: Bangladesh Flag & Border Illuminate, Dhaka Origin Activates (2.0 - 4.0s)
+  // Phase 3: ALL 20 AIRPLANES LAUNCH SIMULTANEOUSLY & Travel to Destinations (4.0 - 17.0s)
+  //          Country borders progressively glow & flag patterns gradually reveal
+  // Phase 4: All Flights Landed + Flag Colors Illuminated + Admify Branding Prominent (17.0 - 21.2s, 3.8s hold)
+  // Phase 5: Cinematic Dissolve Transition into Homepage (21.2 - 22.3s)
   const [phase, setPhase] = useState(1);
   const [flightsProgress, setFlightsProgress] = useState({}); // { [destId]: progress 0 to 1 }
   const [landedDestinations, setLandedDestinations] = useState({}); // { [destId]: boolean }
@@ -96,6 +100,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     try {
       sessionStorage.setItem("admify_intro_seen", "true");
+      window.dispatchEvent(new Event("admify_intro_finished"));
     } catch (e) {}
     setPhase(5);
     setTimeout(() => {
@@ -110,20 +115,20 @@ export default function GlobalJourneyIntro({ onComplete }) {
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
-      const timer = setTimeout(handleSkip, 1000);
+      const timer = setTimeout(handleSkip, 800);
       return () => clearTimeout(timer);
     }
 
-    // Phase 1 -> 2: Map fades in, then Bangladesh illuminates (2.0s)
+    // Phase 1 -> 2: Map fades in, then Bangladesh illuminates & Dhaka activates (2.0s)
     const t1 = setTimeout(() => {
       setPhase(2);
     }, 2000);
 
-    // Phase 2 -> 3: Bangladesh illuminates, Dhaka activates, then ALL FLIGHTS LAUNCH AT ONCE (3.8s)
+    // Phase 2 -> 3: Bangladesh flag & border ready, ALL 20 FLIGHTS LAUNCH AT ONCE (4.0s)
     const t2 = setTimeout(() => {
       setPhase(3);
       flightStartTimeRef.current = performance.now();
-    }, 3800);
+    }, 4000);
 
     return () => {
       clearTimeout(t1);
@@ -150,10 +155,10 @@ export default function GlobalJourneyIntro({ onComplete }) {
       let allLanded = true;
 
       DESTINATIONS.forEach((dest) => {
-        const duration = FLIGHT_DURATIONS[dest.id] || 9500;
+        const duration = FLIGHT_DURATIONS[dest.id] || 11000;
         const rawProgress = Math.min(1, elapsed / duration);
 
-        // Smooth cubic ease: natural takeoff acceleration, smooth cruise, gentle landing slowdown
+        // Smooth cubic ease: takeoff acceleration, steady cruise, gentle landing slowdown
         const eased =
           rawProgress < 0.5
             ? 4 * rawProgress * rawProgress * rawProgress
@@ -172,24 +177,11 @@ export default function GlobalJourneyIntro({ onComplete }) {
       setLandedDestinations(newLanded);
 
       if (allLanded) {
-        // All airplanes have reached their destinations!
-        // Move to Phase 4: Full visualization & Headline prominence
+        // All airplanes have reached their destination countries!
+        // Move to Phase 4: Full visualization, branding and 3.5s hold
         setTimeout(() => {
-          if (isCancelled) return;
           setPhase(4);
-
-          // Phase 5: Smooth dissolve into homepage after 3.2s
-          setTimeout(() => {
-            if (isCancelled) return;
-            try {
-              sessionStorage.setItem("admify_intro_seen", "true");
-            } catch (e) {}
-            setPhase(5);
-            setTimeout(() => {
-              if (onComplete) onComplete();
-            }, 750);
-          }, 3200);
-        }, 600);
+        }, 500);
         return;
       }
 
@@ -200,9 +192,30 @@ export default function GlobalJourneyIntro({ onComplete }) {
 
     return () => {
       isCancelled = true;
-      if (animationFrameRef.current) cancelAnimationFrame(animateSimultaneousFlights);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
   }, [phase]);
+
+  // Phase 4: Hold for 3.5 seconds after animation completes, then smoothly redirect to homepage
+  useEffect(() => {
+    if (phase !== 4) return;
+
+    const holdTimer = setTimeout(() => {
+      try {
+        sessionStorage.setItem("admify_intro_seen", "true");
+        window.dispatchEvent(new Event("admify_intro_finished"));
+      } catch (e) {}
+      setPhase(5);
+
+      const completeTimer = setTimeout(() => {
+        if (onComplete) onComplete();
+      }, 950);
+
+      return () => clearTimeout(completeTimer);
+    }, 3500);
+
+    return () => clearTimeout(holdTimer);
+  }, [phase, onComplete]);
 
   // Compute position and rotation for ALL 20 airplanes
   const airplaneTransforms = useMemo(() => {
@@ -212,8 +225,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
 
     DESTINATIONS.forEach((dest) => {
       const progress = flightsProgress[dest.id] || 0;
-      // If landed, airplane gracefully completes and fades out
-      if (progress <= 0 || progress >= 1) return;
+      if (progress <= 0) return;
 
       const path = pathRefs.current[dest.id];
       if (!path) return;
@@ -240,15 +252,11 @@ export default function GlobalJourneyIntro({ onComplete }) {
           scale:
             progress < 0.08
               ? 0.7 + progress * 3.75
-              : progress > 0.92
-              ? 1.0 - (progress - 0.92) * 2.5
+              : progress > 0.90
+              ? 1.0 - (progress - 0.90) * 1.5 // gentle touch-down slowdown
               : 1.0,
-          opacity:
-            progress < 0.04
-              ? progress * 25
-              : progress > 0.95
-              ? (1 - progress) * 20
-              : 1,
+          opacity: progress < 0.04 ? progress * 25 : 1, // Plane stays visible all the way to destination!
+          isLanded: progress >= 1,
         });
       } catch (e) {}
     });
@@ -258,9 +266,13 @@ export default function GlobalJourneyIntro({ onComplete }) {
 
   return (
     <motion.div
-      initial={{ opacity: 1 }}
-      animate={{ opacity: phase === 5 ? 0 : 1, scale: phase === 5 ? 1.02 : 1 }}
-      transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+      initial={{ opacity: 1, filter: "blur(0px)" }}
+      animate={{
+        opacity: phase === 5 ? 0 : 1,
+        scale: phase === 5 ? 1.025 : 1,
+        filter: phase === 5 ? "blur(8px)" : "blur(0px)",
+      }}
+      transition={{ duration: 0.95, ease: [0.16, 1, 0.3, 1] }}
       className="fixed inset-0 h-screen h-[100dvh] w-screen flex flex-col md:flex-row items-stretch justify-between overflow-hidden select-none bg-[#020614] z-[9999]"
       style={{
         fontFamily:
@@ -302,6 +314,21 @@ export default function GlobalJourneyIntro({ onComplete }) {
           ========================================================================= */}
       <aside className="relative z-30 w-full md:w-64 lg:w-72 md:h-full p-3 md:py-5 md:pl-6 md:pr-3 flex flex-col justify-between shrink-0 bg-slate-950/50 md:bg-slate-950/30 md:border-r border-slate-800/50 backdrop-blur-md">
         <div>
+          {/* Top Brand Header on Left Side */}
+          <div className="mb-2.5 pb-2 border-b border-slate-800/70">
+            <div className="flex items-center gap-2 mb-0.5">
+              <div className="w-6 h-6 md:w-7 md:h-7 rounded-lg bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_12px_rgba(99,102,241,0.6)] border border-white/25 shrink-0">
+                <span className="text-white font-black text-xs md:text-sm leading-none">A</span>
+              </div>
+              <span className="text-sm md:text-base font-extrabold tracking-wider text-white leading-tight">
+                ADMIFY
+              </span>
+            </div>
+            <p className="text-[9px] md:text-[9.5px] font-bold tracking-wider uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-400">
+              AI-Powered Global Study Guidance
+            </p>
+          </div>
+
           {/* Header */}
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-800/60">
             <AirplaneSilhouette size={13} className="text-cyan-400" style={{ transform: "rotate(90deg)" }} />
@@ -352,10 +379,12 @@ export default function GlobalJourneyIntro({ onComplete }) {
                     </span>
                   </div>
 
-                  {/* Status Indicator Dot */}
+                  {/* Status Indicator (✓ on landing, pulse while in flight) */}
                   <div className="shrink-0 ml-1.5">
                     {isLanded ? (
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block shadow-[0_0_6px_#06B6D4]" />
+                      <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 border border-cyan-400/60 flex items-center justify-center text-cyan-400">
+                        <Check className="w-2.5 h-2.5" />
+                      </span>
                     ) : isFlying ? (
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
@@ -384,7 +413,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
       </aside>
 
       {/* =========================================================================
-          CENTER / RIGHT: REALISTIC WORLD MAP + SIMULTANEOUS FLIGHTS
+          CENTER / RIGHT: REALISTIC WORLD MAP + NATIONAL FLAG-COLORED COUNTRIES
           ========================================================================= */}
       <main className="relative flex-1 h-full flex flex-col items-center justify-center p-2 md:p-6 overflow-hidden">
         {/* Large SVG Map Container */}
@@ -395,18 +424,18 @@ export default function GlobalJourneyIntro({ onComplete }) {
           <defs>
             {/* Active Flight Trail Gradient */}
             <linearGradient id="activeFlightTrail" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.3" />
+              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.25" />
               <stop offset="70%" stopColor="#38BDF8" stopOpacity="0.85" />
               <stop offset="100%" stopColor="#FFFFFF" stopOpacity="1" />
             </linearGradient>
 
             {/* Completed Landed Trail Gradient */}
             <linearGradient id="completedFlightTrail" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.12" />
-              <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.28" />
+              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.10" />
+              <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.22" />
             </linearGradient>
 
-            {/* Neon Glow Filter */}
+            {/* Neon Route Glow Filter */}
             <filter id="routeGlow" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="2.2" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
@@ -439,7 +468,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
               <line x1="750" y1="30" x2="750" y2="470" stroke="#93C5FD" strokeDasharray="3 6" />
             </g>
 
-            {/* 2. REALISTIC WORLD MAP (Natural Earth high-fidelity landmass) */}
+            {/* 2. REALISTIC WORLD MAP BASE (Natural Earth landmass in dark night earth tone) */}
             <motion.g
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -458,7 +487,15 @@ export default function GlobalJourneyIntro({ onComplete }) {
               />
             </motion.g>
 
-            {/* 3. Global Night City Lights */}
+            {/* 3. AUTHENTIC NATIONAL FLAG PATTERNS CLIPPED TO DESTINATION COUNTRY BOUNDARIES */}
+            {/* Progressive reveal synchronized with airplane progress + dynamic glowing boundary */}
+            <CountryFlagPatterns
+              flightsProgress={flightsProgress}
+              landedDestinations={landedDestinations}
+              phase={phase}
+            />
+
+            {/* 4. Global Night City Lights */}
             <g opacity="0.75">
               {CITY_LIGHTS.map(([cx, cy], i) => (
                 <circle
@@ -472,48 +509,39 @@ export default function GlobalJourneyIntro({ onComplete }) {
               ))}
             </g>
 
-            {/* 4. BANGLADESH GEOGRAPHIC BORDER & CYAN LUMINOUS GLOW */}
+            {/* 5. BANGLADESH GEOGRAPHIC BORDER & NATIONAL FLAG ACCENT (Green + Red Sun + Cyan Glow) */}
             {phase >= 2 && (
               <g>
-                {/* Bangladesh Fill */}
-                <motion.path
-                  d={BANGLADESH_BORDER_PATH}
-                  fill="rgba(6, 182, 212, 0.22)"
-                  initial={{ fillOpacity: 0 }}
-                  animate={{ fillOpacity: 0.22 }}
-                  transition={{ duration: 1.4 }}
-                />
-
                 {/* Bangladesh Drawing Border with Cyan Luminous Glow */}
                 <motion.path
                   d={BANGLADESH_BORDER_PATH}
                   fill="none"
                   stroke="#06B6D4"
-                  strokeWidth="1.8"
+                  strokeWidth="2.0"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   filter="url(#bangladeshGlow)"
                   initial={{ pathLength: 0, opacity: 0 }}
                   animate={{ pathLength: 1, opacity: 1 }}
-                  transition={{ duration: 1.8, ease: "easeInOut" }}
+                  transition={{ duration: 1.6, ease: "easeInOut" }}
                 />
 
-                {/* Second crisper white/cyan inner contour */}
+                {/* Inner White/Cyan Contour */}
                 <motion.path
                   d={BANGLADESH_BORDER_PATH}
                   fill="none"
                   stroke="#E0F2FE"
-                  strokeWidth="0.9"
+                  strokeWidth="0.85"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   initial={{ pathLength: 0, opacity: 0 }}
-                  animate={{ pathLength: 1, opacity: 0.9 }}
-                  transition={{ duration: 1.8, ease: "easeInOut" }}
+                  animate={{ pathLength: 1, opacity: 0.95 }}
+                  transition={{ duration: 1.6, ease: "easeInOut" }}
                 />
               </g>
             )}
 
-            {/* 5. ALL 20 FLIGHT ROUTE ARCS RADIATING FROM DHAKA */}
+            {/* 6. ALL 20 FLIGHT ROUTE ARCS RADIATING FROM DHAKA */}
             {phase >= 3 && (
               <g>
                 {DESTINATIONS.map((dest) => {
@@ -565,7 +593,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
               </g>
             )}
 
-            {/* 6. ALL 20 PHYSICAL AIRPLANES MOVING SIMULTANEOUSLY ACROSS THE GLOBE (NO TEXT OVER AIRPLANES) */}
+            {/* 7. ALL 20 PHYSICAL AIRPLANES MOVING SIMULTANEOUSLY ACROSS THE GLOBE (NO TEXT OVER AIRPLANES) */}
             {phase === 3 &&
               airplaneTransforms.map((plane) => (
                 <g
@@ -590,47 +618,70 @@ export default function GlobalJourneyIntro({ onComplete }) {
                 </g>
               ))}
 
-            {/* 7. DESTINATION MARKERS (Subtle glowing nodes when landed) */}
+            {/* 8. DESTINATION MARKERS (Landing ripples, touchdown glows, and glowing nodes inside country) */}
             {phase >= 3 && (
               <g>
                 {DESTINATIONS.map((dest) => {
                   const isLanded = landedDestinations[dest.id];
                   const progress = flightsProgress[dest.id] || 0;
 
-                  if (!isLanded && progress < 0.85) return null;
+                  if (!isLanded && progress < 0.75) return null;
 
                   return (
                     <g key={`dest-${dest.id}`} transform={`translate(${dest.x}, ${dest.y})`}>
-                      {/* Arrival Ripple Wave */}
-                      {!isLanded && progress > 0.85 && (
+                      {/* Approaching Beacon Pulse */}
+                      {!isLanded && progress >= 0.75 && (
                         <motion.circle
                           r="2.5"
                           fill="none"
                           stroke="#38BDF8"
-                          strokeWidth="1.4"
-                          initial={{ r: 2.5, opacity: 0.95 }}
-                          animate={{ r: [2.5, 14], opacity: [0.95, 0] }}
-                          transition={{ duration: 0.8, repeat: Infinity, ease: "easeOut" }}
+                          strokeWidth="1.2"
+                          initial={{ r: 2.5, opacity: 0.8 }}
+                          animate={{ r: [2.5, 12], opacity: [0.8, 0] }}
+                          transition={{ duration: 0.9, repeat: Infinity, ease: "easeOut" }}
                         />
                       )}
 
-                      {/* Destination Glowing Node */}
+                      {/* Landed Touchdown Pulse Waves */}
+                      {isLanded && (
+                        <>
+                          <motion.circle
+                            r="3"
+                            fill="none"
+                            stroke="#38BDF8"
+                            strokeWidth="1.6"
+                            animate={{ r: [3, 16], opacity: [0.95, 0] }}
+                            transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
+                          />
+                          <motion.circle
+                            r="3"
+                            fill="none"
+                            stroke="#E0F2FE"
+                            strokeWidth="1.0"
+                            animate={{ r: [3, 10], opacity: [0.75, 0] }}
+                            transition={{ duration: 1.4, repeat: Infinity, delay: 0.4, ease: "easeOut" }}
+                          />
+                        </>
+                      )}
+
+                      {/* Destination Glowing Node (Located strictly inside the destination country) */}
                       <circle
                         r={dest.isMajor ? "3" : "2.2"}
-                        fill={isLanded ? "#38BDF8" : "#E2E8F0"}
+                        fill={isLanded ? "#38BDF8" : "#94A3B8"}
                         style={{
                           filter: isLanded
-                            ? "drop-shadow(0 0 6px rgba(56, 189, 248, 0.95))"
+                            ? "drop-shadow(0 0 6px rgba(56, 189, 248, 0.95)) drop-shadow(0 0 12px rgba(6, 182, 212, 0.8))"
                             : "none",
                         }}
                       />
+                      {isLanded && <circle r="1.2" fill="#FFFFFF" />}
                     </g>
                   );
                 })}
               </g>
             )}
 
-            {/* 8. BANGLADESH ORIGIN POINT (Dhaka) */}
+            {/* 9. BANGLADESH ORIGIN POINT (Dhaka) */}
             {phase >= 2 && (
               <g transform={`translate(${ORIGIN.x}, ${ORIGIN.y})`}>
                 {/* Expanding Radar Pulses */}
@@ -694,7 +745,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
         </svg>
 
         {/* =========================================================================
-            CENTRAL HIERARCHY (Positioned in lower-center at bottom: 15-18% of viewport):
+            CENTRAL HIERARCHY (Positioned in lower-middle at bottom: 15-18% of viewport):
               [ADMIFY LOGO]
                   ADMIFY
               AI-Powered Global Study Guidance
@@ -704,40 +755,55 @@ export default function GlobalJourneyIntro({ onComplete }) {
         <AnimatePresence>
           {phase >= 4 && (
             <motion.div
-              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute bottom-[14%] sm:bottom-[16%] md:bottom-[17%] inset-x-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none z-30"
+              exit={{ opacity: 0, y: -10, filter: "blur(6px)" }}
+              transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute bottom-[15%] sm:bottom-[17%] md:bottom-[18%] inset-x-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none z-30"
             >
               {/* 1. Central Admify Logo Mark + ADMIFY Title */}
-              <div className="flex items-center gap-2.5 mb-1.5">
-                <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.6)] border border-white/25">
-                  <span className="text-white font-black text-base md:text-lg leading-none">A</span>
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.92 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+                className="flex items-center gap-2.5 mb-1.5"
+              >
+                <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_22px_rgba(99,102,241,0.75)] border border-white/30">
+                  <span className="text-white font-black text-sm md:text-base leading-none">A</span>
                 </div>
-                <span className="text-lg md:text-xl font-extrabold tracking-wider text-white leading-tight">
+                <span className="text-lg md:text-xl font-extrabold tracking-wider text-white leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
                   ADMIFY
                 </span>
-              </div>
+              </motion.div>
 
               {/* 2. AI-Powered Global Study Guidance Tagline */}
-              <p className="text-[11px] md:text-xs font-bold tracking-widest uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 mb-2.5">
+              <motion.p
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="text-[11px] md:text-xs font-bold tracking-widest uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 mb-2.5 drop-shadow-[0_2px_8px_rgba(6,182,212,0.5)]"
+              >
                 AI-Powered Global Study Guidance
-              </p>
+              </motion.p>
 
-              {/* 3. Main Headline: Your Journey. Your University. Your Future. */}
-              <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-blue-200 drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)] max-w-3xl leading-tight">
+              {/* 3. Main Headline: Your Journey. Your University. Your Future. strictly in ONE line */}
+              <motion.h1
+                initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.9, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                className="whitespace-nowrap text-base sm:text-xl md:text-2xl lg:text-3xl xl:text-[34px] font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-blue-100 drop-shadow-[0_4px_24px_rgba(0,0,0,0.95)] max-w-none px-4 leading-normal"
+              >
                 Your Journey. Your University. Your Future.
-              </h1>
+              </motion.h1>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Desktop Skip Intro Button (Bottom Right, shifted left to clear chat widget) */}
-        <div className="hidden md:block absolute bottom-7 right-28 lg:right-32 z-40">
+        {/* Desktop Skip Intro Button (Bottom Right - chat widget is hidden during intro) */}
+        <div className="hidden md:block absolute bottom-8 right-8 z-40">
           <button
             onClick={handleSkip}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/15 bg-slate-900/70 hover:bg-slate-800/90 backdrop-blur-md text-slate-300 hover:text-white hover:border-cyan-500/50 text-xs font-semibold tracking-wide transition-all shadow-xl hover:scale-105 active:scale-95 cursor-pointer"
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/15 bg-slate-900/75 hover:bg-slate-800/90 backdrop-blur-md text-slate-300 hover:text-white hover:border-cyan-500/50 text-xs font-semibold tracking-wide transition-all shadow-xl hover:scale-105 active:scale-95 cursor-pointer"
             aria-label="Skip introduction"
           >
             <span>Skip Intro</span>
