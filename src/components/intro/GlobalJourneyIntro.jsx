@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Plane } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import {
   ORIGIN,
   DESTINATIONS,
@@ -11,7 +11,7 @@ import {
 } from "./worldMapData";
 
 // Realistic commercial airplane silhouette (fuselage, swept wings, engines, tail)
-function AirplaneSilhouette({ size = 20, className = "" }) {
+function AirplaneSilhouette({ size = 20, className = "", style = {} }) {
   return (
     <svg
       width={size}
@@ -22,6 +22,7 @@ function AirplaneSilhouette({ size = 20, className = "" }) {
       style={{
         filter:
           "drop-shadow(0 0 6px rgba(56, 189, 248, 0.95)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.8))",
+        ...style,
       }}
     >
       <path d="M12 1.5 C12.6 1.5 13.2 2.2 13.2 4.2 L13.2 9.2 L22.5 14.2 L22.5 16.2 L13.2 13.6 L13.2 18.2 L16.5 20.8 L16.5 22.4 L12 21.4 L7.5 22.4 L7.5 20.8 L10.8 18.2 L10.8 13.6 L1.5 16.2 L1.5 14.2 L10.8 9.2 L10.8 4.2 C10.8 2.2 11.4 1.5 12 1.5 Z" />
@@ -199,7 +200,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
 
     return () => {
       isCancelled = true;
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (animationFrameRef.current) cancelAnimationFrame(animateSimultaneousFlights);
     };
   }, [phase]);
 
@@ -260,7 +261,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
       initial={{ opacity: 1 }}
       animate={{ opacity: phase === 5 ? 0 : 1, scale: phase === 5 ? 1.02 : 1 }}
       transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed inset-0 z-[9999] flex flex-col md:flex-row items-stretch justify-between overflow-hidden select-none bg-[#020614]"
+      className="fixed inset-0 h-screen h-[100dvh] w-screen flex flex-col md:flex-row items-stretch justify-between overflow-hidden select-none bg-[#020614] z-[9999]"
       style={{
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif",
@@ -297,20 +298,20 @@ export default function GlobalJourneyIntro({ onComplete }) {
       </div>
 
       {/* =========================================================================
-          LEFT-SIDE DESTINATION LIST (OUTSIDE THE MAP - FLIGHT JOURNEY TRACKER)
+          1. LEFT-SIDE FLIGHT LIST — EXACT FORMAT: Dhaka → ✈ → Destination
           ========================================================================= */}
-      <aside className="relative z-30 w-full md:w-64 lg:w-72 md:h-full p-4 md:py-6 md:pl-8 md:pr-4 flex flex-col justify-between shrink-0 bg-slate-950/40 md:bg-slate-950/25 md:border-r border-slate-800/40 backdrop-blur-md">
+      <aside className="relative z-30 w-full md:w-64 lg:w-72 md:h-full p-3 md:py-5 md:pl-6 md:pr-3 flex flex-col justify-between shrink-0 bg-slate-950/50 md:bg-slate-950/30 md:border-r border-slate-800/50 backdrop-blur-md">
         <div>
           {/* Header */}
-          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800/50">
-            <Plane className="w-3.5 h-3.5 text-cyan-400 rotate-45" />
-            <span className="text-[11px] font-bold text-cyan-300 uppercase tracking-widest">
-              Global Study Routes
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-800/60">
+            <AirplaneSilhouette size={13} className="text-cyan-400" style={{ transform: "rotate(90deg)" }} />
+            <span className="text-[10px] md:text-[11px] font-bold text-cyan-300 uppercase tracking-widest">
+              Global Study Journey
             </span>
           </div>
 
-          {/* Destination Tracker Rows */}
-          <div className="flex flex-col space-y-0.5 max-h-[220px] md:max-h-[calc(100vh-140px)] overflow-y-auto pr-1">
+          {/* Destination Tracker Rows (Dhaka → ✈ → Destination) */}
+          <div className="flex flex-col space-y-0.5 max-h-[220px] md:max-h-[calc(100vh-80px)] overflow-y-auto pr-1">
             {displayDestinations.map((dest) => {
               const isLanded = landedDestinations[dest.id];
               const isFlying = phase === 3 && !isLanded;
@@ -318,36 +319,41 @@ export default function GlobalJourneyIntro({ onComplete }) {
               return (
                 <div
                   key={dest.id}
-                  className={`flex items-center justify-between px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-300 ${
+                  className={`flex items-center justify-between px-2 py-0.5 md:py-1 rounded text-[11px] font-medium transition-all duration-300 border-b border-slate-850/40 ${
                     isLanded
-                      ? "text-white bg-blue-500/10 border border-blue-500/20"
+                      ? "text-white bg-blue-500/10 border-blue-500/20"
                       : isFlying
-                      ? "text-cyan-200 bg-cyan-950/20"
-                      : "text-slate-500"
+                      ? "text-cyan-200 bg-cyan-950/25"
+                      : "text-slate-400"
                   }`}
                 >
-                  <div className="flex items-center gap-2 truncate">
-                    {/* Small airplane icon representing journey from Dhaka */}
-                    <Plane
-                      className={`w-3 h-3 shrink-0 transition-all duration-300 ${
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] font-semibold text-cyan-400/90 shrink-0">
+                      Dhaka
+                    </span>
+                    <span className="text-[9px] text-slate-500 shrink-0">→</span>
+                    <AirplaneSilhouette
+                      size={11}
+                      className={`shrink-0 transition-colors duration-300 ${
                         isLanded
                           ? "text-cyan-400"
                           : isFlying
                           ? "text-cyan-300 animate-pulse"
-                          : "text-slate-600"
+                          : "text-slate-500"
                       }`}
                       style={{
-                        transform: "rotate(45deg)",
-                        filter: isLanded
-                          ? "drop-shadow(0 0 4px #06B6D4)"
-                          : "none",
+                        transform: "rotate(90deg)",
+                        filter: isLanded ? "drop-shadow(0 0 4px #06B6D4)" : "none",
                       }}
                     />
-                    <span className="truncate">{dest.name}</span>
+                    <span className="text-[9px] text-slate-500 shrink-0">→</span>
+                    <span className="truncate text-[11px] font-medium text-slate-200">
+                      {dest.name}
+                    </span>
                   </div>
 
                   {/* Status Indicator Dot */}
-                  <div className="shrink-0 ml-2">
+                  <div className="shrink-0 ml-1.5">
                     {isLanded ? (
                       <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block shadow-[0_0_6px_#06B6D4]" />
                     ) : isFlying ? (
@@ -356,7 +362,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
                       </span>
                     ) : (
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-700 inline-block" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-700/60 inline-block" />
                     )}
                   </div>
                 </div>
@@ -366,7 +372,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
         </div>
 
         {/* Mobile-only Skip button placement */}
-        <div className="md:hidden mt-3 pt-2 border-t border-slate-800/40 flex justify-end">
+        <div className="md:hidden mt-2 pt-2 border-t border-slate-800/40 flex justify-end">
           <button
             onClick={handleSkip}
             className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-slate-900/80 text-xs font-semibold text-slate-300"
@@ -378,10 +384,10 @@ export default function GlobalJourneyIntro({ onComplete }) {
       </aside>
 
       {/* =========================================================================
-          CENTER / RIGHT: REALISTIC FULL WORLD MAP + ALL AIRPLANES + CENTRAL HEADLINE
+          CENTER / RIGHT: REALISTIC WORLD MAP + SIMULTANEOUS FLIGHTS
           ========================================================================= */}
       <main className="relative flex-1 h-full flex flex-col items-center justify-center p-2 md:p-6 overflow-hidden">
-        {/* Large SVG Map Container (80-90% screen occupancy) */}
+        {/* Large SVG Map Container */}
         <svg
           viewBox="0 0 1000 500"
           className="w-full h-full max-h-[560px] md:max-h-[640px] object-contain overflow-visible"
@@ -559,7 +565,7 @@ export default function GlobalJourneyIntro({ onComplete }) {
               </g>
             )}
 
-            {/* 6. ALL 20 PHYSICAL AIRPLANES MOVING SIMULTANEOUSLY ACROSS THE GLOBE */}
+            {/* 6. ALL 20 PHYSICAL AIRPLANES MOVING SIMULTANEOUSLY ACROSS THE GLOBE (NO TEXT OVER AIRPLANES) */}
             {phase === 3 &&
               airplaneTransforms.map((plane) => (
                 <g
@@ -688,11 +694,12 @@ export default function GlobalJourneyIntro({ onComplete }) {
         </svg>
 
         {/* =========================================================================
-            CENTRAL HIERARCHY:
-            1. ADMIFY LOGO
-            2. ADMIFY + AI-Powered Global Study Guidance
-            3. Your Journey. Your University. Your Future.
-            (Centered in safe lower-center area, away from Bangladesh)
+            CENTRAL HIERARCHY (Positioned in lower-center at bottom: 15-18% of viewport):
+              [ADMIFY LOGO]
+                  ADMIFY
+              AI-Powered Global Study Guidance
+              ↓
+              Your Journey. Your University. Your Future.
             ========================================================================= */}
         <AnimatePresence>
           {phase >= 4 && (
@@ -701,33 +708,33 @@ export default function GlobalJourneyIntro({ onComplete }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute bottom-8 md:bottom-12 inset-x-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none z-30"
+              className="absolute bottom-[14%] sm:bottom-[16%] md:bottom-[17%] inset-x-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none z-30"
             >
-              {/* Central Admify Logo Mark */}
-              <div className="flex items-center gap-2.5 mb-2">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.6)] border border-white/25">
-                  <span className="text-white font-black text-base leading-none">A</span>
+              {/* 1. Central Admify Logo Mark + ADMIFY Title */}
+              <div className="flex items-center gap-2.5 mb-1.5">
+                <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.6)] border border-white/25">
+                  <span className="text-white font-black text-base md:text-lg leading-none">A</span>
                 </div>
-                <div className="text-left">
-                  <span className="text-sm md:text-base font-extrabold tracking-wider text-white block leading-tight">
-                    ADMIFY
-                  </span>
-                  <span className="text-[10px] md:text-[11px] font-semibold tracking-wide text-cyan-300 block leading-tight">
-                    AI-Powered Global Study Guidance
-                  </span>
-                </div>
+                <span className="text-lg md:text-xl font-extrabold tracking-wider text-white leading-tight">
+                  ADMIFY
+                </span>
               </div>
 
-              {/* Main Headline */}
-              <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-blue-200 drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)] max-w-3xl">
+              {/* 2. AI-Powered Global Study Guidance Tagline */}
+              <p className="text-[11px] md:text-xs font-bold tracking-widest uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 mb-2.5">
+                AI-Powered Global Study Guidance
+              </p>
+
+              {/* 3. Main Headline: Your Journey. Your University. Your Future. */}
+              <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-blue-200 drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)] max-w-3xl leading-tight">
                 Your Journey. Your University. Your Future.
               </h1>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Desktop Skip Intro Button (Bottom Right) */}
-        <div className="hidden md:block absolute bottom-6 right-8 z-40">
+        {/* Desktop Skip Intro Button (Bottom Right, shifted left to clear chat widget) */}
+        <div className="hidden md:block absolute bottom-7 right-28 lg:right-32 z-40">
           <button
             onClick={handleSkip}
             className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/15 bg-slate-900/70 hover:bg-slate-800/90 backdrop-blur-md text-slate-300 hover:text-white hover:border-cyan-500/50 text-xs font-semibold tracking-wide transition-all shadow-xl hover:scale-105 active:scale-95 cursor-pointer"
