@@ -143,23 +143,25 @@ function App() {
           <Route path="dashboard" element={<UniRepDashboard />} />
         </Route>
 
-        {/* Admin Portal Nested Routes */}
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<AdmDashboard />} />
-          <Route path="students" element={<AdmStudents />} />
-          <Route path="agents" element={<AdmAgents />} />
-          <Route path="live-agents" element={<AdmLiveAgents />} />
-          <Route path="universities" element={<AdmUniversities />} />
-          <Route path="scholarships" element={<AdmScholarships />} />
-          <Route path="applications" element={<AdmApplications />} />
-          <Route path="recommendations" element={<AdmRecommendations />} />
-          <Route path="sop-lor" element={<AdmSopLor />} />
-          <Route path="wallet" element={<AdmWallet />} />
-          <Route path="payments" element={<AdmPayments />} />
-          <Route path="notifications" element={<AdmNotifications />} />
-          <Route path="reports" element={<AdmReports />} />
-          <Route path="settings" element={<AdmSettings />} />
+        {/* Admin Portal Nested Routes (Role-protected: admin only) */}
+        <Route element={<ProtectedRoute allowedRoles={['admin']} redirectTo="/admin/login" />}>
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="dashboard" element={<AdmDashboard />} />
+            <Route path="students" element={<AdmStudents />} />
+            <Route path="agents" element={<AdmAgents />} />
+            <Route path="live-agents" element={<AdmLiveAgents />} />
+            <Route path="universities" element={<AdmUniversities />} />
+            <Route path="scholarships" element={<AdmScholarships />} />
+            <Route path="applications" element={<AdmApplications />} />
+            <Route path="recommendations" element={<AdmRecommendations />} />
+            <Route path="sop-lor" element={<AdmSopLor />} />
+            <Route path="wallet" element={<AdmWallet />} />
+            <Route path="payments" element={<AdmPayments />} />
+            <Route path="notifications" element={<AdmNotifications />} />
+            <Route path="reports" element={<AdmReports />} />
+            <Route path="settings" element={<AdmSettings />} />
+          </Route>
         </Route>
 
         {/* Catch-all fallback */}

@@ -48,6 +48,23 @@ export async function apiRequest(endpoint, options = {}) {
       const error = new Error(errorMsg);
       error.status = res.status;
       error.data = data;
+
+      // If unauthorized on a protected endpoint, notify application to clear auth state
+      if (
+        res.status === 401 &&
+        !endpoint.includes('/api/auth/login') &&
+        !endpoint.includes('/api/auth/admin/login') &&
+        !endpoint.includes('/api/auth/register')
+      ) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('admify_auth_unauthorized', {
+              detail: { endpoint, status: res.status },
+            })
+          );
+        }
+      }
+
       throw error;
     }
 

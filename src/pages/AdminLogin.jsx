@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, ShieldCheck, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
@@ -12,6 +12,7 @@ function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -19,7 +20,9 @@ function AdminLogin() {
     try {
       await adminLogin(email, password);
       toast.success("Administrator clearance granted");
-      navigate("/admin/dashboard");
+      const from = location.state?.from?.pathname;
+      const destination = from && from.startsWith("/admin") && from !== "/admin/login" ? from : "/admin/dashboard";
+      navigate(destination, { replace: true });
     } catch (err) {
       toast.error(err.message || "Invalid administrator credentials");
     } finally {

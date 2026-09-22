@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../../context/AuthContext";
 import {
   LayoutDashboard, Users, UserCheck, Headphones, Building2, Award,
   FileCheck, Sparkles, FileText, Wallet, CreditCard, Bell, BarChart3,
@@ -34,13 +35,29 @@ const NOTIFS = [
 ];
 
 export default function AdminLayout() {
+  const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen]   = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
 
-  const handleLogout = () => navigate("/admin/login");
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } finally {
+      navigate("/admin/login", { replace: true });
+    }
+  };
+
+  const adminName = user?.name || user?.user_metadata?.full_name || "Super Admin";
+  const initials = adminName
+    .split(" ")
+    .map((n) => n[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "SA";
 
   return (
     <div className="flex min-h-screen" style={{ background: "#050B1F", fontFamily: "'Inter',sans-serif" }}>
@@ -168,10 +185,10 @@ export default function AdminLayout() {
             <div className="relative">
               <button onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
                 className="flex items-center gap-2 pl-3 border-l border-white/8 cursor-pointer hover:opacity-80 transition-opacity">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center text-xs font-black text-white flex-shrink-0">SA</div>
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center text-xs font-black text-white flex-shrink-0">{initials}</div>
                 <div className="hidden md:block text-left">
-                  <p className="text-white text-xs font-bold leading-none">Super Admin</p>
-                  <p className="text-violet-400 text-[10px] mt-0.5">System Administrator</p>
+                  <p className="text-white text-xs font-bold leading-none">{adminName}</p>
+                  <p className="text-violet-400 text-[10px] mt-0.5">{user?.email || "System Administrator"}</p>
                 </div>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden md:block" />
               </button>
