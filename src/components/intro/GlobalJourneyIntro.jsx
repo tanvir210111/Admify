@@ -1,463 +1,743 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Sparkles, Globe } from "lucide-react";
-import { ORIGIN, DESTINATIONS, CONTINENT_PATHS, getFlightArc } from "./worldMapData";
+import { ArrowRight, Plane } from "lucide-react";
+import {
+  ORIGIN,
+  DESTINATIONS,
+  WORLD_LAND_PATH,
+  BANGLADESH_BORDER_PATH,
+  CITY_LIGHTS,
+  getFlightArc,
+} from "./worldMapData";
+
+// Realistic commercial airplane silhouette (fuselage, swept wings, engines, tail)
+function AirplaneSilhouette({ size = 20, className = "" }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      style={{
+        filter:
+          "drop-shadow(0 0 6px rgba(56, 189, 248, 0.95)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.8))",
+      }}
+    >
+      <path d="M12 1.5 C12.6 1.5 13.2 2.2 13.2 4.2 L13.2 9.2 L22.5 14.2 L22.5 16.2 L13.2 13.6 L13.2 18.2 L16.5 20.8 L16.5 22.4 L12 21.4 L7.5 22.4 L7.5 20.8 L10.8 18.2 L10.8 13.6 L1.5 16.2 L1.5 14.2 L10.8 9.2 L10.8 4.2 C10.8 2.2 11.4 1.5 12 1.5 Z" />
+    </svg>
+  );
+}
+
+// Distance-based flight durations for simultaneous launch (all take off together at t = 3.8s)
+const FLIGHT_DURATIONS = {
+  // East Asia (Quickest arrival: ~7.2s - 7.6s)
+  kr: 7200,
+  jp: 7600,
+
+  // Europe (Medium arrival: ~8.6s - 9.8s)
+  fi: 8600,
+  at: 8800,
+  se: 8900,
+  de: 9000,
+  it: 9000,
+  ch: 9100,
+  dk: 9200,
+  no: 9300,
+  nl: 9400,
+  be: 9400,
+  fr: 9500,
+  es: 9600,
+  uk: 9700,
+  ie: 9800,
+
+  // Oceania (Longer arrival: ~10.2s - 10.8s)
+  au: 10200,
+  nz: 10800,
+
+  // North America (Longest arrival: ~11.4s - 11.8s)
+  ca: 11400,
+  us: 11800,
+};
 
 export default function GlobalJourneyIntro({ onComplete }) {
+  // Phases:
+  // 1: World Map Fade-in (0 - 2.0s)
+  // 2: Bangladesh Border Illuminate & Dhaka Origin Activate (2.0 - 3.8s)
+  // 3: ALL AIRPLANES LAUNCH TOGETHER & Fly to Destinations (3.8 - 15.6s)
+  // 4: All Flights Landed + Central Headline & Admify Branding Prominent (15.6 - 19.5s)
+  // 5: Dissolve Transition to Homepage (19.5 - 20.2s)
   const [phase, setPhase] = useState(1);
+  const [flightsProgress, setFlightsProgress] = useState({}); // { [destId]: progress 0 to 1 }
+  const [landedDestinations, setLandedDestinations] = useState({}); // { [destId]: boolean }
   const [isMobile, setIsMobile] = useState(false);
-  const [completedRoutes, setCompletedRoutes] = useState({});
 
-  // Detect mobile viewport and handle resize
+  const pathRefs = useRef({});
+  const pathLengthsRef = useRef({});
+  const animationFrameRef = useRef(null);
+  const flightStartTimeRef = useRef(null);
+
+  // Responsive check
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    const checkViewport = () => setIsMobile(window.innerWidth < 768);
+    checkViewport();
+    window.addEventListener("resize", checkViewport);
+    return () => window.removeEventListener("resize", checkViewport);
   }, []);
 
-  // Filter destinations for responsive density
-  const visibleDestinations = useMemo(() => {
+  // Display destinations (all 20 on desktop, top 10 on mobile)
+  const displayDestinations = useMemo(() => {
     return isMobile ? DESTINATIONS.filter((d) => d.isMajor) : DESTINATIONS;
   }, [isMobile]);
 
-  // Timed progression through the 6 cinematic phases
-  useEffect(() => {
-    // Respect prefers-reduced-motion
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (prefersReducedMotion) {
-      const quickTimer = setTimeout(() => {
-        handleSkip();
-      }, 1500);
-      return () => clearTimeout(quickTimer);
-    }
-
-    const timers = [
-      // Phase 2: Highlight Dhaka, Bangladesh (1.6s)
-      setTimeout(() => setPhase(2), 1600),
-
-      // Phase 3: Launch flight paths from Bangladesh (2.8s)
-      setTimeout(() => setPhase(3), 2800),
-
-      // Phase 4: Global Network & Inspiring Quote (6.5s)
-      setTimeout(() => setPhase(4), 6500),
-
-      // Phase 5: Admify Brand Reveal (8.0s)
-      setTimeout(() => setPhase(5), 8000),
-
-      // Phase 6: Dissolve to Homepage (9.6s)
-      setTimeout(() => {
-        setPhase(6);
-        setTimeout(() => {
-          if (onComplete) onComplete();
-        }, 700);
-      }, 9600),
-    ];
-
-    return () => timers.forEach(clearTimeout);
-  }, [onComplete]);
-
+  // Handle Skip Intro
   const handleSkip = () => {
-    setPhase(6);
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    try {
+      sessionStorage.setItem("admify_intro_seen", "true");
+    } catch (e) {}
+    setPhase(5);
     setTimeout(() => {
       if (onComplete) onComplete();
-    }, 400);
+    }, 450);
   };
 
-  const handleRouteComplete = (id) => {
-    setCompletedRoutes((prev) => ({ ...prev, [id]: true }));
-  };
-
-  // Generate deterministic stars for performance without canvas overhead
-  const stars = useMemo(() => {
-    const count = isMobile ? 18 : 36;
-    const items = [];
-    for (let i = 0; i < count; i++) {
-      items.push({
-        id: i,
-        top: `${(i * 17) % 94 + 3}%`,
-        left: `${(i * 29) % 96 + 2}%`,
-        size: (i % 3) + 1.2,
-        delay: (i % 5) * 0.4,
-        duration: 2.5 + (i % 3),
-      });
+  // Phase Orchestration
+  useEffect(() => {
+    // Accessibility check: prefers-reduced-motion
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      const timer = setTimeout(handleSkip, 1000);
+      return () => clearTimeout(timer);
     }
-    return items;
-  }, [isMobile]);
+
+    // Phase 1 -> 2: Map fades in, then Bangladesh illuminates (2.0s)
+    const t1 = setTimeout(() => {
+      setPhase(2);
+    }, 2000);
+
+    // Phase 2 -> 3: Bangladesh illuminates, Dhaka activates, then ALL FLIGHTS LAUNCH AT ONCE (3.8s)
+    const t2 = setTimeout(() => {
+      setPhase(3);
+      flightStartTimeRef.current = performance.now();
+    }, 3800);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []);
+
+  // SIMULTANEOUS FLIGHT ANIMATION LOOP (All 20 planes move concurrently)
+  useEffect(() => {
+    if (phase !== 3) return;
+
+    let isCancelled = false;
+
+    const animateSimultaneousFlights = (now) => {
+      if (isCancelled) return;
+
+      if (!flightStartTimeRef.current) {
+        flightStartTimeRef.current = now;
+      }
+
+      const elapsed = now - flightStartTimeRef.current;
+      const newProgress = {};
+      const newLanded = {};
+      let allLanded = true;
+
+      DESTINATIONS.forEach((dest) => {
+        const duration = FLIGHT_DURATIONS[dest.id] || 9500;
+        const rawProgress = Math.min(1, elapsed / duration);
+
+        // Smooth cubic ease: natural takeoff acceleration, smooth cruise, gentle landing slowdown
+        const eased =
+          rawProgress < 0.5
+            ? 4 * rawProgress * rawProgress * rawProgress
+            : 1 - Math.pow(-2 * rawProgress + 2, 3) / 2;
+
+        newProgress[dest.id] = eased;
+
+        if (rawProgress >= 1) {
+          newLanded[dest.id] = true;
+        } else {
+          allLanded = false;
+        }
+      });
+
+      setFlightsProgress(newProgress);
+      setLandedDestinations(newLanded);
+
+      if (allLanded) {
+        // All airplanes have reached their destinations!
+        // Move to Phase 4: Full visualization & Headline prominence
+        setTimeout(() => {
+          if (isCancelled) return;
+          setPhase(4);
+
+          // Phase 5: Smooth dissolve into homepage after 3.2s
+          setTimeout(() => {
+            if (isCancelled) return;
+            try {
+              sessionStorage.setItem("admify_intro_seen", "true");
+            } catch (e) {}
+            setPhase(5);
+            setTimeout(() => {
+              if (onComplete) onComplete();
+            }, 750);
+          }, 3200);
+        }, 600);
+        return;
+      }
+
+      animationFrameRef.current = requestAnimationFrame(animateSimultaneousFlights);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(animateSimultaneousFlights);
+
+    return () => {
+      isCancelled = true;
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [phase]);
+
+  // Compute position and rotation for ALL 20 airplanes
+  const airplaneTransforms = useMemo(() => {
+    if (phase !== 3) return [];
+
+    const planes = [];
+
+    DESTINATIONS.forEach((dest) => {
+      const progress = flightsProgress[dest.id] || 0;
+      // If landed, airplane gracefully completes and fades out
+      if (progress <= 0 || progress >= 1) return;
+
+      const path = pathRefs.current[dest.id];
+      if (!path) return;
+
+      try {
+        let totalLen = pathLengthsRef.current[dest.id];
+        if (!totalLen) {
+          totalLen = path.getTotalLength();
+          pathLengthsRef.current[dest.id] = totalLen;
+        }
+
+        const curDist = Math.max(0, Math.min(totalLen, progress * totalLen));
+        const p1 = path.getPointAtLength(curDist);
+        const p2 = path.getPointAtLength(Math.min(totalLen, curDist + 2));
+        // +90 degrees aligns aircraft nose with tangent path
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI) + 90;
+
+        planes.push({
+          id: dest.id,
+          name: dest.name,
+          x: p1.x,
+          y: p1.y,
+          angle: angle,
+          scale:
+            progress < 0.08
+              ? 0.7 + progress * 3.75
+              : progress > 0.92
+              ? 1.0 - (progress - 0.92) * 2.5
+              : 1.0,
+          opacity:
+            progress < 0.04
+              ? progress * 25
+              : progress > 0.95
+              ? (1 - progress) * 20
+              : 1,
+        });
+      } catch (e) {}
+    });
+
+    return planes;
+  }, [phase, flightsProgress]);
 
   return (
     <motion.div
       initial={{ opacity: 1 }}
-      animate={{ opacity: phase === 6 ? 0 : 1, scale: phase === 6 ? 1.04 : 1 }}
-      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden select-none"
+      animate={{ opacity: phase === 5 ? 0 : 1, scale: phase === 5 ? 1.02 : 1 }}
+      transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+      className="fixed inset-0 z-[9999] flex flex-col md:flex-row items-stretch justify-between overflow-hidden select-none bg-[#020614]"
       style={{
-        background: "radial-gradient(ellipse at 50% 45%, #0a112e 0%, #050b1f 65%, #020612 100%)",
-        fontFamily: "'Inter', sans-serif",
+        fontFamily:
+          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif",
       }}
     >
-      {/* ── Ambient Background Starfield ── */}
+      {/* ── Realistic Space & Atmospheric Background ── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {stars.map((star) => (
-          <motion.div
-            key={star.id}
-            initial={{ opacity: 0.15 }}
-            animate={{ opacity: [0.15, 0.75, 0.15], scale: [0.85, 1.2, 0.85] }}
-            transition={{
-              duration: star.duration,
-              repeat: Infinity,
-              delay: star.delay,
-              ease: "easeInOut",
-            }}
-            className="absolute rounded-full bg-cyan-200"
+        {/* Deep Ocean & Space Radial Gradient */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse at 60% 48%, #08132D 0%, #03081A 55%, #01030D 100%)",
+          }}
+        />
+
+        {/* Atmospheric Cyan Glow behind World Map */}
+        <div className="absolute top-1/2 left-2/3 -translate-x-1/2 -translate-y-1/2 w-[65rem] h-[36rem] bg-blue-600/5 rounded-full blur-[140px] pointer-events-none" />
+
+        {/* Starfield */}
+        {[...Array(isMobile ? 14 : 28)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full bg-blue-100/30"
             style={{
-              top: star.top,
-              left: star.left,
-              width: star.size,
-              height: star.size,
-              boxShadow: "0 0 6px rgba(103, 232, 249, 0.5)",
+              top: `${(i * 19) % 94 + 3}%`,
+              left: `${(i * 31) % 96 + 2}%`,
+              width: i % 4 === 0 ? 2 : 1,
+              height: i % 4 === 0 ? 2 : 1,
+              opacity: (i % 3) * 0.25 + 0.2,
             }}
           />
         ))}
-
-        {/* Ambient colored lighting blooms */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-[28rem] h-[28rem] bg-blue-600/10 rounded-full blur-[140px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[34rem] h-[34rem] bg-cyan-500/5 rounded-full blur-[160px]" />
       </div>
 
-      {/* ── SVG World Map & Global Flight Network ── */}
-      <div className="relative w-full max-w-[1300px] h-[75vh] max-h-[640px] px-2 md:px-6 flex items-center justify-center">
+      {/* =========================================================================
+          LEFT-SIDE DESTINATION LIST (OUTSIDE THE MAP - FLIGHT JOURNEY TRACKER)
+          ========================================================================= */}
+      <aside className="relative z-30 w-full md:w-64 lg:w-72 md:h-full p-4 md:py-6 md:pl-8 md:pr-4 flex flex-col justify-between shrink-0 bg-slate-950/40 md:bg-slate-950/25 md:border-r border-slate-800/40 backdrop-blur-md">
+        <div>
+          {/* Header */}
+          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800/50">
+            <Plane className="w-3.5 h-3.5 text-cyan-400 rotate-45" />
+            <span className="text-[11px] font-bold text-cyan-300 uppercase tracking-widest">
+              Global Study Routes
+            </span>
+          </div>
+
+          {/* Destination Tracker Rows */}
+          <div className="flex flex-col space-y-0.5 max-h-[220px] md:max-h-[calc(100vh-140px)] overflow-y-auto pr-1">
+            {displayDestinations.map((dest) => {
+              const isLanded = landedDestinations[dest.id];
+              const isFlying = phase === 3 && !isLanded;
+
+              return (
+                <div
+                  key={dest.id}
+                  className={`flex items-center justify-between px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-300 ${
+                    isLanded
+                      ? "text-white bg-blue-500/10 border border-blue-500/20"
+                      : isFlying
+                      ? "text-cyan-200 bg-cyan-950/20"
+                      : "text-slate-500"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    {/* Small airplane icon representing journey from Dhaka */}
+                    <Plane
+                      className={`w-3 h-3 shrink-0 transition-all duration-300 ${
+                        isLanded
+                          ? "text-cyan-400"
+                          : isFlying
+                          ? "text-cyan-300 animate-pulse"
+                          : "text-slate-600"
+                      }`}
+                      style={{
+                        transform: "rotate(45deg)",
+                        filter: isLanded
+                          ? "drop-shadow(0 0 4px #06B6D4)"
+                          : "none",
+                      }}
+                    />
+                    <span className="truncate">{dest.name}</span>
+                  </div>
+
+                  {/* Status Indicator Dot */}
+                  <div className="shrink-0 ml-2">
+                    {isLanded ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block shadow-[0_0_6px_#06B6D4]" />
+                    ) : isFlying ? (
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+                      </span>
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-700 inline-block" />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Mobile-only Skip button placement */}
+        <div className="md:hidden mt-3 pt-2 border-t border-slate-800/40 flex justify-end">
+          <button
+            onClick={handleSkip}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-slate-900/80 text-xs font-semibold text-slate-300"
+          >
+            <span>Skip Intro</span>
+            <ArrowRight className="w-3 h-3 text-cyan-400" />
+          </button>
+        </div>
+      </aside>
+
+      {/* =========================================================================
+          CENTER / RIGHT: REALISTIC FULL WORLD MAP + ALL AIRPLANES + CENTRAL HEADLINE
+          ========================================================================= */}
+      <main className="relative flex-1 h-full flex flex-col items-center justify-center p-2 md:p-6 overflow-hidden">
+        {/* Large SVG Map Container (80-90% screen occupancy) */}
         <svg
           viewBox="0 0 1000 500"
-          className="w-full h-full object-contain overflow-visible"
-          style={{ filter: "drop-shadow(0 0 25px rgba(5, 11, 31, 0.9))" }}
+          className="w-full h-full max-h-[560px] md:max-h-[640px] object-contain overflow-visible"
         >
           <defs>
-            {/* Gradients */}
-            <linearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.9" />
-              <stop offset="60%" stopColor="#8B5CF6" stopOpacity="0.85" />
-              <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.95" />
-            </linearGradient>
-
-            <linearGradient id="planeTrail" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0" />
-              <stop offset="80%" stopColor="#38BDF8" stopOpacity="0.8" />
+            {/* Active Flight Trail Gradient */}
+            <linearGradient id="activeFlightTrail" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.3" />
+              <stop offset="70%" stopColor="#38BDF8" stopOpacity="0.85" />
               <stop offset="100%" stopColor="#FFFFFF" stopOpacity="1" />
             </linearGradient>
 
-            <radialGradient id="originPulseGlow">
-              <stop offset="0%" stopColor="#10B981" stopOpacity="0.9" />
-              <stop offset="50%" stopColor="#06B6D4" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#06B6D4" stopOpacity="0" />
-            </radialGradient>
+            {/* Completed Landed Trail Gradient */}
+            <linearGradient id="completedFlightTrail" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.12" />
+              <stop offset="100%" stopColor="#60A5FA" stopOpacity="0.28" />
+            </linearGradient>
 
-            <radialGradient id="destinationPulseGlow">
-              <stop offset="0%" stopColor="#A855F7" stopOpacity="0.9" />
-              <stop offset="60%" stopColor="#3B82F6" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#3B82F6" stopOpacity="0" />
-            </radialGradient>
+            {/* Neon Glow Filter */}
+            <filter id="routeGlow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="2.2" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
 
-            {/* Subtle glow filter */}
-            <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
+            {/* Bangladesh Border Glow Filter */}
+            <filter id="bangladeshGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="3.5" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
           </defs>
 
-          {/* ── Background Coordinate Grid ── */}
-          <g opacity="0.18">
-            {/* Latitude parallels */}
-            <line x1="50" y1="125" x2="950" y2="125" stroke="rgba(148, 163, 184, 0.4)" strokeDasharray="3 6" />
-            <line x1="50" y1="250" x2="950" y2="250" stroke="rgba(99, 102, 241, 0.6)" strokeDasharray="4 8" strokeWidth="1" />
-            <line x1="50" y1="375" x2="950" y2="375" stroke="rgba(148, 163, 184, 0.4)" strokeDasharray="3 6" />
-            {/* Longitude meridians */}
-            <line x1="250" y1="50" x2="250" y2="450" stroke="rgba(148, 163, 184, 0.35)" strokeDasharray="3 6" />
-            <line x1="500" y1="50" x2="500" y2="450" stroke="rgba(99, 102, 241, 0.5)" strokeDasharray="4 8" strokeWidth="1" />
-            <line x1="750" y1="50" x2="750" y2="450" stroke="rgba(148, 163, 184, 0.35)" strokeDasharray="3 6" />
-          </g>
-
-          {/* ── Continent Shapes ── */}
+          {/* Smooth Camera Movement: Starts slightly focused around Bangladesh, smoothly zooms out */}
           <motion.g
-            initial={{ opacity: 0, scale: 0.97 }}
+            initial={{ scale: 1.15, x: -75, y: -20 }}
             animate={{
-              opacity: phase >= 5 ? 0.22 : phase >= 4 ? 0.75 : 0.65,
-              scale: 1,
+              scale: phase >= 3 ? 1.0 : 1.15,
+              x: phase >= 3 ? 0 : -75,
+              y: phase >= 3 ? 0 : -20,
             }}
-            transition={{ duration: 1.4, ease: "easeOut" }}
+            transition={{ duration: 2.8, ease: [0.16, 1, 0.3, 1] }}
           >
-            {CONTINENT_PATHS.map((continent) => (
+            {/* 1. Subtle Global Latitude & Longitude Grid */}
+            <g opacity="0.08">
+              <line x1="20" y1="125" x2="980" y2="125" stroke="#93C5FD" strokeDasharray="3 6" />
+              <line x1="20" y1="250" x2="980" y2="250" stroke="#60A5FA" strokeDasharray="4 6" strokeWidth="1" />
+              <line x1="20" y1="375" x2="980" y2="375" stroke="#93C5FD" strokeDasharray="3 6" />
+              <line x1="250" y1="30" x2="250" y2="470" stroke="#93C5FD" strokeDasharray="3 6" />
+              <line x1="500" y1="30" x2="500" y2="470" stroke="#60A5FA" strokeDasharray="4 6" strokeWidth="1" />
+              <line x1="750" y1="30" x2="750" y2="470" stroke="#93C5FD" strokeDasharray="3 6" />
+            </g>
+
+            {/* 2. REALISTIC WORLD MAP (Natural Earth high-fidelity landmass) */}
+            <motion.g
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1.8, ease: "easeOut" }}
+            >
               <path
-                key={continent.id}
-                d={continent.d}
-                fill="rgba(15, 23, 42, 0.55)"
-                stroke="rgba(124, 58, 237, 0.28)"
-                strokeWidth="1.25"
+                d={WORLD_LAND_PATH}
+                fill="#0C1938"
+                stroke="rgba(59, 130, 246, 0.3)"
+                strokeWidth="0.85"
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 style={{
-                  filter: "drop-shadow(0 0 10px rgba(124, 58, 237, 0.12))",
+                  filter: "drop-shadow(0 2px 14px rgba(4, 10, 28, 0.95))",
                 }}
               />
-            ))}
-          </motion.g>
+            </motion.g>
 
-          {/* ── Flight Paths (Phase 3+) ── */}
-          {phase >= 3 && (
-            <g>
-              {visibleDestinations.map((dest) => {
-                const arcPath = getFlightArc(ORIGIN.x, ORIGIN.y, dest.x, dest.y, dest.id);
-                // Wave staggered timing
-                const delay = 0.1 + (dest.wave - 1) * 0.55;
-                const duration = 1.35;
-
-                return (
-                  <g key={dest.id}>
-                    {/* Background subtle trail guide */}
-                    <path
-                      d={arcPath}
-                      fill="none"
-                      stroke="rgba(255, 255, 255, 0.05)"
-                      strokeWidth="1"
-                      strokeDasharray="2 4"
-                    />
-
-                    {/* Animated glowing route */}
-                    <motion.path
-                      d={arcPath}
-                      fill="none"
-                      stroke="url(#routeGradient)"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      initial={{ pathLength: 0, opacity: 0 }}
-                      animate={{ pathLength: 1, opacity: phase >= 5 ? 0.35 : 0.95 }}
-                      transition={{
-                        duration: duration,
-                        delay: delay,
-                        ease: [0.25, 0.1, 0.25, 1],
-                      }}
-                      onAnimationComplete={() => handleRouteComplete(dest.id)}
-                      filter="url(#softGlow)"
-                    />
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* ── Destination Points (Phase 3+) ── */}
-          {phase >= 3 && (
-            <g>
-              {visibleDestinations.map((dest) => {
-                const isArrived = completedRoutes[dest.id] || phase >= 4;
-                const delay = 0.1 + (dest.wave - 1) * 0.55 + 1.1;
-
-                return (
-                  <g key={dest.id} transform={`translate(${dest.x}, ${dest.y})`}>
-                    {/* Landing ping wave animation */}
-                    {isArrived && (
-                      <motion.circle
-                        r="3"
-                        fill="none"
-                        stroke="#A855F7"
-                        strokeWidth="1.5"
-                        initial={{ r: 2, opacity: 0.95 }}
-                        animate={{ r: [2, 14], opacity: [0.95, 0] }}
-                        transition={{ duration: 1.2, repeat: Infinity, ease: "easeOut" }}
-                      />
-                    )}
-
-                    {/* Destination dot */}
-                    <motion.circle
-                      r={dest.isMajor ? "3.5" : "2.5"}
-                      fill={isArrived ? "#38BDF8" : "rgba(148, 163, 184, 0.4)"}
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{
-                        scale: isArrived ? [1, 1.25, 1] : 1,
-                        opacity: isArrived ? (phase >= 5 ? 0.4 : 1) : 0.4,
-                      }}
-                      transition={{
-                        delay: delay,
-                        duration: 0.5,
-                      }}
-                      style={{
-                        filter: isArrived ? "drop-shadow(0 0 6px #38BDF8)" : "none",
-                      }}
-                    />
-
-                    {/* Small elegant country tag (Desktop only or major destinations) */}
-                    {(!isMobile || dest.isMajor) && isArrived && (
-                      <motion.text
-                        x={dest.x > ORIGIN.x ? 8 : -8}
-                        y={dest.y > 250 ? 12 : -7}
-                        textAnchor={dest.x > ORIGIN.x ? "start" : "end"}
-                        fill={phase >= 5 ? "rgba(148, 163, 184, 0.35)" : "rgba(226, 232, 240, 0.85)"}
-                        fontSize={isMobile ? "8px" : "9.5px"}
-                        fontWeight="600"
-                        letterSpacing="0.04em"
-                        initial={{ opacity: 0, y: 3 }}
-                        animate={{ opacity: phase >= 5 ? 0.3 : 1, y: 0 }}
-                        transition={{ duration: 0.4 }}
-                        style={{
-                          textShadow: "0 2px 8px rgba(0,0,0,0.9)",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        {dest.name}
-                      </motion.text>
-                    )}
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* ── Origin Point: Dhaka, Bangladesh (Phase 2+) ── */}
-          {phase >= 2 && (
-            <g transform={`translate(${ORIGIN.x}, ${ORIGIN.y})`}>
-              {/* Concentric pulsing radar waves */}
-              <motion.circle
-                r="4"
-                fill="none"
-                stroke="#10B981"
-                strokeWidth="1.5"
-                initial={{ r: 3, opacity: 1 }}
-                animate={{ r: [3, 26], opacity: [0.9, 0] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
-              />
-              <motion.circle
-                r="4"
-                fill="none"
-                stroke="#06B6D4"
-                strokeWidth="1.2"
-                initial={{ r: 3, opacity: 1 }}
-                animate={{ r: [3, 18], opacity: [0.75, 0] }}
-                transition={{ duration: 2, repeat: Infinity, delay: 0.5, ease: "easeOut" }}
-              />
-
-              {/* Glowing center beacon */}
-              <circle r="4.5" fill="#10B981" style={{ filter: "drop-shadow(0 0 8px #10B981)" }} />
-              <circle r="2" fill="#FFFFFF" />
-
-              {/* Origin Badge */}
-              <motion.g
-                initial={{ opacity: 0, y: 8, scale: 0.9 }}
-                animate={{
-                  opacity: phase >= 5 ? 0.35 : 1,
-                  y: 0,
-                  scale: 1,
-                }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
-              >
-                <rect
-                  x="-70"
-                  y="-34"
-                  width="140"
-                  height="22"
-                  rx="11"
-                  fill="rgba(5, 11, 31, 0.88)"
-                  stroke="rgba(16, 185, 129, 0.45)"
-                  strokeWidth="1"
-                  style={{ backdropFilter: "blur(8px)" }}
+            {/* 3. Global Night City Lights */}
+            <g opacity="0.75">
+              {CITY_LIGHTS.map(([cx, cy], i) => (
+                <circle
+                  key={i}
+                  cx={cx}
+                  cy={cy}
+                  r={i % 3 === 0 ? "1.4" : "1.0"}
+                  fill={i % 2 === 0 ? "#FDE68A" : "#67E8F9"}
+                  opacity={0.6 + (i % 4) * 0.1}
                 />
-                <circle cx="-56" cy="-23" r="2.5" fill="#10B981" />
-                <text
-                  x="-48"
-                  y="-20"
-                  fill="#F8FAFC"
-                  fontSize="9px"
-                  fontWeight="700"
-                  letterSpacing="0.05em"
-                >
-                  Dhaka, Bangladesh
-                </text>
-              </motion.g>
+              ))}
             </g>
-          )}
+
+            {/* 4. BANGLADESH GEOGRAPHIC BORDER & CYAN LUMINOUS GLOW */}
+            {phase >= 2 && (
+              <g>
+                {/* Bangladesh Fill */}
+                <motion.path
+                  d={BANGLADESH_BORDER_PATH}
+                  fill="rgba(6, 182, 212, 0.22)"
+                  initial={{ fillOpacity: 0 }}
+                  animate={{ fillOpacity: 0.22 }}
+                  transition={{ duration: 1.4 }}
+                />
+
+                {/* Bangladesh Drawing Border with Cyan Luminous Glow */}
+                <motion.path
+                  d={BANGLADESH_BORDER_PATH}
+                  fill="none"
+                  stroke="#06B6D4"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  filter="url(#bangladeshGlow)"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ duration: 1.8, ease: "easeInOut" }}
+                />
+
+                {/* Second crisper white/cyan inner contour */}
+                <motion.path
+                  d={BANGLADESH_BORDER_PATH}
+                  fill="none"
+                  stroke="#E0F2FE"
+                  strokeWidth="0.9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 0.9 }}
+                  transition={{ duration: 1.8, ease: "easeInOut" }}
+                />
+              </g>
+            )}
+
+            {/* 5. ALL 20 FLIGHT ROUTE ARCS RADIATING FROM DHAKA */}
+            {phase >= 3 && (
+              <g>
+                {DESTINATIONS.map((dest) => {
+                  const arcD = getFlightArc(ORIGIN.x, ORIGIN.y, dest.x, dest.y, dest.id);
+                  const progress = flightsProgress[dest.id] || 0;
+                  const isLanded = landedDestinations[dest.id];
+
+                  return (
+                    <g key={dest.id}>
+                      {/* Invisible SVG path used for exact position tracking */}
+                      <path
+                        ref={(el) => {
+                          if (el) pathRefs.current[dest.id] = el;
+                        }}
+                        d={arcD}
+                        fill="none"
+                        stroke="none"
+                      />
+
+                      {/* Completed subtle glowing route */}
+                      {isLanded && (
+                        <path
+                          d={arcD}
+                          fill="none"
+                          stroke="url(#completedFlightTrail)"
+                          strokeWidth="1.2"
+                          strokeDasharray="4 4"
+                        />
+                      )}
+
+                      {/* Active animating flight trail trailing behind moving airplane */}
+                      {!isLanded && progress > 0 && (
+                        <path
+                          d={arcD}
+                          fill="none"
+                          stroke="url(#activeFlightTrail)"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeDasharray={pathLengthsRef.current[dest.id] || 1000}
+                          strokeDashoffset={
+                            (pathLengthsRef.current[dest.id] || 1000) * (1 - progress)
+                          }
+                          filter="url(#routeGlow)"
+                        />
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* 6. ALL 20 PHYSICAL AIRPLANES MOVING SIMULTANEOUSLY ACROSS THE GLOBE */}
+            {phase === 3 &&
+              airplaneTransforms.map((plane) => (
+                <g
+                  key={`plane-${plane.id}`}
+                  transform={`translate(${plane.x}, ${plane.y}) rotate(${plane.angle}) scale(${plane.scale})`}
+                  opacity={plane.opacity}
+                  style={{ pointerEvents: "none" }}
+                >
+                  {/* Glowing Aircraft Body (Centered around 0,0 - NO TEXT OVER AIRPLANE) */}
+                  <g transform="translate(-10, -10)">
+                    <AirplaneSilhouette size={20} className="text-white" />
+                  </g>
+
+                  {/* Jet Contrail Beacon */}
+                  <circle
+                    cx="0"
+                    cy="7.5"
+                    r="1.6"
+                    fill="#38BDF8"
+                    style={{ filter: "drop-shadow(0 0 4px #38BDF8)" }}
+                  />
+                </g>
+              ))}
+
+            {/* 7. DESTINATION MARKERS (Subtle glowing nodes when landed) */}
+            {phase >= 3 && (
+              <g>
+                {DESTINATIONS.map((dest) => {
+                  const isLanded = landedDestinations[dest.id];
+                  const progress = flightsProgress[dest.id] || 0;
+
+                  if (!isLanded && progress < 0.85) return null;
+
+                  return (
+                    <g key={`dest-${dest.id}`} transform={`translate(${dest.x}, ${dest.y})`}>
+                      {/* Arrival Ripple Wave */}
+                      {!isLanded && progress > 0.85 && (
+                        <motion.circle
+                          r="2.5"
+                          fill="none"
+                          stroke="#38BDF8"
+                          strokeWidth="1.4"
+                          initial={{ r: 2.5, opacity: 0.95 }}
+                          animate={{ r: [2.5, 14], opacity: [0.95, 0] }}
+                          transition={{ duration: 0.8, repeat: Infinity, ease: "easeOut" }}
+                        />
+                      )}
+
+                      {/* Destination Glowing Node */}
+                      <circle
+                        r={dest.isMajor ? "3" : "2.2"}
+                        fill={isLanded ? "#38BDF8" : "#E2E8F0"}
+                        style={{
+                          filter: isLanded
+                            ? "drop-shadow(0 0 6px rgba(56, 189, 248, 0.95))"
+                            : "none",
+                        }}
+                      />
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* 8. BANGLADESH ORIGIN POINT (Dhaka) */}
+            {phase >= 2 && (
+              <g transform={`translate(${ORIGIN.x}, ${ORIGIN.y})`}>
+                {/* Expanding Radar Pulses */}
+                <motion.circle
+                  r="3"
+                  fill="none"
+                  stroke="#06B6D4"
+                  strokeWidth="1.4"
+                  animate={{ r: [3, 22], opacity: [0.85, 0] }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: "easeOut" }}
+                />
+                <motion.circle
+                  r="3"
+                  fill="none"
+                  stroke="#38BDF8"
+                  strokeWidth="1"
+                  animate={{ r: [3, 14], opacity: [0.65, 0] }}
+                  transition={{ duration: 2.2, repeat: Infinity, delay: 0.5, ease: "easeOut" }}
+                />
+
+                {/* Dhaka Origin Pin */}
+                <circle
+                  r="4"
+                  fill="#06B6D4"
+                  style={{ filter: "drop-shadow(0 0 8px rgba(6, 182, 212, 0.95))" }}
+                />
+                <circle r="1.6" fill="#FFFFFF" />
+
+                {/* Clean, Non-Clunky Origin Label */}
+                <motion.g
+                  initial={{ opacity: 0, x: -5 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6 }}
+                >
+                  <text
+                    x="9"
+                    y="-5"
+                    fill="#F8FAFC"
+                    fontSize="8.5px"
+                    fontWeight="800"
+                    letterSpacing="0.05em"
+                    style={{ filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.9))" }}
+                  >
+                    Dhaka
+                  </text>
+                  <text
+                    x="9"
+                    y="4"
+                    fill="#38BDF8"
+                    fontSize="7px"
+                    fontWeight="600"
+                    letterSpacing="0.04em"
+                    style={{ filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.9))" }}
+                  >
+                    Bangladesh
+                  </text>
+                </motion.g>
+              </g>
+            )}
+          </motion.g>
         </svg>
 
-        {/* ── Phase 4: Inspiring Network Message ── */}
+        {/* =========================================================================
+            CENTRAL HIERARCHY:
+            1. ADMIFY LOGO
+            2. ADMIFY + AI-Powered Global Study Guidance
+            3. Your Journey. Your University. Your Future.
+            (Centered in safe lower-center area, away from Bangladesh)
+            ========================================================================= */}
         <AnimatePresence>
-          {phase === 4 && (
+          {phase >= 4 && (
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="absolute bottom-6 left-1/2 -translate-x-1/2 text-center w-full px-4 pointer-events-none"
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute bottom-8 md:bottom-12 inset-x-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none z-30"
             >
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-violet-500/25 bg-violet-950/40 backdrop-blur-md mb-2">
-                <Globe className="w-3.5 h-3.5 text-cyan-400 animate-spin" style={{ animationDuration: "12s" }} />
-                <span className="text-[11px] font-bold text-violet-300 uppercase tracking-widest">
-                  From Bangladesh → To The World
-                </span>
+              {/* Central Admify Logo Mark */}
+              <div className="flex items-center gap-2.5 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.6)] border border-white/25">
+                  <span className="text-white font-black text-base leading-none">A</span>
+                </div>
+                <div className="text-left">
+                  <span className="text-sm md:text-base font-extrabold tracking-wider text-white block leading-tight">
+                    ADMIFY
+                  </span>
+                  <span className="text-[10px] md:text-[11px] font-semibold tracking-wide text-cyan-300 block leading-tight">
+                    AI-Powered Global Study Guidance
+                  </span>
+                </div>
               </div>
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-200 via-white to-violet-200">
+
+              {/* Main Headline */}
+              <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-blue-200 drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)] max-w-3xl">
                 Your Journey. Your University. Your Future.
-              </h2>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Phase 5: Admify Brand Reveal ── */}
-        <AnimatePresence>
-          {phase === 5 && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none z-20"
-            >
-              {/* Admify Brand Icon */}
-              <motion.div
-                initial={{ scale: 0.7, rotate: -8 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-[0_0_50px_rgba(124,58,237,0.5)] border border-violet-400/30 mb-4"
-              >
-                <span className="text-white font-black text-3xl md:text-4xl tracking-tight">A</span>
-              </motion.div>
-
-              {/* Brand Name */}
-              <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-white tracking-tight">
-                Admify
               </h1>
-
-              {/* Tagline */}
-              <div className="flex items-center gap-2 mt-2.5">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-                <p className="text-xs sm:text-sm font-bold text-cyan-400 uppercase tracking-widest">
-                  AI-Powered Global Study Guidance
-                </p>
-                <Sparkles className="w-4 h-4 text-violet-400" />
-              </div>
-
-              {/* Accent subtle glowing beam */}
-              <div className="mt-4 w-40 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent rounded-full opacity-80" />
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
 
-      {/* ── Subtle Skip Intro Button ── */}
-      <motion.button
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: phase < 6 ? 1 : 0, y: 0 }}
-        transition={{ delay: 1, duration: 0.5 }}
-        onClick={handleSkip}
-        className="fixed bottom-5 right-5 sm:bottom-7 sm:right-7 z-50 flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full border border-white/10 bg-slate-900/60 hover:bg-slate-800/80 backdrop-blur-md text-slate-400 hover:text-white hover:border-violet-500/40 text-xs font-semibold tracking-wide transition-all shadow-xl hover:scale-105 active:scale-95 group cursor-pointer"
-        aria-label="Skip introduction"
-      >
-        <span>Skip Intro</span>
-        <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-violet-400 group-hover:translate-x-0.5 transition-all" />
-      </motion.button>
+        {/* Desktop Skip Intro Button (Bottom Right) */}
+        <div className="hidden md:block absolute bottom-6 right-8 z-40">
+          <button
+            onClick={handleSkip}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/15 bg-slate-900/70 hover:bg-slate-800/90 backdrop-blur-md text-slate-300 hover:text-white hover:border-cyan-500/50 text-xs font-semibold tracking-wide transition-all shadow-xl hover:scale-105 active:scale-95 cursor-pointer"
+            aria-label="Skip introduction"
+          >
+            <span>Skip Intro</span>
+            <ArrowRight className="w-3.5 h-3.5 text-cyan-400" />
+          </button>
+        </div>
+      </main>
     </motion.div>
   );
 }
