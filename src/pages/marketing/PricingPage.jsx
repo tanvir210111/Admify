@@ -11,10 +11,10 @@ function PricingPage() {
       tagline: "Explore the platform & matching.",
       price: { monthly: 0, annual: 0 },
       features: [
-        "Up to 3 university recommendations",
+        "1 Free direct university application",
+        "Global university search & directory browsing",
         "Basic document checker (1 SOP scan)",
         "Global scholarship search access",
-        "Email support",
         "Basic Application Tracker status"
       ],
       cta: "Start for Free",

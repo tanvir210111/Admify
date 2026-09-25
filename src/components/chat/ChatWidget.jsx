@@ -667,8 +667,10 @@ export default function ChatWidget() {
     pathname.startsWith("/login") ||
     pathname.startsWith("/register");
 
-  // Hide chat widget completely on auth pages, admin, agent portals, or while intro is active
+  // Hide chat widget completely on student dashboard, admin, agent portals, auth pages, or while intro is active
   if (
+    pathname.startsWith("/student") ||
+    pathname.startsWith("/dashboard") ||
     pathname.startsWith("/admin") ||
     pathname.startsWith("/agent") ||
     isAuthPage ||

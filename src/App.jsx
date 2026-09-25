@@ -59,6 +59,27 @@ import DocumentsPage from "./pages/dashboards/DocumentsPage";
 import NotificationsPage from "./pages/dashboards/NotificationsPage";
 import SettingsPage from "./pages/dashboards/SettingsPage";
 
+// ── Redesigned Student Portal Pages ──────────────────────────────────────────
+import StudentProfilePage from "./pages/student/StudentProfilePage";
+import AcademicProfilePage from "./pages/student/AcademicProfilePage";
+import StudentDocumentsPage from "./pages/student/StudentDocumentsPage";
+import AIRecommendationsPage from "./pages/student/AIRecommendationsPage";
+import UniversityDiscoveryPage from "./pages/student/UniversityDiscoveryPage";
+import UniversityComparePage from "./pages/student/UniversityComparePage";
+import ScholarshipsSystemPage from "./pages/student/ScholarshipsSystemPage";
+import AdmissionProbabilityPage from "./pages/student/AdmissionProbabilityPage";
+import CostEstimatorPage from "./pages/student/CostEstimatorPage";
+import SopGeneratorPage from "./pages/student/SopGeneratorPage";
+import LorGeneratorPage from "./pages/student/LorGeneratorPage";
+import DirectApplicationsPage from "./pages/student/DirectApplicationsPage";
+import AgencyAssistancePage from "./pages/student/AgencyAssistancePage";
+import ApplicationTrackingPage from "./pages/student/ApplicationTrackingPage";
+import StudentMessagesPage from "./pages/student/StudentMessagesPage";
+import NotificationsCenterPage from "./pages/student/NotificationsCenterPage";
+import CreditsPremiumPage from "./pages/student/CreditsPremiumPage";
+import StudentReportsPage from "./pages/student/StudentReportsPage";
+import StudentChatbotPage from "./pages/student/StudentChatbotPage";
+
 import MarketingLayout from "./components/layout/MarketingLayout";
 import FeaturesPage from "./pages/marketing/FeaturesPage";
 import PricingPage from "./pages/marketing/PricingPage";
@@ -104,15 +125,42 @@ function App() {
           <Route path="/student" element={<DashboardLayout />}>
             <Route index element={<Navigate to="/student/dashboard" replace />} />
             <Route path="dashboard" element={<StudentDashboard />} />
-            <Route path="recommendations" element={<RecommendationPage />} />
-            <Route path="wallet" element={<WalletPage />} />
-            <Route path="universities" element={<UniversityPage />} />
-            <Route path="scholarships" element={<ScholarshipsPage />} />
-            <Route path="applications" element={<ApplicationsPage />} />
-            <Route path="documents" element={<DocumentsPage />} />
-            <Route path="sop" element={<DocumentsPage />} />
-            <Route path="lor" element={<DocumentsPage />} />
-            <Route path="notifications" element={<NotificationsPage />} />
+
+            {/* MY PROFILE */}
+            <Route path="profile" element={<StudentProfilePage />} />
+            <Route path="academic-profile" element={<AcademicProfilePage />} />
+            <Route path="documents" element={<StudentDocumentsPage />} />
+
+            {/* DISCOVER */}
+            <Route path="recommendations" element={<AIRecommendationsPage />} />
+            <Route path="universities" element={<UniversityDiscoveryPage />} />
+            <Route path="compare" element={<UniversityComparePage />} />
+            <Route path="scholarships" element={<ScholarshipsSystemPage />} />
+            <Route path="probability" element={<AdmissionProbabilityPage />} />
+            <Route path="cost-estimator" element={<CostEstimatorPage />} />
+
+            {/* AI TOOLS */}
+            <Route path="sop-generator" element={<SopGeneratorPage />} />
+            <Route path="lor-generator" element={<LorGeneratorPage />} />
+            <Route path="sop" element={<SopGeneratorPage />} />
+            <Route path="lor" element={<LorGeneratorPage />} />
+
+            {/* APPLICATIONS */}
+            <Route path="direct-applications" element={<DirectApplicationsPage />} />
+            <Route path="agency-assistance" element={<AgencyAssistancePage />} />
+            <Route path="applications" element={<ApplicationTrackingPage />} />
+
+            {/* COMMUNICATION: Exactly 2 Core Features (Chatbot & Messages) */}
+            <Route path="chatbot" element={<StudentChatbotPage />} />
+            <Route path="admify-ai" element={<StudentChatbotPage />} />
+            <Route path="ai-chat" element={<StudentChatbotPage />} />
+            <Route path="live-chat" element={<StudentChatbotPage />} />
+            <Route path="messages" element={<StudentMessagesPage />} />
+            <Route path="notifications" element={<NotificationsCenterPage />} />
+
+            {/* ACCOUNT */}
+            <Route path="wallet" element={<CreditsPremiumPage />} />
+            <Route path="reports" element={<StudentReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>
