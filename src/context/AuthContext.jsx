@@ -155,52 +155,11 @@ export const AuthProvider = ({ children }) => {
 
   // Standard login method
   const login = async (email, password, role) => {
-    let res;
-    try {
-      res = await api.post('/api/auth/login', {
-        email,
-        password,
-        role,
-      });
-    } catch (err) {
-      if (err.message?.includes('Unable to reach backend API') || err.message?.includes('fetch') || err.status === 404) {
-        // Fallback demo student session for testing/offline environments
-        const namePart = email.split('@')[0] || 'Student';
-        const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-        const demoUser = {
-          _id: 'usr_student_demo_1',
-          id: 'usr_student_demo_1',
-          name: formattedName,
-          email,
-          phone: '+1 (555) 019-2834',
-          role: role || 'student',
-          gpa: '3.85',
-          ielts: '7.5',
-          targetCountry: 'United States',
-          targetCourse: 'M.S. Computer Science',
-          walletCredits: 250,
-        };
-
-        const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-        const payload = btoa(
-          JSON.stringify({
-            id: demoUser.id,
-            role: demoUser.role,
-            exp: Math.floor(Date.now() / 1000) + 86400 * 30,
-          })
-        );
-        const mockJwt = `${header}.${payload}.mockSignatureAdmify2026`;
-
-        res = {
-          data: {
-            token: mockJwt,
-            user: demoUser,
-          },
-        };
-      } else {
-        throw err;
-      }
-    }
+    const res = await api.post('/api/auth/login', {
+      email,
+      password,
+      role,
+    });
 
     if (res?.data?.token) {
       clearAuthStorage();

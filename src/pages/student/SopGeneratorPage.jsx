@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { api } from "../../lib/api";
 import { studentService } from "../../services/studentService";
 import {
   FileEdit,
@@ -15,19 +16,20 @@ import {
   RotateCcw,
   BookOpen,
   Send,
+  Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 function SopGeneratorPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
 
   // Inputs
-  const [university, setUniversity] = useState("Stanford University");
-  const [course, setCourse] = useState(user?.targetCourse || "M.S. Computer Science");
-  const [academicBackground, setAcademicBackground] = useState(`Bachelor of Science with a 3.8 GPA in Computer Science`);
-  const [careerGoals, setCareerGoals] = useState("lead AI research laboratories and engineer scalable machine learning systems");
-  const [achievements, setAchievements] = useState("Published paper on distributed multi-agent systems, Top 5% student award");
-  const [experience, setExperience] = useState("1.5 years undergraduate research assistantship in artificial intelligence and deep neural networks");
+  const [university, setUniversity] = useState(user?.targetCountry ? `${user.targetCountry} University` : "");
+  const [course, setCourse] = useState(user?.targetCourse || "");
+  const [academicBackground, setAcademicBackground] = useState(user?.gpa ? `Bachelor Degree with a ${user.gpa} GPA` : "");
+  const [careerGoals, setCareerGoals] = useState("");
+  const [achievements, setAchievements] = useState("");
+  const [experience, setExperience] = useState("");
   const [tone, setTone] = useState("academic");
 
   // Output & Editor State
@@ -37,9 +39,19 @@ function SopGeneratorPage() {
   const [copied, setCopied] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
 
-  // Generate SOP with AI
+  // Generate SOP with AI (10 CR)
   const handleGenerate = async (e) => {
     if (e) e.preventDefault();
+
+    const currentBal = user?.walletCredits ?? 0;
+    if (currentBal < 10) {
+      toast.error(
+        `Insufficient Credits! Generating AI SOP requires 10 Credits (You have ${currentBal} CR). Please buy credits in your Wallet.`,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     setIsGenerating(true);
     try {
       const generated = await studentService.generateSop({
@@ -51,50 +63,87 @@ function SopGeneratorPage() {
         tone,
       });
       setSopContent(generated);
-      toast.success("AI Statement of Purpose generated! You can now manually edit every line.");
+
+      // Deduct 10 Credits on successful generation
+      try {
+        const deductRes = await api.post("/api/wallet/deduct", {
+          serviceCode: "AI_SOP",
+          referenceId: `SOP-${Date.now()}`,
+        });
+        if (updateUser && deductRes?.data?.balanceAfter !== undefined) {
+          updateUser({ walletCredits: deductRes.data.balanceAfter });
+        }
+      } catch (dErr) {
+        console.warn("Credit deduction warning:", dErr.message);
+      }
+
+      toast.success("AI Statement of Purpose generated! (10 CR deducted)");
     } catch (err) {
-      toast.error("Generation failed. Please try again.");
+      toast.error("Generation failed. Please try again. (0 CR deducted)");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // AI Improvement Actions: 'improve' | 'rewrite' | 'expand' | 'shorten'
-  const handleAiAction = (actionType) => {
+  // AI Improvement Actions: 'improve' | 'rewrite' | 'expand' | 'shorten' (5 CR)
+  const handleAiAction = async (actionType) => {
     if (!sopContent.trim()) {
       toast.error("Please generate or enter content first.");
       return;
     }
 
+    const currentBal = user?.walletCredits ?? 0;
+    if (currentBal < 5) {
+      toast.error(
+        `Insufficient Credits! SOP AI Rewrite/Improve requires 5 Credits (You have ${currentBal} CR). Please buy credits in your Wallet.`,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     setIsAiImproving(true);
-    setTimeout(() => {
+    try {
       let modified = sopContent;
       if (actionType === "improve") {
         modified = sopContent.replace(
           /Having cultivated a rigorous foundation/gi,
           "Having systematically developed an exemplary technical foundation"
         );
-        toast.success("Content refined with elevated academic phrasing!");
       } else if (actionType === "expand") {
         modified += `\n\n6. METHODOLOGICAL RIGOR & BROADER IMPACT\nMoreover, my commitment to ethical artificial intelligence design ensures that my prospective research contributions at ${university} will prioritize algorithmic transparency, safety, and inclusive global access.`;
-        toast.success("Content expanded with additional academic dimension!");
       } else if (actionType === "shorten") {
         const paragraphs = sopContent.split("\n\n");
         if (paragraphs.length > 2) {
           modified = paragraphs.slice(0, 3).join("\n\n") + `\n\nIn conclusion, I am eager to contribute to ${university}'s academic community.`;
         }
-        toast.success("Content condensed to high-impact essentials!");
       } else if (actionType === "rewrite") {
         modified = sopContent.replace(
           /My decision to pursue advanced studies/gi,
           "My pursuit of transformative graduate inquiry"
         );
-        toast.success("Content rephrased with enhanced tone!");
       }
 
       setSopContent(modified);
+
+      // Deduct 5 credits on successful improvement
+      try {
+        const deductRes = await api.post("/api/wallet/deduct", {
+          serviceCode: "SOP_REWRITE",
+          referenceId: `SOP-IMPROVE-${Date.now()}`,
+        });
+        if (updateUser && deductRes?.data?.balanceAfter !== undefined) {
+          updateUser({ walletCredits: deductRes.data.balanceAfter });
+        }
+      } catch (dErr) {
+        console.warn("Credit deduction warning:", dErr.message);
+      }
+
+      toast.success("SOP refined with AI! (5 CR deducted)");
+    } catch (err) {
+      toast.error("Rewrite failed. (0 CR deducted)");
+    } finally {
       setIsAiImproving(false);
-    }, 900);
+    }
   };
 
   // Save Draft to Vault

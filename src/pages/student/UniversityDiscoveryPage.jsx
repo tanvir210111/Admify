@@ -212,7 +212,7 @@ function UniversityDiscoveryPage() {
 
                 <div className="absolute top-3 left-3">
                   <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[#050B1F]/90 text-cyan-300 border border-slate-700 backdrop-blur-md">
-                    {uni.rank || "Global Top 100"}
+                    {uni.rank ? (uni.rank.startsWith('#') || uni.rank.toLowerCase().includes('rank') ? uni.rank : `Rank: ${uni.rank}`) : "N/A"}
                   </span>
                 </div>
 
@@ -252,19 +252,19 @@ function UniversityDiscoveryPage() {
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-400">Application Fee:</span>
                     <span className={`font-semibold ${uni.isZeroFee ? "text-emerald-400" : "text-amber-300"}`}>
-                      {uni.applicationFeeDisplay || (uni.isZeroFee ? "৳0 ($0) - Free" : "৳9,000 ($75)")}
+                      {uni.applicationFeeDisplay || (uni.isZeroFee ? "৳0 ($0) - Free" : (uni.applicationFee ? convertTextToDual(uni.applicationFee) : "Standard Fee"))}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-400">Acceptance Rate:</span>
-                    <span className="text-slate-300 font-medium">{uni.acceptanceRate || "Competitive"}</span>
+                    <span className="text-slate-300 font-medium">{uni.acceptanceRate || "Not available"}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-400">Key Programs:</span>
                     <span className="text-white font-medium truncate max-w-[180px]">
-                      {uni.programs?.map((p) => p.name).slice(0, 2).join(", ") || "Computer Science"}
+                      {uni.programs?.map((p) => p.name).slice(0, 2).join(", ") || "Not available"}
                     </span>
                   </div>
                 </div>
@@ -343,17 +343,17 @@ function UniversityDiscoveryPage() {
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
               <div className="p-3 rounded-xl bg-[#0B1228] border border-slate-800">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">World Rank</span>
-                <span className="text-white font-bold">{selectedUniModal.rank || "Top 50"}</span>
+                <span className="text-white font-bold">{selectedUniModal.rank || "N/A"}</span>
               </div>
               <div className="p-3 rounded-xl bg-[#0B1228] border border-slate-800">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">App Fee</span>
                 <span className={`font-bold ${selectedUniModal.isZeroFee ? "text-emerald-400" : "text-amber-300"}`}>
-                  {selectedUniModal.applicationFeeDisplay || (selectedUniModal.isZeroFee ? "৳0 ($0) Free" : "৳9,000 ($75)")}
+                  {selectedUniModal.applicationFeeDisplay || (selectedUniModal.isZeroFee ? "৳0 ($0) Free" : (selectedUniModal.applicationFee ? convertTextToDual(selectedUniModal.applicationFee) : "Standard Fee"))}
                 </span>
               </div>
               <div className="p-3 rounded-xl bg-[#0B1228] border border-slate-800">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Acceptance Rate</span>
-                <span className="text-white font-bold">{selectedUniModal.acceptanceRate || "8%"}</span>
+                <span className="text-white font-bold">{selectedUniModal.acceptanceRate || "Not available"}</span>
               </div>
               <div className="p-3 rounded-xl bg-[#0B1228] border border-slate-800">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Tuition</span>
@@ -361,7 +361,7 @@ function UniversityDiscoveryPage() {
               </div>
               <div className="p-3 rounded-xl bg-[#0B1228] border border-slate-800">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Intake Season</span>
-                <span className="text-white font-bold">Fall 2026</span>
+                <span className="text-white font-bold">{selectedUniModal.intake || "Upcoming Intake"}</span>
               </div>
             </div>
 
@@ -381,10 +381,10 @@ function UniversityDiscoveryPage() {
 
             <div className="space-y-2 text-xs text-slate-300 bg-[#0B1228] p-4 rounded-2xl border border-slate-800">
               <h4 className="font-bold text-white uppercase tracking-wider text-[11px]">Admission Requirements</h4>
-              <p>• GPA Benchmark: {selectedUniModal.admissionReqs?.gpa || "3.6+ Cumulative GPA"}</p>
-              <p>• Language Test: {selectedUniModal.admissionReqs?.englishProficiency || "IELTS 7.0+ or TOEFL 100+"}</p>
-              <p>• Standardized Test: {selectedUniModal.admissionReqs?.testScores || "GRE / SAT Optional"}</p>
-              <p>• Application Deadline: {selectedUniModal.applicationDeadline || "Regular Decision: January 5"}</p>
+              <p>• GPA Benchmark: {selectedUniModal.admissionReqs?.gpa || "Not specified"}</p>
+              <p>• Language Test: {selectedUniModal.admissionReqs?.englishProficiency || "Not specified"}</p>
+              <p>• Standardized Test: {selectedUniModal.admissionReqs?.testScores || "Not specified"}</p>
+              <p>• Application Deadline: {selectedUniModal.applicationDeadline || "Not specified"}</p>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-slate-800">

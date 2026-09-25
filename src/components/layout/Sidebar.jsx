@@ -21,6 +21,7 @@ import {
   Bot,
   Bell,
   Crown,
+  Wallet,
   AlertTriangle,
   Settings,
   LogOut,
@@ -52,7 +53,7 @@ const navigationItems = [
   { icon: User, label: "Profile", path: "/student/profile" },
   { icon: GraduationCap, label: "Academic Profile", path: "/student/academic-profile" },
   { icon: Bell, label: "Notifications", path: "/student/notifications" },
-  { icon: Crown, label: "Premium / Credits", path: "/student/wallet" },
+  { icon: Wallet, label: "Wallet & Credits", path: "/student/wallet" },
   { icon: AlertTriangle, label: "Reports & Complaints", path: "/student/reports" },
   { icon: Settings, label: "Settings", path: "/student/settings" },
 ];

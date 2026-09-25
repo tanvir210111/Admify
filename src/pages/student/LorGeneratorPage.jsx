@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { api } from "../../lib/api";
 import { studentService } from "../../services/studentService";
 import {
   ScrollText,
@@ -10,21 +11,22 @@ import {
   Check,
   RotateCcw,
   UserCheck,
+  Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 function LorGeneratorPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
 
   // Inputs
-  const [recommenderName, setRecommenderName] = useState("Prof. Dr. Robert Vance");
-  const [recommenderTitle, setRecommenderTitle] = useState("Professor & Department Chair");
+  const [recommenderName, setRecommenderName] = useState("");
+  const [recommenderTitle, setRecommenderTitle] = useState("");
   const [recommenderType, setRecommenderType] = useState("Academic Professor");
-  const [relationship, setRelationship] = useState("academic instructor and research supervisor for 2 years");
-  const [targetUni, setTargetUni] = useState("Stanford University");
-  const [targetProgram, setTargetProgram] = useState(user?.targetCourse || "M.S. Computer Science");
-  const [achievements, setAchievements] = useState("securing top 1% academic standing and leading peer research in distributed algorithms");
-  const [skills, setSkills] = useState("algorithmic problem solving, experimental diligence, intellectual curiosity, leadership");
+  const [relationship, setRelationship] = useState("");
+  const [targetUni, setTargetUni] = useState(user?.targetCountry ? `${user.targetCountry} University` : "");
+  const [targetProgram, setTargetProgram] = useState(user?.targetCourse || "");
+  const [achievements, setAchievements] = useState("");
+  const [skills, setSkills] = useState("");
 
   // Output & Editor State
   const [lorContent, setLorContent] = useState("");
@@ -32,13 +34,23 @@ function LorGeneratorPage() {
   const [isAiImproving, setIsAiImproving] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Generate LOR with AI
+  // Generate LOR with AI (10 CR)
   const handleGenerate = async (e) => {
     if (e) e.preventDefault();
+
+    const currentBal = user?.walletCredits ?? 0;
+    if (currentBal < 10) {
+      toast.error(
+        `Insufficient Credits! Generating AI LOR requires 10 Credits (You have ${currentBal} CR). Please buy credits in your Wallet.`,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     setIsGenerating(true);
     try {
       const generated = await studentService.generateLor({
-        studentName: user?.user_metadata?.full_name || user?.name || "Alex Doe",
+        studentName: user?.user_metadata?.full_name || user?.name || "Student Applicant",
         university: targetUni,
         course: targetProgram,
         recommenderName,
@@ -47,39 +59,79 @@ function LorGeneratorPage() {
         achievements,
       });
       setLorContent(generated);
-      toast.success("AI Recommendation Letter generated! Full manual editing enabled.");
+
+      // Deduct 10 Credits on successful generation
+      try {
+        const deductRes = await api.post("/api/wallet/deduct", {
+          serviceCode: "AI_LOR",
+          referenceId: `LOR-${Date.now()}`,
+        });
+        if (updateUser && deductRes?.data?.balanceAfter !== undefined) {
+          updateUser({ walletCredits: deductRes.data.balanceAfter });
+        }
+      } catch (dErr) {
+        console.warn("Credit deduction warning:", dErr.message);
+      }
+
+      toast.success("AI Recommendation Letter generated! (10 CR deducted)");
     } catch (err) {
-      toast.error("LOR generation failed. Please try again.");
+      toast.error("LOR generation failed. Please try again. (0 CR deducted)");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // AI Improvement Actions
-  const handleAiAction = (actionType) => {
+  // AI Improvement Actions (5 CR)
+  const handleAiAction = async (actionType) => {
     if (!lorContent.trim()) {
       toast.error("Document is empty.");
       return;
     }
+
+    const currentBal = user?.walletCredits ?? 0;
+    if (currentBal < 5) {
+      toast.error(
+        `Insufficient Credits! LOR AI Rewrite/Improve requires 5 Credits (You have ${currentBal} CR). Please buy credits in your Wallet.`,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     setIsAiImproving(true);
-    setTimeout(() => {
+    try {
       let modified = lorContent;
       if (actionType === "improve") {
         modified = lorContent.replace(
           /rare interpersonal maturity and leadership/gi,
           "distinguished intellectual poise, scholarly integrity, and collaborative leadership"
         );
-        toast.success("Refined with elevated supervisory tone!");
       } else if (actionType === "rewrite") {
         modified = lorContent.replace(
           /It is my distinct privilege to write this letter/gi,
           "It gives me immense pleasure to enthusiastically recommend"
         );
-        toast.success("Rephrased recommendation endorsement!");
       }
       setLorContent(modified);
+
+      // Deduct 5 credits on successful improvement
+      try {
+        const deductRes = await api.post("/api/wallet/deduct", {
+          serviceCode: "LOR_REWRITE",
+          referenceId: `LOR-IMPROVE-${Date.now()}`,
+        });
+        if (updateUser && deductRes?.data?.balanceAfter !== undefined) {
+          updateUser({ walletCredits: deductRes.data.balanceAfter });
+        }
+      } catch (dErr) {
+        console.warn("Credit deduction warning:", dErr.message);
+      }
+
+      toast.success("LOR refined with AI! (5 CR deducted)");
+    } catch (err) {
+      toast.error("Rewrite failed. (0 CR deducted)");
+    } finally {
       setIsAiImproving(false);
-    }, 800);
+    }
   };
 
   // Save Draft to Vault

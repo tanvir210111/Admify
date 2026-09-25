@@ -21,28 +21,34 @@ function AdmissionProbabilityPage() {
   const { user } = useAuth();
 
   const [university, setUniversity] = useState("Stanford University");
-  const [program, setProgram] = useState("M.S. Computer Science");
-  const [gpa, setGpa] = useState(user?.gpa || "3.8");
-  const [ielts, setIelts] = useState(user?.ielts || "7.5");
+  const [program, setProgram] = useState(user?.targetCourse || "M.S. Computer Science");
+  const [gpa, setGpa] = useState(user?.gpa || "");
+  const [ielts, setIelts] = useState(user?.ielts || "");
   const [rank, setRank] = useState("3");
-  const [workYears, setWorkYears] = useState("1.5");
+  const [workYears, setWorkYears] = useState("0");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    // Initial calculation on load
-    handleCalculate();
-  }, []);
+    // Initial calculation on load only if student has profile gpa/ielts
+    if (user?.gpa && user?.ielts) {
+      handleCalculate();
+    }
+  }, [user]);
 
   const handleCalculate = async (e) => {
     if (e) e.preventDefault();
+    if (!gpa || !ielts) {
+      toast.error("Please enter your GPA and English score (IELTS) to calculate admission probability");
+      return;
+    }
     setLoading(true);
     try {
       const pred = await studentService.predictAdmission({
         gpa: parseFloat(gpa),
         ielts: parseFloat(ielts),
         universityRank: parseInt(rank, 10),
-        workExperienceYears: parseFloat(workYears),
+        workExperienceYears: parseFloat(workYears) || 0,
       });
       setResult(pred);
     } catch (err) {

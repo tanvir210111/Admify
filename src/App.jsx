@@ -134,6 +134,8 @@ function App() {
             {/* DISCOVER */}
             <Route path="recommendations" element={<AIRecommendationsPage />} />
             <Route path="universities" element={<UniversityDiscoveryPage />} />
+            <Route path="universities/:id" element={<UniversityDetailPage />} />
+            <Route path="university/:id" element={<UniversityDetailPage />} />
             <Route path="compare" element={<UniversityComparePage />} />
             <Route path="scholarships" element={<ScholarshipsSystemPage />} />
             <Route path="probability" element={<AdmissionProbabilityPage />} />
@@ -158,8 +160,10 @@ function App() {
             <Route path="messages" element={<StudentMessagesPage />} />
             <Route path="notifications" element={<NotificationsCenterPage />} />
 
-            {/* ACCOUNT */}
+            {/* ACCOUNT & SUBSCRIPTION */}
             <Route path="wallet" element={<CreditsPremiumPage />} />
+            <Route path="subscription" element={<CreditsPremiumPage />} />
+            <Route path="pricing" element={<CreditsPremiumPage />} />
             <Route path="reports" element={<StudentReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

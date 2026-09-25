@@ -49,8 +49,7 @@ export default function StudentMessagesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Subscription plan: 'free' | 'pro' | 'elite'
-  const [currentPlan, setCurrentPlan] = useState(() => studentService.getStudentPlan(user));
+  // Active agency service state
   const [agencyState, setAgencyState] = useState(() => studentService.getAgencyAssistanceState(user));
 
   const assignedAgency = agencyState?.selectedAgency;
@@ -111,9 +110,9 @@ export default function StudentMessagesPage() {
   };
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 1. FREE STARTER VIEW (Strictly Self-Service — NO Agency, NO Agent)
+  // 1. NO ACTIVE AGENCY VIEW (Prompt student to activate agency service)
   // ──────────────────────────────────────────────────────────────────────────
-  if (currentPlan === "free") {
+  if (!agencyState?.hasActiveRequest && !assignedAgency) {
     return (
       <div className="max-w-[1400px] mx-auto space-y-8 pb-16">
         {/* Header */}
@@ -126,45 +125,39 @@ export default function StudentMessagesPage() {
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
               <MessageSquare className="w-7 h-7 text-cyan-400" />
-              <span>Messages</span>
-              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border uppercase tracking-wider bg-slate-800 text-slate-400 border-slate-700">
-                Free Starter Account
-              </span>
+              <span>Counselor Messaging</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Direct counselor messaging is reserved for Pro Path and Elite Premium subscriptions.
+              Direct counselor messaging requires an active Agency Assistance (800 CR) or Full Managed Service (1,500 CR) order.
             </p>
           </div>
-
         </div>
 
         {/* Locked Screen */}
-        <div className="p-8 sm:p-14 rounded-3xl bg-gradient-to-b from-[#0B1228] via-[#07142D] to-[#0B1228] border border-purple-500/30 text-center space-y-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-40 bg-purple-500/10 blur-3xl pointer-events-none" />
-
-          <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-purple-500/20 via-cyan-500/20 to-purple-500/20 border border-purple-500/40 mx-auto flex items-center justify-center text-purple-400 shadow-xl shadow-purple-500/10 relative z-10">
-            <Lock className="w-8 h-8" />
+        <div className="p-8 sm:p-14 rounded-3xl bg-gradient-to-b from-[#0B1228] via-[#07142D] to-[#0B1228] border border-cyan-500/30 text-center space-y-6 shadow-2xl relative overflow-hidden">
+          <div className="w-16 h-16 rounded-3xl bg-cyan-500/10 border border-cyan-500/30 mx-auto flex items-center justify-center text-cyan-400 shadow-xl shadow-cyan-500/10 relative z-10">
+            <Users2 className="w-8 h-8" />
           </div>
 
           <div className="space-y-2 max-w-xl mx-auto relative z-10">
-            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-purple-500/20 text-purple-300 border border-purple-500/40">
-              Assigned Counselor Messaging Locked
+            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+              Agency Service Required
             </span>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Agency Counselor Messaging is available on Pro Path & Elite Premium
+              No Active Agency Counselor Assigned Yet
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Free Starter accounts are <strong>self-service applicants</strong> and do not have an assigned agency or counselor. To have a certified agency assigned to your profile with unlimited direct messaging, upgrade to Pro Path ($39/mo) or Elite Premium ($119/mo).
+              To communicate directly with a certified admissions counselor for personalized university liaison, document verification, and visa support, activate an agency service from your Credit Wallet.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 max-w-md mx-auto relative z-10">
             <button
-              onClick={() => navigate("/student/wallet")}
-              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-cyan-500 hover:opacity-95 text-white font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-purple-500/25 flex items-center justify-center gap-2 transition-all"
+              onClick={() => navigate("/student/agency-assistance")}
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-[#050B1F] font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all"
             >
-              <Crown className="w-4 h-4 text-white" />
-              <span>Upgrade to Pro Path ($39/mo) →</span>
+              <Users2 className="w-4 h-4" />
+              <span>Explore Agency Services (800 CR) →</span>
             </button>
             <Link
               to="/student/chatbot"
@@ -180,9 +173,9 @@ export default function StudentMessagesPage() {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 2. PRO PATH / ELITE PREMIUM VIEW
+  // 2. ACTIVE COUNSELOR MESSAGING VIEW
   // ──────────────────────────────────────────────────────────────────────────
-  const isElite = currentPlan === "elite";
+  const isFullManaged = assignedAgency?.serviceType === "FULL_AGENCY_MANAGED" || agencyState?.tier === "FULL_AGENCY_MANAGED";
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6 pb-16">
@@ -193,14 +186,14 @@ export default function StudentMessagesPage() {
             <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">Communication</span>
             <span className="text-slate-600">•</span>
             <span className="text-xs text-slate-400">
-              {isElite ? "Elite Dedicated Counselor Desk" : "Pro Path Counselor Desk"}
+              {isFullManaged ? "Full Agency Managed Service Desk" : "Agency Assistance Counselor Desk"}
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
             <MessageSquare className="w-7 h-7 text-purple-400" />
             <span>Counselor Messages</span>
             <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border uppercase tracking-wider bg-purple-500/15 text-purple-300 border-purple-500/30">
-              {isElite ? "Elite Direct Liaison" : "Pro Certified Counselor"}
+              {isFullManaged ? "Dedicated Managing Counselor" : "Assigned Support Counselor"}
             </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">

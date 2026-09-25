@@ -20,15 +20,15 @@ function AcademicProfilePage() {
   const { user, updateUser } = useAuth();
 
   const [currentLevel, setCurrentLevel] = useState("Undergraduate / Bachelor's");
-  const [institution, setInstitution] = useState("National University");
-  const [gpa, setGpa] = useState(user?.gpa || "3.8");
+  const [institution, setInstitution] = useState(user?.institution || "");
+  const [gpa, setGpa] = useState(user?.gpa || "");
   const [gpaScale, setGpaScale] = useState("4.0");
   const [englishTest, setEnglishTest] = useState("IELTS Academic");
-  const [ielts, setIelts] = useState(user?.ielts || "7.5");
+  const [ielts, setIelts] = useState(user?.ielts || "");
   const [standardizedTest, setStandardizedTest] = useState("GRE");
-  const [standardizedScore, setStandardizedScore] = useState("322");
-  const [workExperienceYears, setWorkExperienceYears] = useState("1.5");
-  const [fieldOfStudy, setFieldOfStudy] = useState("Computer Science & Engineering");
+  const [standardizedScore, setStandardizedScore] = useState(user?.standardizedScore || "");
+  const [workExperienceYears, setWorkExperienceYears] = useState(user?.workExperienceYears || "0");
+  const [fieldOfStudy, setFieldOfStudy] = useState(user?.targetCourse || user?.fieldOfStudy || "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {

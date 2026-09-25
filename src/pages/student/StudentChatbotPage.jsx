@@ -218,30 +218,26 @@ export default function StudentChatbotPage() {
     }
 
     setTimeout(() => {
+      const ticketId = `TK-${Date.now().toString().slice(-4)}`;
       const transferNotice = {
         id: `sys-${Date.now()}`,
         sender: "system",
         time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        text: "Session transferred to Admify Admin Panel Live Desk. Senior Support Officer Alex Turner has joined your chat.",
+        text: `Session transferred to Admify Live Support Desk (${ticketId}). Your inquiry has been queued for human counselor review.`,
       };
 
-      const liveAgentGreeting = {
-        id: `live-greet-${Date.now()}`,
-        sender: "live_agent",
-        agentName: "Alex Turner",
-        agentRole: "Admin Support Desk • Senior Admissions Liaison",
-        agentAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+      const supportNotice = {
+        id: `sys-desk-${Date.now()}`,
+        sender: "system",
         time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        text: `Hello ${user?.name || "there"}! I am Alex Turner from the Admify Admin Panel Support Desk.
-
-I have received your inquiry context from Admify AI. I can personally review your application status, verify university eligibility requirements, or escalate documents to our compliance team. How can I assist you right now?`,
+        text: `Inquiries posted in this channel are routed directly to the Admify Support Desk. A verified counselor will respond directly as soon as they review your inquiry.`,
       };
 
-      setMessages((prev) => [...prev, transferNotice, liveAgentGreeting]);
+      setMessages((prev) => [...prev, transferNotice, supportNotice]);
       setChatMode("live");
       setIsTransferring(false);
-      toast.success("Connected to Live Agent (Admin Support Desk)");
-    }, 1200);
+      toast.success("Inquiry routed to Admify Support Desk");
+    }, 1000);
   };
 
   const handleSwitchBackToAI = () => {
@@ -315,39 +311,35 @@ You have completed ${currentCount} of 4 required AI inquiries (${needed} remaini
     setIsTyping(true);
 
     if (chatMode === "live") {
-      // In Live Agent Mode: Route to Admin Panel message box
+      // In Live Agent Mode: Route to Admin Panel Support Desk
       try {
-        await api.post("/api/chat/message", {
+        const res = await api.post("/api/chat/message", {
           sessionId: `student_${user?._id || "local"}`,
           text: query.trim(),
           isLiveAgentRequest: true,
         });
+
+        if (res?.data?.reply?.text) {
+          const deskMessage = {
+            id: `desk-${Date.now()}`,
+            sender: "system",
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            text: res.data.reply.text,
+          };
+          setMessages((prev) => [...prev, deskMessage]);
+        }
       } catch (err) {
         console.warn("Live chat message post:", err.message);
-      }
-
-      // Simulate Live Agent response
-      setTimeout(() => {
-        let liveReply = `Thank you for your message. I have logged this inquiry into our Admin Panel ticket system and am verifying the records for you.`;
-        if (lower.includes("free") || lower.includes("direct")) {
-          liveReply = `Regarding your 1 Free Direct Application: Your profile has 1 free application credit ready to use. You can submit directly from the Direct Applications tab with zero platform charge.`;
-        } else if (lower.includes("visa") || lower.includes("fund") || lower.includes("bank")) {
-          liveReply = `Our Visa Compliance team has verified that bank solvency certificates must be dated within 28 days of your visa submission date. Let me know if you would like me to review your financial statement draft.`;
-        }
-
-        const agentMessage = {
-          id: `live-${Date.now()}`,
-          sender: "live_agent",
-          agentName: "Alex Turner",
-          agentRole: "Admin Support Desk",
-          agentAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        const ackMessage = {
+          id: `desk-ack-${Date.now()}`,
+          sender: "system",
           time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          text: liveReply,
+          text: "Message delivered to Admify Support Desk. An admissions counselor will respond to your inquiry shortly.",
         };
-
-        setMessages((prev) => [...prev, agentMessage]);
+        setMessages((prev) => [...prev, ackMessage]);
+      } finally {
         setIsTyping(false);
-      }, 1300);
+      }
     } else {
       // In AI Mode: Generate Bot Response
       setTimeout(() => {

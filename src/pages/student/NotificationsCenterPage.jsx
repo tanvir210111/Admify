@@ -117,7 +117,7 @@ function NotificationsCenterPage() {
         {filtered.length === 0 ? (
           <div className="p-12 text-center rounded-3xl bg-[#0B1228] border border-slate-800 space-y-2">
             <Bell className="w-8 h-8 text-slate-600 mx-auto" />
-            <h3 className="text-sm font-bold text-white">No notifications</h3>
+            <h3 className="text-sm font-bold text-white">No notifications yet.</h3>
             <p className="text-xs text-slate-400">You're all caught up.</p>
           </div>
         ) : (

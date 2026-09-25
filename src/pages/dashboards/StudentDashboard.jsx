@@ -37,9 +37,8 @@ import toast from "react-hot-toast";
 function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
-  const [profileStrength, setProfileStrength] = useState({ percentage: 78, missingItems: [] });
+  const [profileStrength, setProfileStrength] = useState(() => calculateProfileStrength(user));
   const [applications, setApplications] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [savedCount, setSavedCount] = useState(0);
@@ -47,7 +46,7 @@ function StudentDashboard() {
   const [agencyState, setAgencyState] = useState(null);
   const [freeAppStatus, setFreeAppStatus] = useState({ freeAvailable: true, usedCount: 0 });
 
-  const plan = studentService.getStudentPlan(user);
+  const credits = user?.walletCredits ?? 0;
   const fullName = user?.user_metadata?.full_name || user?.name || "Student";
   const firstName = fullName.split(" ")[0];
 
@@ -68,13 +67,9 @@ function StudentDashboard() {
         const apps = await studentService.getMyApplications();
         if (isMounted) setApplications(apps);
 
-        // Fetch recommendations only for premium accounts
-        if (studentService.isPremiumAccount(user)) {
-          const recs = await studentService.getAiRecommendations(user);
-          if (isMounted) setRecommendations(recs.slice(0, 3));
-        } else {
-          if (isMounted) setRecommendations([]);
-        }
+        // Fetch recommendations
+        const recs = await studentService.getAiRecommendations(user);
+        if (isMounted) setRecommendations(recs.slice(0, 3));
 
         // Fetch saved & scholarships
         const saved = studentService.getSavedUniversities();
@@ -290,66 +285,43 @@ function StudentDashboard() {
               </div>
               <div>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-400">OPTION B</span>
-                <h3 className="text-lg font-bold text-white">
-                  {plan === "elite" ? "Agency Marketplace" : "Agency Assistance"}
-                </h3>
+                <h3 className="text-lg font-bold text-white">Agency Counseling & Management</h3>
               </div>
             </div>
-            {plan === "free" ? (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                <Lock className="w-3 h-3" />
-                PRO & ELITE ONLY
+            {agencyState?.selectedAgency ? (
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                Counselor Assigned
               </span>
-            ) : plan === "pro" ? (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                {agencyState?.selectedAgency ? "Agency Assigned" : agencyState?.hasActiveRequest ? "Admin Reviewing Bids" : "Pro Included"}
+            ) : agencyState?.hasActiveRequest ? (
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                Order In Progress
               </span>
             ) : (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                {agencyState?.selectedAgency ? "Agency Active" : "Elite Directory Access"}
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                800 CR / 1,500 CR
               </span>
             )}
           </div>
           <p className="text-xs text-slate-400 leading-relaxed mb-4">
-            {plan === "free"
-              ? "Professional agency guidance and dedicated counseling are available exclusively on Pro Path ($39/mo) and Elite Premium ($119/mo). Free students can use their 1 Free Direct Application."
-              : plan === "pro"
-              ? agencyState?.selectedAgency
-                ? `Your application is managed by ${agencyState.selectedAgency.name}. Dedicated certified counselor assigned.`
-                : agencyState?.hasActiveRequest
-                ? "Your request is active. Verified agencies have submitted confidential bids to Admin for assignment."
-                : "Submit an agency assistance request. Admify reviews confidential agency bids to assign your verified agency."
-              : agencyState?.selectedAgency
-              ? `Your chosen agency ${agencyState.selectedAgency.name} is managing your applications.`
-              : "Browse the full directory of verified global agencies, compare credentials, and choose your preferred partner agency."}
+            {agencyState?.selectedAgency
+              ? `Your application is supported by ${agencyState.selectedAgency.name}. Dedicated counselor assigned.`
+              : agencyState?.hasActiveRequest
+              ? "Your agency service order is active. Admify Admin is allocating your certified admissions counselor."
+              : "Activate Agency Assistance (800 CR / ৳80,000) or Full Agency Managed Service (1,500 CR / ৳1,50,000) directly using your wallet credits."}
           </p>
           <div className="flex items-center justify-between pt-3 border-t border-slate-800/80">
             <span className="text-xs text-slate-300 font-medium">
-              {plan === "free"
-                ? "Upgrade to unlock certified agency support"
-                : agencyState?.selectedAgency
+              {agencyState?.selectedAgency
                 ? `Assigned: ${agencyState.selectedAgency.name}`
-                : plan === "elite"
-                ? "Select your preferred verified agency"
                 : agencyState?.hasActiveRequest
-                ? "Confidential matching in progress"
-                : "Confidential agency matching included"}
+                ? "Counselor assignment in progress"
+                : "Credit-based • Zero subscriptions"}
             </span>
             <Link
-              to={plan === "free" ? "/student/wallet" : "/student/agency-assistance"}
+              to="/student/agency-assistance"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all shadow-md shadow-purple-500/20"
             >
-              <span>
-                {plan === "free"
-                  ? "Upgrade to Pro"
-                  : agencyState?.selectedAgency
-                  ? "View Agency Workspace"
-                  : plan === "elite"
-                  ? "Explore Agency Directory"
-                  : agencyState?.hasActiveRequest
-                  ? "Check Matching Status"
-                  : "Request Agency Assistance"}
-              </span>
+              <span>{agencyState?.hasActiveRequest ? "View Agency Workspace" : "Explore Agency Services"}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -417,28 +389,31 @@ function StudentDashboard() {
                   <ChevronRight className="w-4 h-4" />
                 </Link>
               )}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>AI Study Recommendations</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                      10 CR per run
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-400">Profile-driven institutional matches</p>
+                </div>
+              </div>
+              <Link
+                to="/student/recommendations"
+                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+              >
+                <span>View all</span>
+                <ChevronRight className="w-4 h-4" />
+              </Link>
             </div>
 
-            {!studentService.isPremiumAccount(user) ? (
-              <div className="p-6 rounded-2xl bg-[#07142D] border border-slate-800 text-center space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 flex items-center justify-center mx-auto">
-                  <Lock className="w-5 h-5" />
-                </div>
-                <div className="space-y-1 max-w-md mx-auto">
-                  <h3 className="text-sm font-bold text-white">AI Recommendations Locked</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    AI recommendations are available on Pro Path ($39/mo) and Elite Premium ($119/mo).
-                  </p>
-                </div>
-                <Link
-                  to="/student/wallet"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all shadow-md shadow-purple-500/20"
-                >
-                  <Crown className="w-3.5 h-3.5" />
-                  <span>Upgrade Plan</span>
-                </Link>
-              </div>
-            ) : recommendations.length === 0 ? (
+            {recommendations.length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-400 bg-[#07142D] rounded-2xl border border-slate-800 space-y-3">
                 <p>No recommendations generated yet. Submit your academic intake to generate university matches.</p>
                 <Link
@@ -446,7 +421,7 @@ function StudentDashboard() {
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-[#050B1F] text-xs font-bold transition-all"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Run AI Matching</span>
+                  <span>Run AI Matching (10 CR)</span>
                 </Link>
               </div>
             ) : (
@@ -603,46 +578,27 @@ function StudentDashboard() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Users2 className="w-5 h-5 text-purple-400" />
-                <h3 className="text-base font-bold text-white">Agency Assistance</h3>
+                <h3 className="text-base font-bold text-white">Agency Counseling</h3>
               </div>
               <Link
-                to={plan === "free" ? "/student/wallet" : "/student/agency-assistance"}
+                to="/student/agency-assistance"
                 className="text-xs font-bold text-purple-400 hover:underline"
               >
-                {plan === "free" ? "Upgrade" : "Manage"}
+                {agencyState?.hasActiveRequest ? "View Workspace" : "Explore"}
               </Link>
             </div>
 
-            {plan === "free" ? (
-              <div className="p-5 rounded-2xl bg-gradient-to-b from-[#07142D] to-[#0B1228] border border-dashed border-amber-500/30 text-center space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400 flex items-center justify-center mx-auto">
-                  <Lock className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Agency Assistance Locked</h4>
-                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                    Free accounts are self-service with 1 free direct application. Agency matching and certified counselors are available on Pro Path & Elite.
-                  </p>
-                </div>
-                <Link
-                  to="/student/wallet"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-sm shadow-purple-500/20"
-                >
-                  <Crown className="w-3.5 h-3.5" />
-                  <span>Upgrade to Pro</span>
-                </Link>
-              </div>
-            ) : agencyState?.selectedAgency ? (
+            {agencyState?.selectedAgency ? (
               <div className="p-4 rounded-2xl bg-[#07142D] border border-slate-800 space-y-3">
                 <div className="flex items-center gap-3">
                   <img
-                    src={agencyState.assignedAgent?.avatar}
-                    alt={agencyState.assignedAgent?.name}
+                    src={agencyState.assignedAgent?.avatar || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200"}
+                    alt={agencyState.assignedAgent?.name || "Counselor"}
                     className="w-10 h-10 rounded-full object-cover border border-purple-400/40"
                   />
                   <div>
-                    <h4 className="text-xs font-bold text-white">{agencyState.assignedAgent?.name}</h4>
-                    <p className="text-[11px] text-purple-300">{agencyState.assignedAgent?.role}</p>
+                    <h4 className="text-xs font-bold text-white">{agencyState.assignedAgent?.name || "Assigned Counselor"}</h4>
+                    <p className="text-[11px] text-purple-300">{agencyState.assignedAgent?.role || "Senior Admissions Counselor"}</p>
                     <p className="text-[10px] text-slate-400">{agencyState.selectedAgency.name}</p>
                   </div>
                 </div>
@@ -653,58 +609,40 @@ function StudentDashboard() {
                   Open Messages with Agent
                 </Link>
               </div>
-            ) : plan === "pro" ? (
-              agencyState?.hasActiveRequest ? (
-                <div className="p-4 rounded-2xl bg-[#07142D] border border-slate-800 text-center space-y-2">
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    Matching in Progress
-                  </span>
-                  <p className="text-xs text-slate-300 font-medium">Under Admin Review</p>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Admify Admin is reviewing confidential agency bids to assign your verified agency.
-                  </p>
-                  <Link
-                    to="/student/agency-assistance"
-                    className="inline-block px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-sm"
-                  >
-                    Check Status
-                  </Link>
-                </div>
-              ) : (
-                <div className="p-4 rounded-2xl bg-[#07142D] border border-slate-800 text-center space-y-2">
-                  <p className="text-xs text-slate-300 font-medium">Certified Agency Network</p>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Request expert guidance. Admin evaluates confidential bids to match you with top agencies.
-                  </p>
-                  <Link
-                    to="/student/agency-assistance"
-                    className="inline-block px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-sm"
-                  >
-                    Request Agency Assistance
-                  </Link>
-                </div>
-              )
-            ) : (
-              // Elite
+            ) : agencyState?.hasActiveRequest ? (
               <div className="p-4 rounded-2xl bg-[#07142D] border border-slate-800 text-center space-y-2">
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                  Elite Marketplace
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                  Matching in Progress
                 </span>
-                <p className="text-xs text-slate-300 font-medium">Browse Verified Agencies</p>
+                <p className="text-xs text-slate-300 font-medium">Under Admin Review</p>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  As an Elite member, browse all eligible global partner agencies and select your counseling team.
+                  Admify Admin is allocating your certified admissions agency counselor.
                 </p>
                 <Link
                   to="/student/agency-assistance"
-                  className="inline-block px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-sm"
+                  className="inline-block px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-sm"
                 >
-                  Explore Agency Directory
+                  Check Status
+                </Link>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-[#07142D] border border-slate-800 text-center space-y-2.5">
+                <p className="text-xs text-slate-300 font-medium">Dedicated Agency Guidance</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Activate Agency Assistance (800 CR) or Full Agency Managed Service (1,500 CR) using your credit wallet.
+                </p>
+                <Link
+                  to="/student/agency-assistance"
+                  className="inline-block px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-sm shadow-purple-500/20"
+                >
+                  Explore Agency Services
                 </Link>
               </div>
             )}
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

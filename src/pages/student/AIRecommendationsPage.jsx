@@ -66,9 +66,6 @@ function AIRecommendationsPage() {
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
 
-  // Premium Membership Gate: Free account cannot access AI recommendations
-  const isPremium = studentService.isPremiumAccount(user);
-
   // Load existing assessment from storage if exists
   const savedAssessment = (() => {
     try {
@@ -86,16 +83,16 @@ function AIRecommendationsPage() {
 
   // Assessment Form State
   const [targetDegree, setTargetDegree] = useState(savedAssessment?.targetDegree || "Master's / Postgraduate");
-  const [fieldOfStudy, setFieldOfStudy] = useState(savedAssessment?.fieldOfStudy || "Computer Science & AI");
+  const [fieldOfStudy, setFieldOfStudy] = useState(savedAssessment?.fieldOfStudy || "");
   const [currentLevel, setCurrentLevel] = useState(savedAssessment?.currentLevel || "Undergraduate / Bachelor's");
-  const [institution, setInstitution] = useState(savedAssessment?.institution || "University of Dhaka");
-  const [gpa, setGpa] = useState(savedAssessment?.gpa || user?.gpa || "3.80");
+  const [institution, setInstitution] = useState(savedAssessment?.institution || user?.institution || "");
+  const [gpa, setGpa] = useState(savedAssessment?.gpa || user?.gpa || "");
   const [gpaScale, setGpaScale] = useState(savedAssessment?.gpaScale || "4.0");
   const [englishTest, setEnglishTest] = useState(savedAssessment?.englishTest || "IELTS Academic");
-  const [ielts, setIelts] = useState(savedAssessment?.ielts || user?.ielts || "7.5");
-  const [standardizedTest, setStandardizedTest] = useState(savedAssessment?.standardizedTest || "GRE");
-  const [standardizedScore, setStandardizedScore] = useState(savedAssessment?.standardizedScore || "320");
-  const [workExperience, setWorkExperience] = useState(savedAssessment?.workExperience || "1-2 Years");
+  const [ielts, setIelts] = useState(savedAssessment?.ielts || user?.ielts || "");
+  const [standardizedTest, setStandardizedTest] = useState(savedAssessment?.standardizedTest || "None");
+  const [standardizedScore, setStandardizedScore] = useState(savedAssessment?.standardizedScore || "");
+  const [workExperience, setWorkExperience] = useState(savedAssessment?.workExperience || "0-1 Years");
   const [targetDestinations, setTargetDestinations] = useState(
     savedAssessment?.targetDestinations || ["United States", "United Kingdom", "Germany", "Canada"]
   );
@@ -124,12 +121,12 @@ function AIRecommendationsPage() {
     }
   };
 
-  // Initial load if already assessed and premium
+  // Initial load if already assessed
   useEffect(() => {
-    if (savedAssessment && isPremium) {
+    if (savedAssessment) {
       runEvaluation(savedAssessment);
     }
-  }, [isPremium]);
+  }, []);
 
   // Handle destination toggle
   const toggleDestination = (country) => {
@@ -144,12 +141,21 @@ function AIRecommendationsPage() {
     }
   };
 
-  // Submit assessment form & run AI matching simulation
-  const handleAnalyzeProfile = (e) => {
+  // Submit assessment form & run AI matching
+  const handleAnalyzeProfile = async (e) => {
     e?.preventDefault();
 
     if (!gpa || parseFloat(gpa) <= 0) {
       toast.error("Please provide a valid GPA");
+      return;
+    }
+
+    const currentBal = user?.walletCredits ?? 0;
+    if (currentBal < 10) {
+      toast.error(
+        `Insufficient Credits! Running AI Recommendations requires 10 Credits (You have ${currentBal} CR). Please buy credits in your Wallet.`,
+        { duration: 5000 }
+      );
       return;
     }
 
@@ -186,16 +192,30 @@ function AIRecommendationsPage() {
     ];
 
     let currentStep = 0;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       currentStep++;
       if (currentStep < steps.length) {
         setAnalyzingStep(currentStep);
       } else {
         clearInterval(interval);
-        runEvaluation(assessmentPayload);
+        await runEvaluation(assessmentPayload);
+
+        // Deduct 10 Credits atomically on successful generation
+        try {
+          const deductRes = await api.post("/api/wallet/deduct", {
+            serviceCode: "AI_RECOMMENDATION",
+            referenceId: `REC-${Date.now()}`,
+          });
+          if (updateUser && deductRes?.data?.balanceAfter !== undefined) {
+            updateUser({ walletCredits: deductRes.data.balanceAfter });
+          }
+          toast.success("AI Recommendation Profile synthesized! 10 Credits deducted.");
+        } catch (err) {
+          console.warn("Credit deduction error:", err.message);
+        }
+
         setIsAnalyzing(false);
         setViewMode("results");
-        toast.success("AI Recommendation Profile synthesized successfully!");
       }
     }, 450);
   };
@@ -288,37 +308,7 @@ function AIRecommendationsPage() {
         )}
       </div>
 
-      {/* FREE ACCOUNT LOCKED GATE */}
-      {!isPremium ? (
-        <div className="p-8 sm:p-12 rounded-3xl bg-[#0B1228] border border-slate-800 text-center space-y-5 max-w-xl mx-auto shadow-xl">
-          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 mx-auto flex items-center justify-center text-amber-400">
-            <Lock className="w-7 h-7" />
-          </div>
-
-          <div className="space-y-2">
-            <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">
-              Pro & Elite Feature
-            </span>
-            <h2 className="text-xl font-bold text-white">
-              AI Recommendations Locked
-            </h2>
-            <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-              Personalized university matching based on your academic credentials requires a Pro Path or Elite Premium subscription. Upgrade your account to run matching.
-            </p>
-          </div>
-
-          <div className="pt-2">
-            <button
-              onClick={() => navigate("/student/wallet")}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-cyan-500 hover:opacity-95 text-[#050B1F] font-bold text-xs uppercase tracking-wider transition-all shadow-md"
-            >
-              View Subscription Plans
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* AI Computing Animation Modal Overlay */}
+      {/* AI Computing Animation Modal Overlay */}
           <AnimatePresence>
             {isAnalyzing && (
               <motion.div
@@ -997,9 +987,7 @@ function AIRecommendationsPage() {
           )}
         </div>
       )}
-    </>
-    )}
-  </div>
+    </div>
   );
 }
 

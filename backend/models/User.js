@@ -65,10 +65,34 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
-    // Wallet / Credits system
+    // Wallet / Credits system (Credit-based model)
     walletCredits: {
       type: Number,
-      default: 250, // Initial bonus credits
+      default: 20, // Initial 20 Welcome Credits
+    },
+    freeCredits: {
+      type: Number,
+      default: 20, // Valid for 1 month
+    },
+    paidCredits: {
+      type: Number,
+      default: 0, // Never expires
+    },
+    freeCreditExpiresAt: {
+      type: Date,
+      default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days validity
+    },
+    freeCreditsForfeited: {
+      type: Boolean,
+      default: false,
+    },
+    totalPurchasedCredits: {
+      type: Number,
+      default: 0,
+    },
+    totalUsedCredits: {
+      type: Number,
+      default: 0,
     },
   },
   {
@@ -77,7 +101,18 @@ const userSchema = new mongoose.Schema(
       virtuals: true,
       transform: (doc, ret) => {
         delete ret.password;
-        // Provide compatibility layer for frontend checking user.user_metadata
+        // Dynamically evaluate active usable credits (respecting 1-month expiry and purchase forfeiture)
+        const now = new Date();
+        const isFreeExpired = ret.freeCreditExpiresAt && new Date(ret.freeCreditExpiresAt) < now;
+        const isFreeForfeited = Boolean(ret.freeCreditsForfeited);
+        const activeFree = (!isFreeExpired && !isFreeForfeited) ? (ret.freeCredits || 0) : 0;
+        const activePaid = ret.paidCredits || 0;
+        ret.availableCredits = activeFree + activePaid;
+        ret.walletCredits = ret.availableCredits;
+        ret.activeFreeCredits = activeFree;
+        ret.isFreeExpired = isFreeExpired;
+
+        // Compatibility layer for frontend checking user.user_metadata
         ret.user_metadata = {
           full_name: ret.name,
           phone: ret.phone,

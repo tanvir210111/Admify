@@ -179,8 +179,8 @@ function ScholarshipsSystemPage() {
           >
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-2">
-                <span className="px-2.5 py-1 rounded-full text-xs font-black bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                  {sch.match}% Match
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
+                  {sch.type}
                 </span>
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
                   {sch.country && (
@@ -188,9 +188,6 @@ function ScholarshipsSystemPage() {
                       {sch.country}
                     </span>
                   )}
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider bg-slate-800 text-slate-400 border border-slate-700">
-                    {sch.type}
-                  </span>
                 </div>
               </div>
 

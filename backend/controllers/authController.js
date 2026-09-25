@@ -1,4 +1,5 @@
 import User from '../models/User.js';
+import CreditTransaction from '../models/CreditTransaction.js';
 import generateToken from '../utils/generateToken.js';
 
 // @desc    Register a new user (student, agent, agency, university)
@@ -38,6 +39,25 @@ export const register = async (req, res, next) => {
       phone,
       role: assignedRole,
     });
+
+    if (assignedRole === 'student') {
+      try {
+        await CreditTransaction.create({
+          transactionId: `CTX-WLC-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+          user: user._id,
+          type: 'WELCOME_CREDIT',
+          credits: 20,
+          balanceBefore: 0,
+          balanceAfter: 20,
+          referenceType: 'WELCOME',
+          referenceId: 'WELCOME_BONUS_20CR',
+          desc: 'Free Welcome Credits (Valid for 1 month)',
+          status: 'COMPLETED',
+        });
+      } catch (err) {
+        console.warn('Failed to log welcome credit transaction:', err.message);
+      }
+    }
 
     const token = generateToken(user._id);
 

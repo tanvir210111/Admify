@@ -14,25 +14,8 @@ function DashboardLayout() {
   const [searchQuery, setSearchQuery] = useState("");
   
   // Real notifications state
-  const [notifications, setNotifications] = useState([
-    {
-      id: "init-1",
-      title: "Welcome to Admify AI",
-      desc: "Complete your profile to receive precision university recommendations.",
-      time: "Just now",
-      icon: "🎓",
-      color: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
-    },
-    {
-      id: "init-2",
-      title: "1 Free Application Ready",
-      desc: "You have 1 free direct university application available to submit.",
-      time: "10m ago",
-      icon: "⚡",
-      color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-    },
-  ]);
-  const [unreadCount, setUnreadCount] = useState(2);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -173,7 +156,7 @@ function DashboardLayout() {
                         {notifications.length === 0 ? (
                           <div className="p-8 text-center text-slate-400">
                             <Bell className="w-7 h-7 mx-auto mb-2 opacity-40 text-slate-500" />
-                            <p className="text-xs">No new notifications</p>
+                            <p className="text-xs">No notifications yet.</p>
                           </div>
                         ) : (
                           notifications.map((notif) => (
@@ -263,7 +246,7 @@ function DashboardLayout() {
                           <div>
                             <p className="text-[10px] uppercase font-bold text-purple-300/80 tracking-wider">Admify Credits</p>
                             <p className="text-xs font-black text-white">
-                              {user?.walletCredits ?? 250} <span className="text-[10px] text-purple-300 font-semibold">CR</span>
+                              {user?.walletCredits ?? 0} <span className="text-[10px] text-purple-300 font-semibold">CR</span>
                             </p>
                           </div>
                         </div>

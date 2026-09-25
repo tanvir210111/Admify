@@ -1,6 +1,7 @@
 import { api } from '../lib/api';
 import { universityDatabase } from '../data/universityDetails';
 import { convertTextToDual } from '../utils/currency';
+import { CREDIT_PACKAGES, CREDIT_COSTS } from '../utils/creditConstants';
 
 // Storage keys for student state persistence
 const STORAGE_KEYS = {
@@ -59,10 +60,6 @@ export const REGISTERED_AGENCIES = [
     agentName: 'Eleanor Vance',
     agentRole: 'Senior Academic Counselor',
     agentAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200',
-    bidAmount: '৳35,880 ($299)',
-    bidProposal: 'Comprehensive top-3 university guidance, personalized SOP review with native editor, and 100% visa interview preparation pass record.',
-    turnaroundDays: 3,
-    status: 'bid_submitted',
     eligible: true,
   },
   {
@@ -81,10 +78,6 @@ export const REGISTERED_AGENCIES = [
     agentName: 'Marcus Sterling',
     agentRole: 'Director of International Admissions',
     agentAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=200',
-    bidAmount: '৳29,880 ($249)',
-    bidProposal: 'Direct university partnership processing with waived application fee support and expedited representative follow-up.',
-    turnaroundDays: 2,
-    status: 'bid_submitted',
     eligible: true,
   },
   {
@@ -103,10 +96,6 @@ export const REGISTERED_AGENCIES = [
     agentName: 'Dr. Julia Weber',
     agentRole: 'Head of European Studies',
     agentAvatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=200',
-    bidAmount: '৳23,880 ($199)',
-    bidProposal: 'Zero-tuition German & European public university admissions focus with full document legalization assistance.',
-    turnaroundDays: 4,
-    status: 'bid_submitted',
     eligible: true,
   },
   {
@@ -125,10 +114,6 @@ export const REGISTERED_AGENCIES = [
     agentName: 'Harrison Cole',
     agentRole: 'Certified MARA Education Consultant',
     agentAvatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=200',
-    bidAmount: '৳26,400 ($220)',
-    bidProposal: 'Official Australian Go8 partner agent. Direct streamlined visa processing with high grant rate.',
-    turnaroundDays: 3,
-    status: 'bid_submitted',
     eligible: true,
   },
 ];
@@ -171,7 +156,7 @@ export function calculateProfileStrength(user) {
   const completedItems = checks.filter((c) => c.completed);
 
   return {
-    percentage: Math.min(100, Math.max(15, totalScore)),
+    percentage: Math.min(100, Math.max(0, totalScore)),
     checks,
     missingItems,
     completedItems,
@@ -208,42 +193,56 @@ export const studentService = {
     }
   },
 
-  // ── Subscription Model: Exactly 3 Plans (Free Starter, Pro Path, Elite Premium) ──
-  getStudentPlan(user) {
-    if (user?.tier === 'elite' || user?.plan === 'elite') return 'elite';
-    if (user?.tier === 'pro' || user?.plan === 'pro') return 'pro';
+  // ── Credit Model: Pure Credit-Based Platform (No Subscriptions) ──
+  CREDIT_PACKAGES,
+  CREDIT_COSTS,
+
+  async getWalletData() {
     try {
-      const storedPlan = localStorage.getItem('admify_student_plan');
-      if (storedPlan === 'elite' || storedPlan === 'pro') return storedPlan;
-      const userStr = localStorage.getItem('admify_user');
-      if (userStr) {
-        const parsed = JSON.parse(userStr);
-        if (parsed?.tier === 'elite' || parsed?.plan === 'elite') return 'elite';
-        if (parsed?.tier === 'pro' || parsed?.plan === 'pro') return 'pro';
-      }
-      const isPrem = localStorage.getItem('admify_is_premium');
-      if (isPrem === 'true') return 'pro';
-      return 'free';
-    } catch {
-      return 'free';
+      const res = await api.get('/api/wallet');
+      return res?.data || null;
+    } catch (err) {
+      console.warn('Failed to fetch wallet from API:', err.message);
+      return null;
     }
   },
 
-  setStudentPlan(plan) {
-    try {
-      const safePlan = plan === 'elite' ? 'elite' : (plan === 'pro' ? 'pro' : 'free');
-      localStorage.setItem('admify_student_plan', safePlan);
-      localStorage.setItem('admify_is_premium', safePlan !== 'free' ? 'true' : 'false');
-    } catch {}
+  async validateCoupon(couponCode, packageId) {
+    const res = await api.post('/api/wallet/coupon/validate', { couponCode, packageId });
+    return res?.data;
   },
 
-  isPremiumAccount(user) {
-    const plan = this.getStudentPlan(user);
-    return plan === 'pro' || plan === 'elite';
+  async submitPaymentOrder(payload) {
+    const res = await api.post('/api/wallet/payment-order', payload);
+    return res?.data;
   },
 
-  setPremiumAccount(isPremium) {
-    this.setStudentPlan(isPremium ? 'pro' : 'free');
+  async deductCredits(serviceCode, referenceId = '') {
+    const res = await api.post('/api/wallet/deduct', { serviceCode, referenceId });
+    return res?.data;
+  },
+
+  async activateAgencyService(payload) {
+    const res = await api.post('/api/wallet/agency-service/activate', payload);
+    return res?.data;
+  },
+
+  // Backwards compatibility stubs: platform is now 100% credit based
+  getStudentPlan(_user) {
+    return 'credit_tier';
+  },
+
+  setStudentPlan(_plan) {
+    // Subscriptions removed: no-op
+  },
+
+  isPremiumAccount(_user) {
+    // Pure credit model: access is determined by credits, not subscriptions
+    return true;
+  },
+
+  setPremiumAccount(_isPremium) {
+    // Subscriptions removed: no-op
   },
 
   // ── 2. Direct Applications & 1 FREE Application Business Rule ──
@@ -389,19 +388,18 @@ export const studentService = {
     const cleanKey = String(uniName || '').toLowerCase().trim();
     const existing = clearances[cleanKey] || {};
 
-    const verifiedRecord = {
+    const depositRecord = {
       ...existing,
-      status: 'verified',
-      trxId: trxId || `TXN-${Date.now().toString().slice(-6)}`,
+      status: 'pending_agent_verification',
+      trxId: trxId || '',
       paymentMethod,
-      verifiedBy: existing.assignedAgent?.name || 'Admin Panel Billing Desk',
-      verifiedAt: new Date().toISOString(),
-      receiptNumber: `RCP-${Math.floor(100000 + Math.random() * 900000)}`,
+      submittedAt: new Date().toISOString(),
+      agentNote: `Deposit details submitted. Admin Fee Agent ${existing.assignedAgent?.name || 'Tanvir Ahmed'} is verifying payment records with the banking channel.`,
     };
 
-    clearances[cleanKey] = verifiedRecord;
+    clearances[cleanKey] = depositRecord;
     setLocal('admify_fee_clearances', clearances);
-    return verifiedRecord;
+    return depositRecord;
   },
 
   async submitDirectApplication(applicationData) {
@@ -467,49 +465,17 @@ export const studentService = {
     return newApp;
   },
 
-  // ── 3. Agency Assistance & Confidential Bidding System ─────────
-  getAgencyAssistanceState(user = null) {
-    const plan = this.getStudentPlan(user);
+  // ── 3. Agency Assistance & Full Agency Managed Service (Credit-Based) ──
+  getAgencyAssistanceState(_user = null) {
     const defaultStored = {
       hasActiveRequest: false,
+      serviceType: null,
       requestDetails: null,
       selectedAgency: null,
       assignedAgent: null,
     };
     const stored = getLocal(STORAGE_KEYS.AGENCY_REQUESTS, defaultStored);
 
-    // 1. FREE STARTER — strictly self-service, no agency, no agent
-    if (plan === 'free') {
-      return {
-        isLocked: true,
-        plan: 'free',
-        reason: 'Agency Assistance is available on Pro Path and Elite Premium.',
-        hasActiveRequest: false,
-        requestDetails: null,
-        selectedAgency: null,
-        assignedAgent: null,
-        bids: [],
-        eligibleAgencies: [],
-      };
-    }
-
-    // 2. PRO PATH — receives assistance via Admin assignment only; NO marketplace, NO bids
-    if (plan === 'pro') {
-      return {
-        isLocked: false,
-        plan: 'pro',
-        hasActiveRequest: Boolean(stored.hasActiveRequest),
-        requestDetails: stored.requestDetails,
-        // Only the agency assigned by Admin is visible
-        selectedAgency: stored.selectedAgency,
-        assignedAgent: stored.assignedAgent,
-        // SECURITY: Bids, bid counts, and competing agencies are 100% confidential
-        bids: [],
-        eligibleAgencies: [],
-      };
-    }
-
-    // 3. ELITE PREMIUM — can browse sanitized Agency Directory, choose agency; BIDS STILL CONFIDENTIAL
     const sanitizedDirectory = REGISTERED_AGENCIES.map((a) => ({
       id: a.id,
       name: a.name,
@@ -526,31 +492,27 @@ export const studentService = {
       agentName: a.agentName,
       agentRole: a.agentRole,
       agentAvatar: a.agentAvatar,
-      // bidAmount & bidProposal are completely stripped to preserve confidentiality
+      // Bidding details stripped for confidentiality
     }));
 
     return {
       isLocked: false,
-      plan: 'elite',
       hasActiveRequest: Boolean(stored.hasActiveRequest),
+      serviceType: stored.serviceType || 'AGENCY_ASSISTANCE',
       requestDetails: stored.requestDetails,
       selectedAgency: stored.selectedAgency,
       assignedAgent: stored.assignedAgent,
       eligibleAgencies: sanitizedDirectory,
-      // SECURITY: Bids are confidential for ALL student tiers
-      bids: [],
+      bids: [], // Strictly confidential
     };
   },
 
-  submitAgencyAssistanceRequest(reqData, user = null) {
-    const plan = this.getStudentPlan(user);
-    if (plan === 'free') {
-      throw new Error('Agency Assistance is available on Pro Path and Elite Premium. Please upgrade your subscription.');
-    }
-
-    const requestId = `req-${Date.now().toString().slice(-4)}`;
+  submitAgencyAssistanceRequest(reqData, _user = null) {
+    const serviceType = reqData.serviceType || 'AGENCY_ASSISTANCE';
+    const requestId = `ADM-AGY-${Date.now().toString().slice(-6)}`;
     const requestDetails = {
       id: requestId,
+      serviceType,
       targetCountry: reqData.targetCountry || 'Global',
       studyLevel: reqData.studyLevel || "Master's",
       targetDiscipline: reqData.targetDiscipline || 'General Studies',
@@ -558,29 +520,17 @@ export const studentService = {
       intake: reqData.intake || 'Upcoming Intake',
       notes: reqData.notes || '',
       submittedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-      status: plan === 'pro' ? 'under_admin_review' : 'marketplace_open',
+      status: 'under_admin_review',
     };
-
-    // Store confidential bids for Admin monitoring only (never returned to student)
-    const adminBids = REGISTERED_AGENCIES.map((a) => ({
-      agencyId: a.id,
-      agencyName: a.name,
-      bidAmount: a.bidAmount,
-      bidProposal: a.bidProposal,
-      submittedAt: 'Just now',
-      turnaroundDays: a.turnaroundDays,
-    }));
-    setLocal('admify_admin_agency_bids', adminBids);
 
     const updatedState = {
       hasActiveRequest: true,
+      serviceType,
       requestDetails,
       selectedAgency: null,
       assignedAgent: null,
     };
     setLocal(STORAGE_KEYS.AGENCY_REQUESTS, updatedState);
-
-    return this.getAgencyAssistanceState(user);
   },
 
   // Admin action: reviews confidential bids and assigns an Agency to a Pro student
@@ -754,11 +704,6 @@ export const studentService = {
 
   // ── 5. AI Recommendations with Authentic Academic Thresholds ──
   async getAiRecommendations(userOrAssessment = {}) {
-    // Free accounts strictly do NOT receive AI recommendations
-    if (!this.isPremiumAccount(userOrAssessment)) {
-      return [];
-    }
-
     const allUnis = await this.getUniversities();
 
     const gpaNum = parseFloat(userOrAssessment?.gpa) || 3.7;
