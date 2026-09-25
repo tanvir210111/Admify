@@ -50,6 +50,7 @@ const POPULAR_UNIVERSITIES = [
 ];
 
 function DirectApplicationsPage() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const prefillUni = searchParams.get("uni") || "";

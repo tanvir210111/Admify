@@ -266,46 +266,39 @@ function AIRecommendationsPage() {
         </div>
 
         {/* Controls / View Switcher */}
-        {!isPremium ? (
-          <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20 flex items-center gap-1.5">
-            <Lock className="w-3.5 h-3.5 text-amber-400" />
-            <span>Pro / Elite Feature</span>
-          </span>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* View Switcher Tabs */}
-            <div className="flex items-center p-1 rounded-2xl bg-[#0B1228] border border-slate-800">
-              <button
-                onClick={() => setViewMode("assessment")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  viewMode === "assessment"
-                    ? "bg-cyan-500 text-[#050B1F] shadow-lg shadow-cyan-500/20"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>1. Profile Assessment</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (recommendations.length === 0) {
-                    handleAnalyzeProfile();
-                  } else {
-                    setViewMode("results");
-                  }
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  viewMode === "results"
-                    ? "bg-cyan-500 text-[#050B1F] shadow-lg shadow-cyan-500/20"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>2. AI Matches ({recommendations.length})</span>
-              </button>
-            </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* View Switcher Tabs */}
+          <div className="flex items-center p-1 rounded-2xl bg-[#0B1228] border border-slate-800">
+            <button
+              onClick={() => setViewMode("assessment")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                viewMode === "assessment"
+                  ? "bg-cyan-500 text-[#050B1F] shadow-lg shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>1. Profile Assessment</span>
+            </button>
+            <button
+              onClick={() => {
+                if (recommendations.length === 0) {
+                  handleAnalyzeProfile();
+                } else {
+                  setViewMode("results");
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                viewMode === "results"
+                  ? "bg-cyan-500 text-[#050B1F] shadow-lg shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>2. AI Matches ({recommendations.length})</span>
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* AI Computing Animation Modal Overlay */}

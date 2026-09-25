@@ -211,29 +211,28 @@ function StudentDashboard() {
           <p className="text-lg sm:text-xl font-bold text-white truncate">
             {agencyState?.selectedAgency
               ? "Assigned"
-              : plan === "free"
-              ? "None (Free)"
               : agencyState?.hasActiveRequest
               ? "Under Review"
-              : "None"}
+              : "Not Active"}
           </p>
           <p className="text-xs text-slate-400 font-medium">Agency Status</p>
         </div>
 
         {/* Available Credits */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-[#0B1228] border border-slate-800 hover:border-cyan-500/40 transition-all group">
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#0B1228] border border-slate-800 hover:border-purple-500/40 transition-all group">
           <div className="flex items-center justify-between mb-2">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/20">
+            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center border border-purple-500/20">
               <Wallet className="w-4 h-4" />
             </div>
             <span className="text-[10px] uppercase font-bold text-slate-400">Credits</span>
           </div>
           <p className="text-xl sm:text-2xl font-black text-white">
-            {user?.walletCredits ?? 0} <span className="text-xs text-amber-400 font-bold">CR</span>
+            {user?.walletCredits ?? 20} <span className="text-xs text-purple-400 font-bold">CR</span>
           </p>
-          <p className="text-[11px] text-cyan-400 font-bold">
-            ৳{((user?.walletCredits ?? 0) * 12).toLocaleString("en-BD")} <span className="text-[10px] text-slate-400 font-normal">(≈ ${((user?.walletCredits ?? 0) * 0.1).toFixed(0)} USD)</span>
+          <p className="text-[11px] text-purple-300 font-semibold">
+            ৳{((user?.walletCredits ?? 20) * 100).toLocaleString("en-BD")}
           </p>
+          <p className="text-xs text-slate-400 font-medium">Available Credits</p>
         </div>
       </div>
 
@@ -362,33 +361,6 @@ function StudentDashboard() {
         <div className="xl:col-span-2 space-y-6">
           {/* AI University Recommendations */}
           <div className="p-6 rounded-3xl bg-[#0B1228] border border-slate-800 space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <span>AI Study Recommendations</span>
-                    {!studentService.isPremiumAccount(user) && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                        <Lock className="w-3 h-3" />
-                        PREMIUM ONLY
-                      </span>
-                    )}
-                  </h2>
-                  <p className="text-xs text-slate-400">Profile-driven institutional matches</p>
-                </div>
-              </div>
-              {studentService.isPremiumAccount(user) && (
-                <Link
-                  to="/student/recommendations"
-                  className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
-                >
-                  <span>View all</span>
-                  <ChevronRight className="w-4 h-4" />
-                </Link>
-              )}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
@@ -642,7 +614,6 @@ function StudentDashboard() {
           </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
