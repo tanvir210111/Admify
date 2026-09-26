@@ -6,6 +6,7 @@ import {
   Phone, Calendar, Plus, ExternalLink, Download,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { api } from "../../lib/api";
 
 export default function AdminStudents() {
   const [students, setStudents] = useState([]);
@@ -39,20 +40,16 @@ export default function AdminStudents() {
   const fetchStudents = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = `/api/admin/users?role=student&status=${statusFilter}&search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStudents(data.data?.users || []);
+      const res = await api.get(url);
+      if (res.data.success) {
+        setStudents(res.data.data?.users || []);
       } else {
-        toast.error(data.message || "Failed to load students");
+        toast.error(res.data.message || "Failed to load students");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to connect to student records");
+      toast.error(err.response?.data?.message || "Failed to connect to student records");
     } finally {
       setLoading(false);
     }
@@ -71,13 +68,9 @@ export default function AdminStudents() {
     setSelectedStudent(student);
     setDrawerLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/users/${student._id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setDrawerData(data.data);
+      const res = await api.get(`/api/admin/users/${student._id}`);
+      if (res.data.success) {
+        setDrawerData(res.data.data);
       }
     } catch (err) {
       console.error(err);
@@ -102,35 +95,26 @@ export default function AdminStudents() {
 
     setAdjustLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/admin/credits/adjust", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: adjustModalStudent._id,
-          amount: delta,
-          creditType: adjustType,
-          reason: adjustReason.trim(),
-        }),
+      const res = await api.post("/api/admin/credits/adjust", {
+        userId: adjustModalStudent._id,
+        amount: delta,
+        creditType: adjustType,
+        reason: adjustReason.trim(),
       });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(data.message || "Credits adjusted successfully");
+      if (res.data.success) {
+        toast.success(res.data.message || "Credits adjusted successfully");
         setAdjustModalStudent(null);
         setAdjustAmount("");
         setAdjustReason("");
         fetchStudents();
         if (selectedStudent && selectedStudent._id === adjustModalStudent._id) {
-          openStudentDrawer(data.data.user);
+          openStudentDrawer(res.data.data.user);
         }
       } else {
-        toast.error(data.message || "Credit adjustment failed");
+        toast.error(res.data.message || "Credit adjustment failed");
       }
     } catch (err) {
-      toast.error("Credit adjustment error");
+      toast.error(err.response?.data?.message || "Credit adjustment error");
     } finally {
       setAdjustLoading(false);
     }
@@ -142,28 +126,19 @@ export default function AdminStudents() {
     if (!editStudent) return;
     setEditLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/users/${editStudent._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(editForm),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const res = await api.put(`/api/admin/users/${editStudent._id}`, editForm);
+      if (res.data.success) {
         toast.success("Student updated successfully");
         setEditStudent(null);
         fetchStudents();
         if (selectedStudent && selectedStudent._id === editStudent._id) {
-          openStudentDrawer(data.data.user);
+          openStudentDrawer(res.data.data.user);
         }
       } else {
-        toast.error(data.message || "Failed to update student");
+        toast.error(res.data.message || "Failed to update student");
       }
     } catch (err) {
-      toast.error("Error updating student");
+      toast.error(err.response?.data?.message || "Error updating student");
     } finally {
       setEditLoading(false);
     }
@@ -178,28 +153,19 @@ export default function AdminStudents() {
     }
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/users/${student._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: nextStatus,
-          accountStatus: nextStatus === "active" ? "ACTIVE" : "SUSPENDED",
-          reason: `Admin ${isSuspended ? "restored" : "suspended"} student account`,
-        }),
+      const res = await api.put(`/api/admin/users/${student._id}`, {
+        status: nextStatus,
+        accountStatus: nextStatus === "active" ? "ACTIVE" : "SUSPENDED",
+        reason: `Admin ${isSuspended ? "restored" : "suspended"} student account`,
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.data.success) {
         toast.success(`Student is now ${nextStatus}`);
         fetchStudents();
       } else {
-        toast.error(data.message || "Failed to update status");
+        toast.error(res.data.message || "Failed to update status");
       }
     } catch (err) {
-      toast.error("Status update error");
+      toast.error(err.response?.data?.message || "Status update error");
     }
   };
 

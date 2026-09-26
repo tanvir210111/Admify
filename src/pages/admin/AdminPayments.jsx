@@ -17,6 +17,7 @@ import {
   X
 } from "lucide-react";
 import { formatBDT } from "../../utils/creditConstants";
+import { api } from "../../lib/api";
 
 const fade = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 
@@ -36,25 +37,18 @@ export default function AdminPayments() {
     setLoading(true);
     setErrorMsg("");
     try {
-      const token = localStorage.getItem("token");
       const url = statusFilter && statusFilter !== "all" 
         ? `/api/admin/payments?status=${encodeURIComponent(statusFilter)}`
         : "/api/admin/payments";
-      const res = await fetch(url, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
-      });
-      const data = await res.json();
+      const data = await api.get(url);
       if (data?.success) {
-        setPayments(data.data.payments || []);
+        setPayments(data.data?.payments || []);
       } else {
         setErrorMsg(data?.message || "Failed to load payment orders from server.");
       }
     } catch (err) {
       console.error("Failed to load payments:", err);
-      setErrorMsg("Failed to load payment orders from server.");
+      setErrorMsg(err?.message || "Failed to load payment orders from server.");
     } finally {
       setLoading(false);
     }
@@ -72,15 +66,7 @@ export default function AdminPayments() {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/payments/${orderId}/approve`, {
-        method: "POST",
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
-      });
-      const data = await res.json();
+      const data = await api.post(`/api/admin/payments/${orderId}/approve`, {});
       if (data?.success) {
         setSuccessMsg(`Payment order approved successfully! ${data.data?.creditsAdded || ""} Credits deposited.`);
         fetchPayments();
@@ -89,7 +75,7 @@ export default function AdminPayments() {
       }
     } catch (err) {
       console.error("Approval error:", err);
-      setErrorMsg("Failed to approve payment.");
+      setErrorMsg(err?.message || "Failed to approve payment.");
     } finally {
       setActionLoading(null);
     }
@@ -101,18 +87,9 @@ export default function AdminPayments() {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/payments/${rejectModalOrder._id}/reject`, {
-        method: "POST",
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          reason: rejectReason || "Payment verification failed"
-        })
+      const data = await api.post(`/api/admin/payments/${rejectModalOrder._id}/reject`, {
+        reason: rejectReason || "Payment verification failed"
       });
-      const data = await res.json();
       if (data?.success) {
         setSuccessMsg(`Payment order ${rejectModalOrder.orderId} was marked as REJECTED.`);
         setRejectModalOrder(null);

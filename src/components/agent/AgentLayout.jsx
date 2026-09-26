@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
+import { api } from "../../lib/api";
 import {
   LayoutDashboard,
   Users,
@@ -54,13 +55,8 @@ export default function AgentLayout() {
   useEffect(() => {
     const fetchNotifs = async () => {
       try {
-        const token = localStorage.getItem("token") || localStorage.getItem("admify_token");
-        if (!token) return;
-        const res = await fetch("/api/agent/notifications", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data?.notifications)) {
+        const data = await api.get("/api/agent/notifications");
+        if (data?.success && Array.isArray(data.data?.notifications)) {
           setNotifications(data.data.notifications);
           setUnreadCount(data.data.notifications.filter((n) => !n.read).length);
         }

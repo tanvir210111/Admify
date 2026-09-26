@@ -6,6 +6,7 @@ import {
   RefreshCw, X, Clock, ChevronRight, Phone, Mail, Award,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../../lib/api";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending Review", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
@@ -34,22 +35,18 @@ export default function AdminUniReps() {
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = filter !== "all"
         ? `/api/admin/university-rep-applications?status=${encodeURIComponent(filter)}&search=${encodeURIComponent(search)}`
         : `/api/admin/university-rep-applications?search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setApplications(data.data?.applications || []);
+      const res = await api.get(url);
+      if (res.data.success) {
+        setApplications(res.data.data?.applications || []);
       } else {
-        toast.error(data.message || "Failed to load representative applications");
+        toast.error(res.data.message || "Failed to load representative applications");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load representative applications");
+      toast.error(err.response?.data?.message || "Failed to load representative applications");
     } finally {
       setLoading(false);
     }
@@ -63,17 +60,10 @@ export default function AdminUniReps() {
     if (!actionModal?.app) return;
     setActionLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/university-rep-applications/${actionModal.app._id}/approve`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ adminNotes: adminNotes.trim() }),
+      const res = await api.post(`/api/admin/university-rep-applications/${actionModal.app._id}/approve`, {
+        adminNotes: adminNotes.trim(),
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.data.success) {
         toast.success("University representative approved. Activation link dispatched.");
         setActionModal(null);
         setAdminNotes("");
@@ -82,10 +72,10 @@ export default function AdminUniReps() {
           setSelectedApp({ ...selectedApp, status: "APPROVED" });
         }
       } else {
-        toast.error(data.message || "Approval failed");
+        toast.error(res.data.message || "Approval failed");
       }
     } catch (err) {
-      toast.error("Network error during approval");
+      toast.error(err.response?.data?.message || "Network error during approval");
     } finally {
       setActionLoading(false);
     }
@@ -99,20 +89,11 @@ export default function AdminUniReps() {
     }
     setActionLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/university-rep-applications/${actionModal.app._id}/reject`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          rejectionReason: rejectionReason.trim(),
-          adminNotes: adminNotes.trim(),
-        }),
+      const res = await api.post(`/api/admin/university-rep-applications/${actionModal.app._id}/reject`, {
+        rejectionReason: rejectionReason.trim(),
+        adminNotes: adminNotes.trim(),
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.data.success) {
         toast.success("Application rejected.");
         setActionModal(null);
         setRejectionReason("");
@@ -122,10 +103,10 @@ export default function AdminUniReps() {
           setSelectedApp({ ...selectedApp, status: "REJECTED" });
         }
       } else {
-        toast.error(data.message || "Rejection failed");
+        toast.error(res.data.message || "Rejection failed");
       }
     } catch (err) {
-      toast.error("Network error during rejection");
+      toast.error(err.response?.data?.message || "Network error during rejection");
     } finally {
       setActionLoading(false);
     }

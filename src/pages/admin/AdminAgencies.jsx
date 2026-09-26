@@ -6,6 +6,7 @@ import {
   ChevronRight, Phone, Mail, Globe, MapPin, Award,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { api } from "../../lib/api";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
@@ -34,18 +35,14 @@ export default function AdminAgencies() {
   const fetchAgencies = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = filter !== "all"
         ? `/api/admin/agencies/verifications?status=${encodeURIComponent(filter)}`
         : "/api/admin/agencies/verifications";
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.get(url);
+      if (data?.success) {
         setVerifications(data.data?.verifications || []);
       } else {
-        toast.error(data.message || "Failed to load agency verifications");
+        toast.error(data?.message || "Failed to load agency verifications");
       }
     } catch (err) {
       console.error(err);
@@ -70,22 +67,13 @@ export default function AdminAgencies() {
 
     setActionLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/agencies/verifications/${actionModal.agency._id}/status`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: actionModal.targetStatus,
-          rejectionReason: rejectionReason.trim(),
-          adminNotes: adminNotes.trim(),
-        }),
+      const data = await api.put(`/api/admin/agencies/verifications/${actionModal.agency._id}/status`, {
+        status: actionModal.targetStatus,
+        rejectionReason: rejectionReason.trim(),
+        adminNotes: adminNotes.trim(),
       });
 
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         toast.success(data.message || `Status updated to ${actionModal.targetStatus}`);
         setActionModal(null);
         setRejectionReason("");

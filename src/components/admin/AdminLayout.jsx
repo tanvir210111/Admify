@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
+import { api } from "../../lib/api";
 import {
   LayoutDashboard, Users, UserCheck, Headphones, Building2, Award,
   FileCheck, Sparkles, FileText, Wallet, CreditCard, Bell, BarChart3,
@@ -51,14 +52,9 @@ export default function AdminLayout() {
   useEffect(() => {
     const fetchNotifs = async () => {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) return;
-        const res = await fetch("/api/admin/notifications", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success) {
-          setNotifications(data.data?.notifications || []);
+        const res = await api.get("/api/admin/notifications");
+        if (res?.success) {
+          setNotifications(res.data?.notifications || []);
         }
       } catch (err) {
         console.warn("Failed to load admin notifications:", err);
@@ -78,13 +74,9 @@ export default function AdminLayout() {
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const token = localStorage.getItem("token");
-        const res = await fetch(`/api/admin/search?q=${encodeURIComponent(search.trim())}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success) {
-          setSearchResults(data.data?.results || []);
+        const res = await api.get(`/api/admin/search?q=${encodeURIComponent(search.trim())}`);
+        if (res?.success) {
+          setSearchResults(res.data?.results || []);
           setShowSearchDropdown(true);
         }
       } catch (err) {

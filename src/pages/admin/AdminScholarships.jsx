@@ -5,6 +5,7 @@ import {
   Users, RefreshCw, X, Globe, ExternalLink,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { api } from "../../lib/api";
 
 export default function AdminScholarships() {
   const [scholarships, setScholarships] = useState([]);
@@ -28,13 +29,9 @@ export default function AdminScholarships() {
   const fetchScholarships = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = `/api/admin/scholarships?search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.get(url);
+      if (data?.success) {
         setScholarships(data.data?.scholarships || []);
       }
     } catch (err) {
@@ -88,29 +85,20 @@ export default function AdminScholarships() {
 
     setFormLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = modal.isNew ? "/api/admin/scholarships" : `/api/admin/scholarships/${modal.id}`;
-      const method = modal.isNew ? "POST" : "PUT";
+      const data = modal.isNew
+        ? await api.post(url, form)
+        : await api.put(url, form);
 
-      const res = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(form),
-      });
-
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         toast.success(modal.isNew ? "Scholarship created" : "Scholarship updated");
         setModal(null);
         fetchScholarships();
       } else {
-        toast.error(data.message || "Failed to save scholarship");
+        toast.error(data?.message || "Failed to save scholarship");
       }
     } catch (err) {
-      toast.error("Error saving scholarship");
+      toast.error(err?.message || "Error saving scholarship");
     } finally {
       setFormLoading(false);
     }
@@ -120,20 +108,15 @@ export default function AdminScholarships() {
     if (!window.confirm(`Delete scholarship "${name}"?`)) return;
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/scholarships/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.delete(`/api/admin/scholarships/${id}`);
+      if (data?.success) {
         toast.success("Scholarship removed");
         fetchScholarships();
       } else {
-        toast.error(data.message || "Delete failed");
+        toast.error(data?.message || "Delete failed");
       }
     } catch (err) {
-      toast.error("Error deleting scholarship");
+      toast.error(err?.message || "Error deleting scholarship");
     }
   };
 

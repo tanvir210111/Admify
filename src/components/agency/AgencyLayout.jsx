@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
+import { api } from "../../lib/api";
 import {
   LayoutDashboard,
   UserCheck,
@@ -54,13 +55,8 @@ export default function AgencyLayout() {
   useEffect(() => {
     const fetchUnread = async () => {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) return;
-        const res = await fetch("/api/agency/notifications", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data?.notifications)) {
+        const data = await api.get("/api/agency/notifications");
+        if (data?.success && Array.isArray(data.data?.notifications)) {
           const unread = data.data.notifications.filter((n) => !n.read).length;
           setUnreadCount(unread);
         }

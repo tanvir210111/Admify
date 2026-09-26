@@ -6,6 +6,7 @@ import {
   Calendar, Building2, UserCheck, ShieldAlert,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../../lib/api";
 
 const fade = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.25 } } };
 
@@ -35,20 +36,16 @@ export default function AdminUsers() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = `/api/admin/users?role=${activeTab}&status=${statusFilter}&search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setUsers(data.data?.users || []);
+      const res = await api.get(url);
+      if (res.data.success) {
+        setUsers(res.data.data?.users || []);
       } else {
-        toast.error(data.message || "Failed to load users");
+        toast.error(res.data.message || "Failed to load users");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to fetch users");
+      toast.error(err.response?.data?.message || "Failed to fetch users");
     } finally {
       setLoading(false);
     }
@@ -68,13 +65,9 @@ export default function AdminUsers() {
     setSelectedUser(user);
     setDrawerLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/users/${user._id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setDrawerData(data.data);
+      const res = await api.get(`/api/admin/users/${user._id}`);
+      if (res.data.success) {
+        setDrawerData(res.data.data);
       }
     } catch (err) {
       console.error(err);
@@ -103,28 +96,19 @@ export default function AdminUsers() {
     if (!editUser) return;
     setActionLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/users/${editUser._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(editForm),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const res = await api.put(`/api/admin/users/${editUser._id}`, editForm);
+      if (res.data.success) {
         toast.success("User updated successfully");
         setEditUser(null);
         fetchUsers();
         if (selectedUser && selectedUser._id === editUser._id) {
-          openDetailDrawer(data.data.user);
+          openDetailDrawer(res.data.data.user);
         }
       } else {
-        toast.error(data.message || "Failed to update user");
+        toast.error(res.data.message || "Failed to update user");
       }
     } catch (err) {
-      toast.error("Error updating user");
+      toast.error(err.response?.data?.message || "Error updating user");
     } finally {
       setActionLoading(false);
     }
@@ -141,31 +125,22 @@ export default function AdminUsers() {
     }
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/users/${user._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: newStatus,
-          accountStatus: newAccountStatus,
-          reason: `Admin ${isCurrentlySuspended ? "restored" : "suspended"} account access`,
-        }),
+      const res = await api.put(`/api/admin/users/${user._id}`, {
+        status: newStatus,
+        accountStatus: newAccountStatus,
+        reason: `Admin ${isCurrentlySuspended ? "restored" : "suspended"} account access`,
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.data.success) {
         toast.success(`User ${user.name} is now ${newStatus}`);
         fetchUsers();
         if (selectedUser && selectedUser._id === user._id) {
-          openDetailDrawer(data.data.user);
+          openDetailDrawer(res.data.data.user);
         }
       } else {
-        toast.error(data.message || "Status change failed");
+        toast.error(res.data.message || "Status change failed");
       }
     } catch (err) {
-      toast.error("Status update error");
+      toast.error(err.response?.data?.message || "Status update error");
     }
   };
 

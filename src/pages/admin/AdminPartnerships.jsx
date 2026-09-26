@@ -5,6 +5,7 @@ import {
   XCircle, AlertTriangle, ShieldAlert, RefreshCw, X, Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { api } from "../../lib/api";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending Response", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
@@ -29,18 +30,14 @@ export default function AdminPartnerships() {
   const fetchPartnerships = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = filter !== "all"
         ? `/api/admin/partnerships?status=${encodeURIComponent(filter)}`
         : "/api/admin/partnerships";
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.get(url);
+      if (data?.success) {
         setConnections(data.data?.connections || []);
       } else {
-        toast.error(data.message || "Failed to load partnerships");
+        toast.error(data?.message || "Failed to load partnerships");
       }
     } catch (err) {
       console.error(err);
@@ -60,21 +57,12 @@ export default function AdminPartnerships() {
 
     setActionLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/partnerships/${actionModal.conn._id}/status`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: actionModal.targetStatus,
-          notes: actionNotes.trim(),
-        }),
+      const data = await api.put(`/api/admin/partnerships/${actionModal.conn._id}/status`, {
+        status: actionModal.targetStatus,
+        notes: actionNotes.trim(),
       });
 
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         toast.success(`Partnership status updated to ${actionModal.targetStatus}`);
         setActionModal(null);
         setActionNotes("");

@@ -5,6 +5,7 @@ import {
   Plus, X, Filter, ArrowUpRight, ArrowDownRight, User, ShieldCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../../lib/api";
 
 const TX_TYPES = ["all", "PURCHASE", "USAGE", "ADMIN_ADJUSTMENT", "WELCOME_CREDIT", "REFUND"];
 
@@ -27,20 +28,16 @@ export default function AdminWallet() {
   const fetchTransactions = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = `/api/admin/credits/transactions?type=${encodeURIComponent(typeFilter)}&search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setTransactions(data.data?.transactions || []);
+      const res = await api.get(url);
+      if (res.data.success) {
+        setTransactions(res.data.data?.transactions || []);
       } else {
-        toast.error(data.message || "Failed to load transactions");
+        toast.error(res.data.message || "Failed to load transactions");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to connect to credit ledger");
+      toast.error(err.response?.data?.message || "Failed to connect to credit ledger");
     } finally {
       setLoading(false);
     }
@@ -59,13 +56,9 @@ export default function AdminWallet() {
 
     const t = setTimeout(async () => {
       try {
-        const token = localStorage.getItem("token");
-        const res = await fetch(`/api/admin/users?search=${encodeURIComponent(userQuery.trim())}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.success) {
-          setSearchedUsers(data.data?.users || []);
+        const res = await api.get(`/api/admin/users?search=${encodeURIComponent(userQuery.trim())}`);
+        if (res.data.success) {
+          setSearchedUsers(res.data.data?.users || []);
         }
       } catch (e) {
         console.error(e);
@@ -93,24 +86,15 @@ export default function AdminWallet() {
 
     setActionLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/admin/credits/adjust", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: selectedUser._id,
-          amount: delta,
-          creditType,
-          reason: reason.trim(),
-        }),
+      const res = await api.post("/api/admin/credits/adjust", {
+        userId: selectedUser._id,
+        amount: delta,
+        creditType,
+        reason: reason.trim(),
       });
 
-      const data = await res.json();
-      if (data.success) {
-        toast.success(data.message || "Credits adjusted successfully");
+      if (res.data.success) {
+        toast.success(res.data.message || "Credits adjusted successfully");
         setAdjustModal(false);
         setSelectedUser(null);
         setUserQuery("");
@@ -118,10 +102,10 @@ export default function AdminWallet() {
         setReason("");
         fetchTransactions();
       } else {
-        toast.error(data.message || "Failed to adjust credits");
+        toast.error(res.data.message || "Failed to adjust credits");
       }
     } catch (err) {
-      toast.error("Error connecting to server");
+      toast.error(err.response?.data?.message || "Error connecting to server");
     } finally {
       setActionLoading(false);
     }

@@ -5,6 +5,7 @@ import {
   RefreshCw, X, Calendar, Percent, ShieldCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { api } from "../../lib/api";
 
 export default function AdminCoupons() {
   const [coupons, setCoupons] = useState([]);
@@ -26,13 +27,9 @@ export default function AdminCoupons() {
   const fetchCoupons = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = `/api/admin/coupons?search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.get(url);
+      if (data?.success) {
         setCoupons(data.data?.coupons || []);
       }
     } catch (err) {
@@ -82,35 +79,27 @@ export default function AdminCoupons() {
 
     setFormLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = modal.isNew ? "/api/admin/coupons" : `/api/admin/coupons/${modal.id}`;
-      const method = modal.isNew ? "POST" : "PUT";
-
       const expiryDate = new Date(Date.now() + form.expiryDays * 24 * 60 * 60 * 1000).toISOString();
+      const payload = {
+        ...form,
+        code: form.code.toUpperCase().trim(),
+        expiryDate,
+      };
 
-      const res = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...form,
-          code: form.code.toUpperCase().trim(),
-          expiryDate,
-        }),
-      });
+      const data = modal.isNew
+        ? await api.post(url, payload)
+        : await api.put(url, payload);
 
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         toast.success(modal.isNew ? "Coupon created" : "Coupon updated");
         setModal(null);
         fetchCoupons();
       } else {
-        toast.error(data.message || "Failed to save coupon");
+        toast.error(data?.message || "Failed to save coupon");
       }
     } catch (err) {
-      toast.error("Error saving coupon");
+      toast.error(err?.message || "Error saving coupon");
     } finally {
       setFormLoading(false);
     }
@@ -120,41 +109,27 @@ export default function AdminCoupons() {
     if (!window.confirm(`Are you sure you want to delete coupon ${code}?`)) return;
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/coupons/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.delete(`/api/admin/coupons/${id}`);
+      if (data?.success) {
         toast.success("Coupon deleted");
         fetchCoupons();
       } else {
-        toast.error(data.message || "Failed to delete coupon");
+        toast.error(data?.message || "Failed to delete coupon");
       }
     } catch (err) {
-      toast.error("Error deleting coupon");
+      toast.error(err?.message || "Error deleting coupon");
     }
   };
 
   const handleToggleActive = async (coupon) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/coupons/${coupon._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ isActive: !coupon.isActive }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.put(`/api/admin/coupons/${coupon._id}`, { isActive: !coupon.isActive });
+      if (data?.success) {
         toast.success(`Coupon ${coupon.code} is now ${!coupon.isActive ? "Active" : "Inactive"}`);
         fetchCoupons();
       }
     } catch (err) {
-      toast.error("Status update error");
+      toast.error(err?.message || "Status update error");
     }
   };
 

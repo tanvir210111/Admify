@@ -5,6 +5,7 @@ import {
   Clock, AlertTriangle, RefreshCw, X, ChevronRight, UserCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { api } from "../../lib/api";
 
 const STAGES = ["Submitted", "Documents Pending", "In Review", "Accepted", "Rejected", "Waitlisted"];
 
@@ -25,18 +26,14 @@ export default function AdminApplications() {
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = stageFilter !== "all"
         ? `/api/admin/applications?stage=${encodeURIComponent(stageFilter)}&search=${encodeURIComponent(search)}`
         : `/api/admin/applications?search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const data = await api.get(url);
+      if (data?.success) {
         setApplications(data.data?.applications || []);
       } else {
-        toast.error(data.message || "Failed to load applications");
+        toast.error(data?.message || "Failed to load applications");
       }
     } catch (err) {
       console.error(err);
@@ -56,23 +53,14 @@ export default function AdminApplications() {
 
     setActionLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/applications/${editModal._id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          stage: targetStage,
-          progress,
-          notes: stepNote.trim(),
-          stepLabel: stepNote ? `Admin Stage Update: ${targetStage}` : undefined,
-        }),
+      const data = await api.put(`/api/admin/applications/${editModal._id}`, {
+        stage: targetStage,
+        progress,
+        notes: stepNote.trim(),
+        stepLabel: stepNote ? `Admin Stage Update: ${targetStage}` : undefined,
       });
 
-      const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         toast.success("Application status updated");
         setEditModal(null);
         setStepNote("");

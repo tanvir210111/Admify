@@ -155,6 +155,7 @@ export const AuthProvider = ({ children }) => {
     if (res?.data?.token) {
       clearAuthStorage();
       localStorage.setItem('admify_token', res.data.token);
+      localStorage.setItem('token', res.data.token);
       const formatted = formatUser(res.data.user);
       if (formatted) {
         localStorage.setItem('admify_user', JSON.stringify(formatted));
@@ -176,6 +177,7 @@ export const AuthProvider = ({ children }) => {
     if (res?.data?.token) {
       clearAuthStorage();
       localStorage.setItem('admify_token', res.data.token);
+      localStorage.setItem('token', res.data.token);
       const formatted = formatUser(res.data.user);
       localStorage.setItem('admify_user', JSON.stringify(formatted));
       setUser(formatted);
@@ -194,6 +196,7 @@ export const AuthProvider = ({ children }) => {
     if (res?.data?.token) {
       clearAuthStorage();
       localStorage.setItem('admify_token', res.data.token);
+      localStorage.setItem('token', res.data.token);
       const formatted = formatUser(res.data.user);
       localStorage.setItem('admify_user', JSON.stringify(formatted));
       setUser(formatted);

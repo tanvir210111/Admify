@@ -7,6 +7,7 @@ import {
   Target, GraduationCap, BarChart3, Zap, CheckCircle2, AlertTriangle,
   CreditCard, ShieldCheck, Handshake, AlertCircle, Clock,
 } from "lucide-react";
+import { api } from "../../lib/api";
 
 const fade = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
@@ -21,19 +22,15 @@ export default function AdminDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/admin/dashboard", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = await res.json();
-      if (result.success) {
+      const result = await api.get("/api/admin/dashboard");
+      if (result?.success && result?.data) {
         setData(result.data);
       } else {
-        setError(result.message || "Failed to load dashboard data");
+        setError(result?.message || "Failed to load dashboard data");
       }
     } catch (err) {
       console.error("Dashboard error:", err);
-      setError("Failed to connect to backend service.");
+      setError(err?.message || "Failed to connect to backend service.");
     } finally {
       setLoading(false);
     }

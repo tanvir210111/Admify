@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import AdminUniRepApplicationsTab from "../../components/admin/AdminUniRepApplicationsTab";
+import api from "../../lib/api";
 
 const STATUS_MAP = {
   active: { label: "Active", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
@@ -41,20 +42,16 @@ export default function AdminUniversities() {
   const fetchUniversities = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = countryFilter !== "all"
         ? `/api/admin/universities?country=${encodeURIComponent(countryFilter)}&search=${encodeURIComponent(search)}`
         : `/api/admin/universities?search=${encodeURIComponent(search)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setUniversities(data.data?.universities || []);
+      const res = await api.get(url);
+      if (res.data.success) {
+        setUniversities(res.data.data?.universities || []);
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load universities");
+      toast.error(err.response?.data?.message || "Failed to load universities");
     } finally {
       setLoading(false);
     }
@@ -106,29 +103,18 @@ export default function AdminUniversities() {
     e.preventDefault();
     setFormLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const url = editModal.isNew ? "/api/admin/universities" : `/api/admin/universities/${editModal.id}`;
-      const method = editModal.isNew ? "POST" : "PUT";
+      const res = editModal.isNew ? await api.post(url, formData) : await api.put(url, formData);
 
-      const res = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await res.json();
-      if (data.success) {
+      if (res.data.success) {
         toast.success(editModal.isNew ? "University added to catalog" : "University updated successfully");
         setEditModal(null);
         fetchUniversities();
       } else {
-        toast.error(data.message || "Failed to save university");
+        toast.error(res.data.message || "Failed to save university");
       }
     } catch (err) {
-      toast.error("Error saving university");
+      toast.error(err.response?.data?.message || "Error saving university");
     } finally {
       setFormLoading(false);
     }
@@ -140,20 +126,15 @@ export default function AdminUniversities() {
     }
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/universities/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const res = await api.delete(`/api/admin/universities/${id}`);
+      if (res.data.success) {
         toast.success("University removed");
         fetchUniversities();
       } else {
-        toast.error(data.message || "Failed to delete university");
+        toast.error(res.data.message || "Failed to delete university");
       }
     } catch (err) {
-      toast.error("Error deleting university");
+      toast.error(err.response?.data?.message || "Error deleting university");
     }
   };
 
