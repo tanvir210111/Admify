@@ -30,14 +30,16 @@ export default function AdminWallet() {
     try {
       const url = `/api/admin/credits/transactions?type=${encodeURIComponent(typeFilter)}&search=${encodeURIComponent(search)}`;
       const res = await api.get(url);
-      if (res.data.success) {
-        setTransactions(res.data.data?.transactions || []);
+      const isSuccess = res?.success || res?.data?.success;
+      const txs = res?.data?.transactions || res?.transactions || [];
+      if (isSuccess) {
+        setTransactions(txs);
       } else {
-        toast.error(res.data.message || "Failed to load transactions");
+        toast.error(res?.message || res?.data?.message || "Failed to load transactions");
       }
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || "Failed to connect to credit ledger");
+      toast.error(err.response?.data?.message || err?.message || "Failed to connect to credit ledger");
     } finally {
       setLoading(false);
     }
@@ -57,8 +59,10 @@ export default function AdminWallet() {
     const t = setTimeout(async () => {
       try {
         const res = await api.get(`/api/admin/users?search=${encodeURIComponent(userQuery.trim())}`);
-        if (res.data.success) {
-          setSearchedUsers(res.data.data?.users || []);
+        const isSuccess = res?.success || res?.data?.success;
+        const users = res?.data?.users || res?.users || [];
+        if (isSuccess) {
+          setSearchedUsers(users);
         }
       } catch (e) {
         console.error(e);
@@ -92,9 +96,10 @@ export default function AdminWallet() {
         creditType,
         reason: reason.trim(),
       });
+      const isSuccess = res?.success || res?.data?.success;
 
-      if (res.data.success) {
-        toast.success(res.data.message || "Credits adjusted successfully");
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "Credits adjusted successfully");
         setAdjustModal(false);
         setSelectedUser(null);
         setUserQuery("");
@@ -102,10 +107,10 @@ export default function AdminWallet() {
         setReason("");
         fetchTransactions();
       } else {
-        toast.error(res.data.message || "Failed to adjust credits");
+        toast.error(res?.message || res?.data?.message || "Failed to adjust credits");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Error connecting to server");
+      toast.error(err.response?.data?.message || err?.message || "Error connecting to server");
     } finally {
       setActionLoading(false);
     }

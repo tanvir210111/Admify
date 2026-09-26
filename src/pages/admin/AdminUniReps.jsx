@@ -39,14 +39,16 @@ export default function AdminUniReps() {
         ? `/api/admin/university-rep-applications?status=${encodeURIComponent(filter)}&search=${encodeURIComponent(search)}`
         : `/api/admin/university-rep-applications?search=${encodeURIComponent(search)}`;
       const res = await api.get(url);
-      if (res.data.success) {
-        setApplications(res.data.data?.applications || []);
+      const isSuccess = res?.success || res?.data?.success;
+      const apps = res?.data?.applications || res?.applications || [];
+      if (isSuccess) {
+        setApplications(apps);
       } else {
-        toast.error(res.data.message || "Failed to load representative applications");
+        toast.error(res?.message || res?.data?.message || "Failed to load representative applications");
       }
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || "Failed to load representative applications");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load representative applications");
     } finally {
       setLoading(false);
     }
@@ -63,8 +65,9 @@ export default function AdminUniReps() {
       const res = await api.post(`/api/admin/university-rep-applications/${actionModal.app._id}/approve`, {
         adminNotes: adminNotes.trim(),
       });
-      if (res.data.success) {
-        toast.success("University representative approved. Activation link dispatched.");
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "University representative approved. Activation link dispatched.");
         setActionModal(null);
         setAdminNotes("");
         fetchApplications();
@@ -72,10 +75,10 @@ export default function AdminUniReps() {
           setSelectedApp({ ...selectedApp, status: "APPROVED" });
         }
       } else {
-        toast.error(res.data.message || "Approval failed");
+        toast.error(res?.message || res?.data?.message || "Approval failed");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Network error during approval");
+      toast.error(err.response?.data?.message || err?.message || "Network error during approval");
     } finally {
       setActionLoading(false);
     }
@@ -93,8 +96,9 @@ export default function AdminUniReps() {
         rejectionReason: rejectionReason.trim(),
         adminNotes: adminNotes.trim(),
       });
-      if (res.data.success) {
-        toast.success("Application rejected.");
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "Application rejected.");
         setActionModal(null);
         setRejectionReason("");
         setAdminNotes("");
@@ -103,10 +107,10 @@ export default function AdminUniReps() {
           setSelectedApp({ ...selectedApp, status: "REJECTED" });
         }
       } else {
-        toast.error(res.data.message || "Rejection failed");
+        toast.error(res?.message || res?.data?.message || "Rejection failed");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Network error during rejection");
+      toast.error(err.response?.data?.message || err?.message || "Network error during rejection");
     } finally {
       setActionLoading(false);
     }

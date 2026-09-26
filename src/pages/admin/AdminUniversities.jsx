@@ -46,12 +46,16 @@ export default function AdminUniversities() {
         ? `/api/admin/universities?country=${encodeURIComponent(countryFilter)}&search=${encodeURIComponent(search)}`
         : `/api/admin/universities?search=${encodeURIComponent(search)}`;
       const res = await api.get(url);
-      if (res.data.success) {
-        setUniversities(res.data.data?.universities || []);
+      const isSuccess = res?.success || res?.data?.success;
+      const unis = res?.data?.universities || res?.universities || [];
+      if (isSuccess) {
+        setUniversities(unis);
+      } else {
+        toast.error(res?.message || res?.data?.message || "Failed to load universities");
       }
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || "Failed to load universities");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load universities");
     } finally {
       setLoading(false);
     }
@@ -105,16 +109,17 @@ export default function AdminUniversities() {
     try {
       const url = editModal.isNew ? "/api/admin/universities" : `/api/admin/universities/${editModal.id}`;
       const res = editModal.isNew ? await api.post(url, formData) : await api.put(url, formData);
+      const isSuccess = res?.success || res?.data?.success;
 
-      if (res.data.success) {
-        toast.success(editModal.isNew ? "University added to catalog" : "University updated successfully");
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || (editModal.isNew ? "University added to catalog" : "University updated successfully"));
         setEditModal(null);
         fetchUniversities();
       } else {
-        toast.error(res.data.message || "Failed to save university");
+        toast.error(res?.message || res?.data?.message || "Failed to save university");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Error saving university");
+      toast.error(err.response?.data?.message || err?.message || "Error saving university");
     } finally {
       setFormLoading(false);
     }
@@ -127,14 +132,15 @@ export default function AdminUniversities() {
 
     try {
       const res = await api.delete(`/api/admin/universities/${id}`);
-      if (res.data.success) {
-        toast.success("University removed");
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "University removed");
         fetchUniversities();
       } else {
-        toast.error(res.data.message || "Failed to delete university");
+        toast.error(res?.message || res?.data?.message || "Failed to delete university");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Error deleting university");
+      toast.error(err.response?.data?.message || err?.message || "Error deleting university");
     }
   };
 

@@ -42,14 +42,16 @@ export default function AdminStudents() {
     try {
       const url = `/api/admin/users?role=student&status=${statusFilter}&search=${encodeURIComponent(search)}`;
       const res = await api.get(url);
-      if (res.data.success) {
-        setStudents(res.data.data?.users || []);
+      const isSuccess = res?.success || res?.data?.success;
+      const userList = res?.data?.users || res?.users || [];
+      if (isSuccess) {
+        setStudents(userList);
       } else {
-        toast.error(res.data.message || "Failed to load students");
+        toast.error(res?.message || res?.data?.message || "Failed to load students");
       }
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || "Failed to connect to student records");
+      toast.error(err.response?.data?.message || err?.message || "Failed to connect to student records");
     } finally {
       setLoading(false);
     }
@@ -69,8 +71,10 @@ export default function AdminStudents() {
     setDrawerLoading(true);
     try {
       const res = await api.get(`/api/admin/users/${student._id}`);
-      if (res.data.success) {
-        setDrawerData(res.data.data);
+      const isSuccess = res?.success || res?.data?.success;
+      const details = res?.data || res;
+      if (isSuccess) {
+        setDrawerData(details);
       }
     } catch (err) {
       console.error(err);
@@ -101,20 +105,21 @@ export default function AdminStudents() {
         creditType: adjustType,
         reason: adjustReason.trim(),
       });
-      if (res.data.success) {
-        toast.success(res.data.message || "Credits adjusted successfully");
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "Credits adjusted successfully");
         setAdjustModalStudent(null);
         setAdjustAmount("");
         setAdjustReason("");
         fetchStudents();
         if (selectedStudent && selectedStudent._id === adjustModalStudent._id) {
-          openStudentDrawer(res.data.data.user);
+          openStudentDrawer(res?.data?.user || res?.user || adjustModalStudent);
         }
       } else {
-        toast.error(res.data.message || "Credit adjustment failed");
+        toast.error(res?.message || res?.data?.message || "Credit adjustment failed");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Credit adjustment error");
+      toast.error(err.response?.data?.message || err?.message || "Credit adjustment error");
     } finally {
       setAdjustLoading(false);
     }
@@ -127,18 +132,19 @@ export default function AdminStudents() {
     setEditLoading(true);
     try {
       const res = await api.put(`/api/admin/users/${editStudent._id}`, editForm);
-      if (res.data.success) {
-        toast.success("Student updated successfully");
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "Student updated successfully");
         setEditStudent(null);
         fetchStudents();
         if (selectedStudent && selectedStudent._id === editStudent._id) {
-          openStudentDrawer(res.data.data.user);
+          openStudentDrawer(res?.data?.user || res?.user || editStudent);
         }
       } else {
-        toast.error(res.data.message || "Failed to update student");
+        toast.error(res?.message || res?.data?.message || "Failed to update student");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Error updating student");
+      toast.error(err.response?.data?.message || err?.message || "Error updating student");
     } finally {
       setEditLoading(false);
     }
@@ -158,14 +164,15 @@ export default function AdminStudents() {
         accountStatus: nextStatus === "active" ? "ACTIVE" : "SUSPENDED",
         reason: `Admin ${isSuspended ? "restored" : "suspended"} student account`,
       });
-      if (res.data.success) {
-        toast.success(`Student is now ${nextStatus}`);
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || `Student is now ${nextStatus}`);
         fetchStudents();
       } else {
-        toast.error(res.data.message || "Failed to update status");
+        toast.error(res?.message || res?.data?.message || "Failed to update status");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Status update error");
+      toast.error(err.response?.data?.message || err?.message || "Status update error");
     }
   };
 

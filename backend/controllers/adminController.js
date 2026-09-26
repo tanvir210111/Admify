@@ -588,34 +588,35 @@ export const globalAdminSearch = async (req, res, next) => {
 export const getAdminUsers = async (req, res, next) => {
   try {
     const { role = 'all', status = 'all', search = '', page = 1, limit = 50 } = req.query;
-    const filter = {};
+    const conditions = [];
 
     if (role && role !== 'all') {
       const r = role.toLowerCase();
       if (r === 'unirep' || r === 'university_rep') {
-        filter.role = { $in: ['university_rep', 'university representative', 'university'] };
+        conditions.push({ role: { $in: ['university_rep', 'university representative', 'university'] } });
       } else {
-        filter.role = r;
+        conditions.push({ role: r });
       }
     }
 
     if (status && status !== 'all') {
-      filter.$or = [{ status }, { accountStatus: status.toUpperCase() }];
+      conditions.push({
+        $or: [{ status }, { accountStatus: status.toUpperCase() }],
+      });
     }
 
-    if (search.trim()) {
+    if (search && search.trim()) {
       const s = search.trim();
-      filter.$and = [
-        ...(filter.$and || []),
-        {
-          $or: [
-            { name: { $regex: s, $options: 'i' } },
-            { email: { $regex: s, $options: 'i' } },
-            { phone: { $regex: s, $options: 'i' } },
-          ],
-        },
-      ];
+      conditions.push({
+        $or: [
+          { name: { $regex: s, $options: 'i' } },
+          { email: { $regex: s, $options: 'i' } },
+          { phone: { $regex: s, $options: 'i' } },
+        ],
+      });
     }
+
+    const filter = conditions.length > 0 ? { $and: conditions } : {};
 
     let users = [];
     let total = 0;

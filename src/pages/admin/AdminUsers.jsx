@@ -38,14 +38,16 @@ export default function AdminUsers() {
     try {
       const url = `/api/admin/users?role=${activeTab}&status=${statusFilter}&search=${encodeURIComponent(search)}`;
       const res = await api.get(url);
-      if (res.data.success) {
-        setUsers(res.data.data?.users || []);
+      const isSuccess = res?.success || res?.data?.success;
+      const userList = res?.data?.users || res?.users || [];
+      if (isSuccess) {
+        setUsers(userList);
       } else {
-        toast.error(res.data.message || "Failed to load users");
+        toast.error(res?.message || res?.data?.message || "Failed to load users");
       }
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || "Failed to fetch users");
+      toast.error(err.response?.data?.message || err?.message || "Failed to fetch users");
     } finally {
       setLoading(false);
     }
@@ -66,8 +68,10 @@ export default function AdminUsers() {
     setDrawerLoading(true);
     try {
       const res = await api.get(`/api/admin/users/${user._id}`);
-      if (res.data.success) {
-        setDrawerData(res.data.data);
+      const isSuccess = res?.success || res?.data?.success;
+      const details = res?.data || res;
+      if (isSuccess) {
+        setDrawerData(details);
       }
     } catch (err) {
       console.error(err);
@@ -97,18 +101,19 @@ export default function AdminUsers() {
     setActionLoading(true);
     try {
       const res = await api.put(`/api/admin/users/${editUser._id}`, editForm);
-      if (res.data.success) {
-        toast.success("User updated successfully");
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "User updated successfully");
         setEditUser(null);
         fetchUsers();
         if (selectedUser && selectedUser._id === editUser._id) {
-          openDetailDrawer(res.data.data.user);
+          openDetailDrawer(res?.data?.user || res?.user || editUser);
         }
       } else {
-        toast.error(res.data.message || "Failed to update user");
+        toast.error(res?.message || res?.data?.message || "Failed to update user");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Error updating user");
+      toast.error(err.response?.data?.message || err?.message || "Error updating user");
     } finally {
       setActionLoading(false);
     }
@@ -130,17 +135,18 @@ export default function AdminUsers() {
         accountStatus: newAccountStatus,
         reason: `Admin ${isCurrentlySuspended ? "restored" : "suspended"} account access`,
       });
-      if (res.data.success) {
-        toast.success(`User ${user.name} is now ${newStatus}`);
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || `User ${user.name} is now ${newStatus}`);
         fetchUsers();
         if (selectedUser && selectedUser._id === user._id) {
-          openDetailDrawer(res.data.data.user);
+          openDetailDrawer(res?.data?.user || res?.user || user);
         }
       } else {
-        toast.error(res.data.message || "Status change failed");
+        toast.error(res?.message || res?.data?.message || "Status change failed");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Status update error");
+      toast.error(err.response?.data?.message || err?.message || "Status update error");
     }
   };
 
