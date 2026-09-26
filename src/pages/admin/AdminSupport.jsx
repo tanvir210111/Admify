@@ -40,14 +40,15 @@ export default function AdminSupport() {
     try {
       setLoadingConvs(true);
       const res = await api.get("/api/admin/support/conversations");
-      if (res?.data?.conversations) {
-        setConversations(res.data.conversations);
-        if (!selectedConv && res.data.conversations.length > 0) {
-          selectConversation(res.data.conversations[0]);
+      if (res?.success) {
+        const convList = res.data?.conversations || [];
+        setConversations(convList);
+        if (!selectedConv && convList.length > 0) {
+          selectConversation(convList[0]);
         }
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load support inbox");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load support inbox");
     } finally {
       setLoadingConvs(false);
     }
@@ -55,14 +56,16 @@ export default function AdminSupport() {
 
   const selectConversation = async (conv) => {
     setSelectedConv(conv);
+    const sid = conv.sessionId || conv.id || conv._id;
+    if (!sid) return;
     try {
       setLoadingMessages(true);
-      const res = await api.get(`/api/admin/support/conversations/${conv.id}/messages`);
-      if (res?.data?.messages) {
-        setMessages(res.data.messages);
+      const res = await api.get(`/api/admin/support/conversations/${sid}`);
+      if (res?.success) {
+        setMessages(res.data?.messages || []);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load messages");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load messages");
     } finally {
       setLoadingMessages(false);
     }
@@ -79,30 +82,36 @@ export default function AdminSupport() {
   const handleSendReply = async (e) => {
     e.preventDefault();
     if (!replyText.trim() || !selectedConv) return;
+    const sid = selectedConv.sessionId || selectedConv.id || selectedConv._id;
 
     try {
       setSending(true);
-      const res = await api.post(`/api/admin/support/conversations/${selectedConv.id}/reply`, {
+      const res = await api.post(`/api/admin/support/conversations/${sid}/reply`, {
+        text: replyText.trim(),
         message: replyText.trim(),
       });
 
-      if (res?.data?.reply) {
-        setMessages((prev) => [...prev, res.data.reply]);
+      if (res?.success) {
+        const newMsg = res.data?.reply || { sender: 'agent', text: replyText.trim(), createdAt: new Date() };
+        setMessages((prev) => [...prev, newMsg]);
         setReplyText("");
         toast.success("Reply delivered to student");
         fetchConversations();
+      } else {
+        toast.error(res?.message || "Failed to send reply");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to send reply");
+      toast.error(err.response?.data?.message || err?.message || "Failed to send reply");
     } finally {
       setSending(false);
     }
   };
 
   const filtered = conversations.filter((c) => {
+    const studentObj = c.student || c.user || {};
     const matchSearch =
-      c.student?.name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.student?.email?.toLowerCase().includes(search.toLowerCase()) ||
+      studentObj.name?.toLowerCase().includes(search.toLowerCase()) ||
+      studentObj.email?.toLowerCase().includes(search.toLowerCase()) ||
       c.lastMessage?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || c.status === statusFilter;
     return matchSearch && matchStatus;

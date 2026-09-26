@@ -665,34 +665,34 @@ export const getAdminUserById = async (req, res, next) => {
     if (mongoose.connection.readyState === 1) {
       user = await User.findById(id).select('-password -activationTokenHash');
       if (user) {
-        related.applications = await Application.find({ user: user._id }).sort({ createdAt: -1 });
-        related.paymentOrders = await PaymentOrder.find({ user: user._id }).sort({ createdAt: -1 });
-        related.creditTransactions = await CreditTransaction.find({ user: user._id }).sort({ createdAt: -1 });
-        related.auditHistory = await AuditLog.find({ targetId: user._id.toString() }).sort({ createdAt: -1 });
-
-        if (user.role === 'agency') {
+        if (user.role === 'student') {
+          related.applications = await Application.find({ user: user._id }).sort({ createdAt: -1 });
+          related.paymentOrders = await PaymentOrder.find({ user: user._id }).sort({ createdAt: -1 });
+          related.creditTransactions = await CreditTransaction.find({ user: user._id }).sort({ createdAt: -1 });
+        } else if (user.role === 'agency') {
           related.agencyProfile = await AgencyProfile.findOne({ user: user._id });
           related.agentApplications = await AgentApplication.find({ agency: user._id });
-        } else if (user.role === 'university_rep' || user.role === 'university') {
+        } else if (user.role === 'university_rep' || user.role === 'university' || user.role === 'university representative') {
           related.uniRepApplication = await UniversityRepresentativeApplication.findOne({ user: user._id });
         }
+        related.auditHistory = await AuditLog.find({ targetId: user._id.toString() }).sort({ createdAt: -1 });
       }
     } else {
       user = await devStore.findUserById(id);
       if (user) {
         const db = devStore.read();
         const uid = user._id.toString();
-        related.applications = (db.applications || []).filter((a) => a.user === uid);
-        related.paymentOrders = (db.paymentOrders || []).filter((p) => p.user === uid);
-        related.creditTransactions = (db.creditTransactions || []).filter((c) => c.user === uid);
-        related.auditHistory = (db.auditLogs || []).filter((l) => l.targetId === uid);
-
-        if (user.role === 'agency') {
+        if (user.role === 'student') {
+          related.applications = (db.applications || []).filter((a) => a.user === uid);
+          related.paymentOrders = (db.paymentOrders || []).filter((p) => p.user === uid);
+          related.creditTransactions = (db.creditTransactions || []).filter((c) => c.user === uid);
+        } else if (user.role === 'agency') {
           related.agencyProfile = await devStore.findAgencyProfileByUserId(uid);
           related.agentApplications = await devStore.findAgentApplications({ agency: uid });
-        } else if (user.role === 'university_rep' || user.role === 'university') {
+        } else if (user.role === 'university_rep' || user.role === 'university' || user.role === 'university representative') {
           related.uniRepApplication = await devStore.findUniRepApplicationByUserId(uid);
         }
+        related.auditHistory = (db.auditLogs || []).filter((l) => l.targetId === uid);
       }
     }
 
@@ -851,6 +851,13 @@ export const adjustUserCredits = async (req, res, next) => {
       user = await User.findById(userId);
       if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
+      if (user.role !== 'student') {
+        return res.status(400).json({
+          success: false,
+          message: 'Admify Credit Wallet is strictly applicable to Student accounts only.',
+        });
+      }
+
       balanceBefore = (user.paidCredits || 0) + (user.freeCredits || 0);
 
       if (creditType === 'paid') {
@@ -879,6 +886,13 @@ export const adjustUserCredits = async (req, res, next) => {
     } else {
       user = await devStore.findUserById(userId);
       if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+      if (user.role !== 'student') {
+        return res.status(400).json({
+          success: false,
+          message: 'Admify Credit Wallet is strictly applicable to Student accounts only.',
+        });
+      }
 
       balanceBefore = (user.paidCredits || 0) + (user.freeCredits || 0);
 
@@ -1954,11 +1968,12 @@ export const getAdminSupportMessages = async (req, res, next) => {
 export const replyAdminSupportConversation = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
-    const { text } = req.body;
+    const rawText = req.body.text || req.body.message;
 
-    if (!text || !text.trim()) {
+    if (!rawText || !rawText.trim()) {
       return res.status(400).json({ success: false, message: 'Message text is required.' });
     }
+    const text = rawText.trim();
 
     let saved = null;
     if (mongoose.connection.readyState === 1) {
@@ -2191,19 +2206,13 @@ export const getAdminAuditLogs = async (req, res, next) => {
 // @access  Private (Admin)
 export const getAdminPlatformSettings = async (req, res, next) => {
   try {
-    let settings = null;
+    const defaultSettings = await devStore.getPlatformSettings();
+    let settings = { ...defaultSettings };
     if (mongoose.connection.readyState === 1) {
       const allSettings = await PlatformSetting.find({});
-      if (allSettings.length === 0) {
-        settings = await devStore.getPlatformSettings();
-      } else {
-        settings = {};
-        allSettings.forEach((s) => {
-          settings[s.category] = { ...(settings[s.category] || {}), [s.key]: s.value };
-        });
-      }
-    } else {
-      settings = await devStore.getPlatformSettings();
+      allSettings.forEach((s) => {
+        settings[s.category] = { ...(settings[s.category] || {}), [s.key]: s.value };
+      });
     }
 
     return res.status(200).json({
@@ -2220,22 +2229,32 @@ export const getAdminPlatformSettings = async (req, res, next) => {
 // @access  Private (Admin)
 export const updateAdminPlatformSettings = async (req, res, next) => {
   try {
-    const { category, values } = req.body;
-    if (!category || !values) {
-      return res.status(400).json({ success: false, message: 'Category and setting values are required.' });
+    let categoriesToUpdate = {};
+    if (req.body.category && req.body.values) {
+      categoriesToUpdate[req.body.category] = req.body.values;
+    } else {
+      for (const [cat, val] of Object.entries(req.body)) {
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+          categoriesToUpdate[cat] = val;
+        }
+      }
+    }
+
+    if (Object.keys(categoriesToUpdate).length === 0) {
+      return res.status(400).json({ success: false, message: 'Settings values are required.' });
     }
 
     let updated = null;
-    if (mongoose.connection.readyState === 1) {
-      for (const [key, val] of Object.entries(values)) {
-        await PlatformSetting.findOneAndUpdate(
-          { key, category },
-          { key, category, value: val, updatedBy: req.user._id },
-          { upsert: true, new: true }
-        );
+    for (const [category, values] of Object.entries(categoriesToUpdate)) {
+      if (mongoose.connection.readyState === 1) {
+        for (const [key, val] of Object.entries(values)) {
+          await PlatformSetting.findOneAndUpdate(
+            { key, category },
+            { key, category, value: val, updatedBy: req.user._id },
+            { upsert: true, new: true }
+          );
+        }
       }
-      updated = await devStore.updatePlatformSettingCategory(category, values, req.user._id);
-    } else {
       updated = await devStore.updatePlatformSettingCategory(category, values, req.user._id);
     }
 
@@ -2244,15 +2263,26 @@ export const updateAdminPlatformSettings = async (req, res, next) => {
       action: 'UPDATED_SETTINGS',
       module: 'settings',
       targetType: 'PlatformSetting',
-      targetId: category,
-      targetName: `${category} Settings`,
-      newValue: values,
+      targetId: Object.keys(categoriesToUpdate).join(','),
+      targetName: `Platform Settings (${Object.keys(categoriesToUpdate).join(', ')})`,
+      newValue: categoriesToUpdate,
     });
+
+    const defaultSettings = await devStore.getPlatformSettings();
+    let finalSettings = { ...defaultSettings };
+    if (mongoose.connection.readyState === 1) {
+      const allSettings = await PlatformSetting.find({});
+      allSettings.forEach((s) => {
+        finalSettings[s.category] = { ...(finalSettings[s.category] || {}), [s.key]: s.value };
+      });
+    } else {
+      finalSettings = updated || defaultSettings;
+    }
 
     return res.status(200).json({
       success: true,
-      message: `${category} settings updated successfully.`,
-      data: { settings: updated },
+      message: 'Platform settings updated successfully.',
+      data: { settings: finalSettings },
     });
   } catch (error) {
     next(error);
@@ -2287,9 +2317,10 @@ export const getAdminAccounts = async (req, res, next) => {
 // @access  Private (Admin)
 export const createAdminAccount = async (req, res, next) => {
   try {
-    const { name, email, password, phone } = req.body;
-    if (!name || !email || !password || !phone) {
-      return res.status(400).json({ success: false, message: 'Name, email, password, and phone are required.' });
+    const { name, email, password } = req.body;
+    const phone = req.body.phone || '+8801700000000';
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
     }
 
     let admin = null;

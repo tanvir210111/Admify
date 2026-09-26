@@ -31,6 +31,7 @@ export default function AdminAdmins() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
+    phone: "",
     password: "",
   });
 
@@ -38,11 +39,11 @@ export default function AdminAdmins() {
     try {
       setLoading(true);
       const res = await api.get("/api/admin/admins");
-      if (res?.data?.admins) {
-        setAdmins(res.data.admins);
+      if (res?.success) {
+        setAdmins(res.data?.admins || []);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load admin accounts");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load admin accounts");
     } finally {
       setLoading(false);
     }
@@ -55,7 +56,7 @@ export default function AdminAdmins() {
   const handleCreateAdmin = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.email || !formData.password) {
-      toast.error("All fields are required");
+      toast.error("Name, email, and password are required");
       return;
     }
     if (formData.password.length < 6) {
@@ -65,13 +66,17 @@ export default function AdminAdmins() {
 
     try {
       setSubmitting(true);
-      await api.post("/api/admin/admins", formData);
-      toast.success(`Admin account for ${formData.name} created successfully`);
-      setModalOpen(false);
-      setFormData({ name: "", email: "", password: "" });
-      fetchAdmins();
+      const res = await api.post("/api/admin/admins", formData);
+      if (res?.success) {
+        toast.success(res?.message || `Admin account for ${formData.name} created successfully`);
+        setModalOpen(false);
+        setFormData({ name: "", email: "", phone: "", password: "" });
+        fetchAdmins();
+      } else {
+        toast.error(res?.message || "Failed to create admin");
+      }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to create admin");
+      toast.error(err.response?.data?.message || err?.message || "Failed to create admin");
     } finally {
       setSubmitting(false);
     }
@@ -236,6 +241,17 @@ export default function AdminAdmins() {
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-violet-500"
                     placeholder="s.jenkins@admify.world"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-violet-500"
+                    placeholder="+8801700000000"
                   />
                 </div>
 

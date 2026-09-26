@@ -59,11 +59,8 @@ export default function AdminUniRepApplicationsTab() {
       if (search.trim()) query.append("search", search.trim());
 
       const res = await api.get(`/api/admin/university-rep-applications?${query.toString()}`);
-      if (res?.data?.applications) {
-        setApplications(res.data.applications);
-      } else if (Array.isArray(res?.data)) {
-        setApplications(res.data);
-      }
+      const list = res?.data?.applications || res?.applications || (Array.isArray(res?.data) ? res.data : []);
+      setApplications(list);
     } catch (err) {
       toast.error(err.message || "Failed to load Uni Rep applications.");
     } finally {

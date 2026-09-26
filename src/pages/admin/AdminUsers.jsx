@@ -10,6 +10,9 @@ import api from "../../lib/api";
 
 const fade = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.25 } } };
 
+// Helper to determine if role is student
+const isStudent = (role) => (role || "").toLowerCase() === "student";
+
 export default function AdminUsers() {
   const [activeTab, setActiveTab] = useState("student"); // 'student' | 'agency' | 'agent' | 'university_rep' | 'admin'
   const [statusFilter, setStatusFilter] = useState("all");
@@ -297,10 +300,14 @@ export default function AdminUsers() {
                         </span>
                       </td>
                       <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-1 font-mono text-xs font-bold text-amber-300">
-                          <Coins className="w-3.5 h-3.5" />
-                          <span>{u.walletCredits || 0} CR</span>
-                        </div>
+                        {isStudent(u.role) ? (
+                          <div className="flex items-center gap-1 font-mono text-xs font-bold text-amber-300">
+                            <Coins className="w-3.5 h-3.5" />
+                            <span>{u.walletCredits ?? 0} CR</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 font-mono text-xs">N/A</span>
+                        )}
                       </td>
                       <td className="px-4 py-3.5 text-slate-400 text-[11px]">
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
@@ -394,19 +401,34 @@ export default function AdminUsers() {
                           <span className="text-slate-500 text-[10px] block">Phone</span>
                           <span className="text-slate-200 font-semibold">{selectedUser.phone || "—"}</span>
                         </div>
-                        <div>
-                          <span className="text-slate-500 text-[10px] block">Target Destination</span>
-                          <span className="text-slate-200 font-semibold">{selectedUser.targetCountry || "—"}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 text-[10px] block">Wallet Balance</span>
-                          <span className="text-amber-400 font-bold font-mono">{selectedUser.walletCredits || 0} CR</span>
-                        </div>
+                        {isStudent(selectedUser.role) ? (
+                          <>
+                            <div>
+                              <span className="text-slate-500 text-[10px] block">Target Destination</span>
+                              <span className="text-slate-200 font-semibold">{selectedUser.targetCountry || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 text-[10px] block">Wallet Balance</span>
+                              <span className="text-amber-400 font-bold font-mono">{selectedUser.walletCredits ?? 0} CR</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <span className="text-slate-500 text-[10px] block">Account Status</span>
+                              <span className="text-slate-200 font-semibold">{selectedUser.accountStatus || selectedUser.status || "ACTIVE"}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 text-[10px] block">Wallet / Credits</span>
+                              <span className="text-slate-500 font-mono">N/A</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
-                    {/* Applications */}
-                    {drawerData?.related?.applications && (
+                    {/* Applications — Students only */}
+                    {isStudent(selectedUser.role) && drawerData?.related?.applications && (
                       <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2">
                         <p className="text-[11px] font-bold uppercase text-slate-400">
                           Applications ({drawerData.related.applications.length})
@@ -431,8 +453,8 @@ export default function AdminUsers() {
                       </div>
                     )}
 
-                    {/* Recent Ledger Transactions */}
-                    {drawerData?.related?.creditTransactions && (
+                    {/* Recent Ledger Transactions — Students only */}
+                    {isStudent(selectedUser.role) && drawerData?.related?.creditTransactions && (
                       <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2">
                         <p className="text-[11px] font-bold uppercase text-slate-400">Recent Credit Activity</p>
                         {drawerData.related.creditTransactions.length === 0 ? (
@@ -449,6 +471,52 @@ export default function AdminUsers() {
                             ))}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Agency Profile Details — Agencies only */}
+                    {selectedUser.role === "agency" && drawerData?.related?.agencyProfile && (
+                      <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2">
+                        <p className="text-[11px] font-bold uppercase text-slate-400">Agency Verification</p>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">Agency Name</span>
+                            <span className="text-slate-200 font-semibold">{drawerData.related.agencyProfile.agencyName || selectedUser.name}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">Verification Status</span>
+                            <span className="text-violet-400 font-bold">{drawerData.related.agencyProfile.verificationStatus || "PENDING"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">Application ID</span>
+                            <span className="text-slate-300 font-mono text-[11px]">{drawerData.related.agencyProfile.applicationId || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">Official Email</span>
+                            <span className="text-slate-300 text-[11px]">{drawerData.related.agencyProfile.officialBusinessEmail || selectedUser.email}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Uni Rep Details — Uni Reps only */}
+                    {(selectedUser.role === "university_rep" || selectedUser.role === "university" || selectedUser.role === "university representative") && drawerData?.related?.uniRepApplication && (
+                      <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2">
+                        <p className="text-[11px] font-bold uppercase text-slate-400">University Accreditation</p>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">University</span>
+                            <span className="text-slate-200 font-semibold">{drawerData.related.uniRepApplication.university?.name || "Partner University"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">Status</span>
+                            <span className="text-emerald-400 font-bold">{drawerData.related.uniRepApplication.status || "APPROVED"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] block">Official Email</span>
+                            <span className="text-slate-300 text-[11px]">{drawerData.related.uniRepApplication.representative?.officialEmail || selectedUser.email}</span>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -539,14 +607,30 @@ export default function AdminUsers() {
                       <option value="SUSPENDED">SUSPENDED</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1 font-semibold">Target Country</label>
-                    <input
-                      value={editForm.targetCountry}
-                      onChange={(e) => setEditForm({ ...editForm, targetCountry: e.target.value })}
-                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-violet-500"
-                    />
-                  </div>
+                  {isStudent(editUser.role) ? (
+                    <div>
+                      <label className="text-slate-400 block mb-1 font-semibold">Target Country</label>
+                      <input
+                        value={editForm.targetCountry}
+                        onChange={(e) => setEditForm({ ...editForm, targetCountry: e.target.value })}
+                        className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+                        placeholder="e.g. United Kingdom"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-slate-400 block mb-1 font-semibold">Operational Status</label>
+                      <select
+                        value={editForm.status}
+                        onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+                      >
+                        <option value="active">Active</option>
+                        <option value="pending">Pending</option>
+                        <option value="suspended">Suspended</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-3 border-t border-white/8">

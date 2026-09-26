@@ -52,11 +52,11 @@ export default function AdminCountries() {
     try {
       setLoading(true);
       const res = await api.get("/api/admin/countries");
-      if (res?.data?.countries) {
-        setCountries(res.data.countries);
+      if (res?.success) {
+        setCountries(res.data?.countries || []);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load countries");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load countries");
     } finally {
       setLoading(false);
     }

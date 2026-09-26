@@ -64,9 +64,11 @@ export default function AdminSettings() {
       const res = await api.get("/api/admin/settings");
       if (res?.data?.settings) {
         setSettings(res.data.settings);
+      } else if (res?.settings) {
+        setSettings(res.settings);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load platform settings");
+      toast.error(err.message || "Failed to load platform settings");
     } finally {
       setLoading(false);
     }
@@ -81,12 +83,16 @@ export default function AdminSettings() {
     try {
       setSaving(true);
       const res = await api.put("/api/admin/settings", settings);
-      if (res?.data?.settings) {
-        setSettings(res.data.settings);
+      if (res?.success) {
+        if (res.data?.settings) {
+          setSettings(res.data.settings);
+        }
+        toast.success("Platform settings updated successfully");
+      } else {
+        toast.error(res?.message || "Failed to update platform settings");
       }
-      toast.success("Platform settings updated successfully");
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to update platform settings");
+      toast.error(err.message || "Failed to update platform settings");
     } finally {
       setSaving(false);
     }

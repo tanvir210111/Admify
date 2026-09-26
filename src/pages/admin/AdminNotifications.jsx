@@ -36,9 +36,15 @@ export default function AdminNotifications() {
   const fetchNotifications = async () => {
     setIsLoading(true);
     try {
-      const res = await api.get("/api/notifications");
-      if (res?.data?.notifications) {
-        const formatted = res.data.notifications.map((n) => ({
+      let res;
+      try {
+        res = await api.get("/api/admin/notifications");
+      } catch {
+        res = await api.get("/api/notifications");
+      }
+      const list = res?.data?.notifications || res?.notifications || [];
+      if (list.length > 0 || res?.success) {
+        const formatted = list.map((n) => ({
           id: n._id,
           text: n.message || n.title,
           title: n.title,

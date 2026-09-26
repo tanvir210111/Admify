@@ -37,7 +37,21 @@ export const getApiUrl = (endpoint = '') => {
  * @param {RequestInit} options - fetch options
  */
 export async function apiRequest(endpoint, options = {}) {
-  const url = getApiUrl(endpoint);
+  let targetEndpoint = endpoint;
+  if (options.params && typeof options.params === 'object') {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(options.params)) {
+      if (v !== undefined && v !== null && v !== '') {
+        q.append(k, String(v));
+      }
+    }
+    const qs = q.toString();
+    if (qs) {
+      targetEndpoint += (targetEndpoint.includes('?') ? '&' : '?') + qs;
+    }
+  }
+
+  const url = getApiUrl(targetEndpoint);
   const token = localStorage.getItem('admify_token') || localStorage.getItem('token');
 
   const headers = {
@@ -108,6 +122,8 @@ export const api = {
     apiRequest(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) }),
   put: (endpoint, body, options) =>
     apiRequest(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) }),
+  patch: (endpoint, body, options) =>
+    apiRequest(endpoint, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
   delete: (endpoint, options) => apiRequest(endpoint, { ...options, method: 'DELETE' }),
 };
 

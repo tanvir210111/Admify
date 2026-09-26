@@ -30,11 +30,11 @@ export default function AdminAI() {
     try {
       setLoading(true);
       const res = await api.get("/api/admin/ai/metrics");
-      if (res?.data) {
+      if (res?.success) {
         setData(res.data);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load AI metrics");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load AI metrics");
     } finally {
       setLoading(false);
     }

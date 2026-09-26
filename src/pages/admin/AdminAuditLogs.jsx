@@ -51,13 +51,13 @@ export default function AdminAuditLogs() {
         },
       });
 
-      if (res?.data?.logs) {
-        setLogs(res.data.logs);
-        setPage(res.data.page || pg);
-        setTotalPages(res.data.pages || 1);
+      if (res?.success) {
+        setLogs(res.data?.logs || []);
+        setPage(res.data?.page || pg);
+        setTotalPages(res.data?.pages || 1);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load audit logs");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load audit logs");
     } finally {
       setLoading(false);
     }

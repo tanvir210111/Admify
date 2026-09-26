@@ -118,6 +118,7 @@ router.put('/reports/:id', updateAdminReport);
 // ── Support & Chatbot Handover Inbox ──────────────────────────────────────────
 router.get('/support/conversations', getAdminSupportConversations);
 router.get('/support/conversations/:sessionId', getAdminSupportMessages);
+router.get('/support/conversations/:sessionId/messages', getAdminSupportMessages);
 router.post('/support/conversations/:sessionId/reply', replyAdminSupportConversation);
 
 // ── Notifications Center ──────────────────────────────────────────────────────
@@ -157,6 +158,12 @@ router.post('/agent-applications/:id/approve', approveAgentApplication);
 router.post('/agent-applications/:id/reject', rejectAgentApplication);
 
 // ── University Representative Applications Admin Review ───────────────────────
+router.get('/university-rep-applications', getAdminUniRepApplications);
+router.get('/university-rep-applications/:id', getAdminUniRepApplicationById);
+router.post('/university-rep-applications/:id/approve', approveUniRepApplication);
+router.post('/university-rep-applications/:id/reject', rejectUniRepApplication);
+
+// ── Backward Compatible Route Aliases ─────────────────────────────────────────
 router.get('/uni-rep-applications', getAdminUniRepApplications);
 router.get('/uni-rep-applications/:id', getAdminUniRepApplicationById);
 router.post('/uni-rep-applications/:id/approve', approveUniRepApplication);

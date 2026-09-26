@@ -58,9 +58,9 @@ export default function AdminWallet() {
 
     const t = setTimeout(async () => {
       try {
-        const res = await api.get(`/api/admin/users?search=${encodeURIComponent(userQuery.trim())}`);
+        const res = await api.get(`/api/admin/users?role=student&search=${encodeURIComponent(userQuery.trim())}`);
         const isSuccess = res?.success || res?.data?.success;
-        const users = res?.data?.users || res?.users || [];
+        const users = (res?.data?.users || res?.users || []).filter((u) => u.role === "student");
         if (isSuccess) {
           setSearchedUsers(users);
         }

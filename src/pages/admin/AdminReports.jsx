@@ -68,11 +68,11 @@ export default function AdminReports() {
           search: search || undefined,
         },
       });
-      if (res?.data?.reports) {
-        setReports(res.data.reports);
+      if (res?.success) {
+        setReports(res.data?.reports || []);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to load reports");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load reports");
     } finally {
       setLoading(false);
     }
@@ -101,18 +101,22 @@ export default function AdminReports() {
     if (!selectedReport) return;
     try {
       setUpdating(true);
-      const res = await api.patch(`/api/admin/reports/${selectedReport._id || selectedReport.id}`, {
+      const res = await api.put(`/api/admin/reports/${selectedReport._id || selectedReport.id}`, {
         status: statusInput,
         priority: priorityInput,
         adminNotes: adminNotesInput,
         resolutionSummary: resolutionSummaryInput,
       });
 
-      toast.success(`Report #${selectedReport.reportId || selectedReport._id} status updated to ${statusInput}`);
-      setUpdateModalOpen(false);
-      fetchReports();
+      if (res?.success) {
+        toast.success(res?.message || `Report #${selectedReport.reportId || selectedReport._id} status updated to ${statusInput}`);
+        setUpdateModalOpen(false);
+        fetchReports();
+      } else {
+        toast.error(res?.message || "Failed to update report status");
+      }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to update report status");
+      toast.error(err.response?.data?.message || err?.message || "Failed to update report status");
     } finally {
       setUpdating(false);
     }

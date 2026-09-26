@@ -56,9 +56,8 @@ export default function AdminAgentApplicationsTab() {
           ? "/api/admin/agent-applications"
           : `/api/admin/agent-applications?status=${filter.toUpperCase()}`;
       const res = await api.get(url);
-      if (res?.data?.applications) {
-        setApplications(res.data.applications);
-      }
+      const list = res?.data?.applications || res?.applications || [];
+      setApplications(list);
     } catch (err) {
       toast.error(err.message || "Failed to load agent applications.");
     } finally {

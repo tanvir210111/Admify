@@ -50,7 +50,7 @@ const STATUS_MAP = {
 };
 
 export default function AdminAgents() {
-  const [mainTab, setMainTab] = useState("verifications"); // 'verifications' | 'roster'
+  const [mainTab, setMainTab] = useState("agent_applications"); // 'agent_applications' | 'verifications'
   const [filter, setFilter] = useState("all");
   const [verifications, setVerifications] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,9 +70,8 @@ export default function AdminAgents() {
           ? "/api/admin/agencies/verifications"
           : `/api/admin/agencies/verifications?status=${filter}`;
       const res = await api.get(url);
-      if (res?.data?.verifications) {
-        setVerifications(res.data.verifications);
-      }
+      const list = res?.data?.verifications || res?.verifications || [];
+      setVerifications(list);
     } catch (err) {
       toast.error(err.message || "Failed to load agency verifications.");
     } finally {

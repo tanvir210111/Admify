@@ -55,8 +55,16 @@ export default function AdminUniReps() {
   };
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchApplications();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [filter, search]);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
     fetchApplications();
-  }, [filter]);
+  };
 
   const handleApprove = async () => {
     if (!actionModal?.app) return;
@@ -142,7 +150,7 @@ export default function AdminUniReps() {
         className="p-4 rounded-2xl border flex flex-col sm:flex-row gap-3 items-center justify-between"
         style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
       >
-        <div className="relative w-full sm:w-80">
+        <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             value={search}
@@ -150,10 +158,10 @@ export default function AdminUniReps() {
             placeholder="Search representative, university, App ID..."
             className="w-full bg-white/4 border border-white/8 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50"
           />
-        </div>
+        </form>
 
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto">
-          {["all", "PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED"].map((st) => (
+          {["all", "PENDING", "UNDER_REVIEW", "APPROVED", "ACTIVE", "REJECTED"].map((st) => (
             <button
               key={st}
               onClick={() => setFilter(st)}
