@@ -48,6 +48,32 @@ const scholarshipSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    universityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'University',
+      index: true,
+      default: null,
+    },
+    universityName: {
+      type: String,
+      default: '',
+    },
+    studyLevel: {
+      type: String,
+      default: 'Undergraduate',
+    },
+    requirements: {
+      type: String,
+      default: '',
+    },
+    applicationMethod: {
+      type: String,
+      default: 'Online Portal',
+    },
+    officialLink: {
+      type: String,
+      default: '',
+    },
   },
   {
     timestamps: true,

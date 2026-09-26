@@ -6,6 +6,8 @@ import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
+import ActivateAgency from "./pages/ActivateAgency";
+import ActivateUniversityRep from "./pages/ActivateUniversityRep";
 import AdminLogin from "./pages/AdminLogin";
 
 import DashboardLayout from "./components/layout/DashboardLayout";
@@ -15,24 +17,49 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import StudentDashboard from "./pages/dashboards/StudentDashboard";
 import AgentDashboard from "./pages/dashboards/AgentDashboard";
 import AdminDashboard from "./pages/dashboards/AdminDashboard";
-import AgencyDashboard from "./pages/dashboards/AgencyDashboard";
-import UniRepDashboard from "./pages/dashboards/UniRepDashboard";
+
+// ── Agency Portal Layout and Page Imports ───────────────────────────────────
+import AgencyLayout from "./components/agency/AgencyLayout";
+import AgyDashboard from "./pages/agency/AgencyDashboard";
+import AgyAgents from "./pages/agency/AgencyAgents";
+import AgyStudents from "./pages/agency/AgencyStudents";
+import AgyApplications from "./pages/agency/AgencyApplications";
+import AgyServiceRequests from "./pages/agency/AgencyServiceRequests";
+import AgyUniversityPartnerships from "./pages/agency/AgencyUniversityPartnerships";
+import AgyMessages from "./pages/agency/AgencyMessages";
+import AgyDocuments from "./pages/agency/AgencyDocuments";
+import AgyPerformance from "./pages/agency/AgencyPerformance";
+import AgyNotifications from "./pages/agency/AgencyNotifications";
+import AgyReports from "./pages/agency/AgencyReports";
+import AgyServiceHistory from "./pages/agency/AgencyServiceHistory";
+import AgyProfile from "./pages/agency/AgencyProfile";
+import AgySettings from "./pages/agency/AgencySettings";
 
 // ── Admin Portal Layout and Page Imports ────────────────────────────────────
 import AdminLayout from "./components/admin/AdminLayout";
 import AdmDashboard from "./pages/admin/AdminDashboard";
+import AdmUsers from "./pages/admin/AdminUsers";
 import AdmStudents from "./pages/admin/AdminStudents";
+import AdmAgencies from "./pages/admin/AdminAgencies";
 import AdmAgents from "./pages/admin/AdminAgents";
 import AdmLiveAgents from "./pages/admin/AdminLiveAgents";
+import AdmUniReps from "./pages/admin/AdminUniReps";
 import AdmUniversities from "./pages/admin/AdminUniversities";
 import AdmScholarships from "./pages/admin/AdminScholarships";
 import AdmApplications from "./pages/admin/AdminApplications";
+import AdmPartnerships from "./pages/admin/AdminPartnerships";
 import AdmRecommendations from "./pages/admin/AdminRecommendations";
 import AdmSopLor from "./pages/admin/AdminSopLor";
 import AdmWallet from "./pages/admin/AdminWallet";
+import AdmCoupons from "./pages/admin/AdminCoupons";
+import AdmCountries from "./pages/admin/AdminCountries";
 import AdmPayments from "./pages/admin/AdminPayments";
 import AdmNotifications from "./pages/admin/AdminNotifications";
 import AdmReports from "./pages/admin/AdminReports";
+import AdmSupport from "./pages/admin/AdminSupport";
+import AdmAI from "./pages/admin/AdminAI";
+import AdmAuditLogs from "./pages/admin/AdminAuditLogs";
+import AdmAdmins from "./pages/admin/AdminAdmins";
 import AdmSettings from "./pages/admin/AdminSettings";
 
 // ── Agent Portal Layout and Page Imports ────────────────────────────────────
@@ -40,15 +67,36 @@ import AgentLayout from "./components/agent/AgentLayout";
 import AgeDashboard from "./pages/agent/AgentDashboard";
 import AgeStudents from "./pages/agent/AgentStudents";
 import AgeApplications from "./pages/agent/AgentApplications";
-import AgeUniversities from "./pages/agent/AgentUniversities";
-import AgeScholarships from "./pages/agent/AgentScholarships";
 import AgeDocuments from "./pages/agent/AgentDocuments";
 import AgeSopLor from "./pages/agent/AgentSopLor";
+import AgeUniversities from "./pages/agent/AgentUniversities";
 import AgeMessages from "./pages/agent/AgentMessages";
-import AgeMeetings from "./pages/agent/AgentMeetings";
-import AgeCommissions from "./pages/agent/AgentCommissions";
+import AgeTasks from "./pages/agent/AgentTasks";
+import AgePerformance from "./pages/agent/AgentPerformance";
 import AgeNotifications from "./pages/agent/AgentNotifications";
+import AgeReports from "./pages/agent/AgentReports";
+import AgeAgency from "./pages/agent/AgentAgency";
 import AgeProfile from "./pages/agent/AgentProfile";
+import AgeSettings from "./pages/agent/AgentSettings";
+
+// ── University Representative Portal Layout and Page Imports ────────────────
+import UniRepLayout from "./components/university-rep/UniRepLayout";
+import UniRepDashboard from "./pages/university-rep/UniRepDashboard";
+import UniRepUniversity from "./pages/university-rep/UniRepUniversity";
+import UniRepPrograms from "./pages/university-rep/UniRepPrograms";
+import UniRepPartnerships from "./pages/university-rep/UniRepPartnerships";
+import UniRepAgencies from "./pages/university-rep/UniRepAgencies";
+import UniRepApplications from "./pages/university-rep/UniRepApplications";
+import UniRepDocuments from "./pages/university-rep/UniRepDocuments";
+import UniRepMessages from "./pages/university-rep/UniRepMessages";
+import UniRepAnnouncements from "./pages/university-rep/UniRepAnnouncements";
+import UniRepScholarships from "./pages/university-rep/UniRepScholarships";
+import UniRepIntakes from "./pages/university-rep/UniRepIntakes";
+import UniRepAnalytics from "./pages/university-rep/UniRepAnalytics";
+import UniRepNotifications from "./pages/university-rep/UniRepNotifications";
+import UniRepReports from "./pages/university-rep/UniRepReports";
+import UniRepProfile from "./pages/university-rep/UniRepProfile";
+import UniRepSettings from "./pages/university-rep/UniRepSettings";
 
 import RecommendationPage from "./pages/dashboards/RecommendationPage";
 import WalletPage from "./pages/dashboards/WalletPage";
@@ -116,6 +164,8 @@ function App() {
         {/* Auth Routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/activate-agency" element={<ActivateAgency />} />
+        <Route path="/activate-university-rep" element={<ActivateUniversityRep />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/student/admin/login" element={<AdminLogin />} />
@@ -160,8 +210,9 @@ function App() {
             <Route path="messages" element={<StudentMessagesPage />} />
             <Route path="notifications" element={<NotificationsCenterPage />} />
 
-            {/* ACCOUNT & SUBSCRIPTION */}
+            {/* ACCOUNT & CREDITS */}
             <Route path="wallet" element={<CreditsPremiumPage />} />
+            <Route path="credits" element={<CreditsPremiumPage />} />
             <Route path="subscription" element={<CreditsPremiumPage />} />
             <Route path="pricing" element={<CreditsPremiumPage />} />
             <Route path="reports" element={<StudentReportsPage />} />
@@ -169,30 +220,72 @@ function App() {
           </Route>
         </Route>
 
-        {/* Agent Portal Nested Routes */}
-        <Route path="/agent" element={<AgentLayout />}>
-          <Route index element={<Navigate to="/agent/dashboard" replace />} />
-          <Route path="dashboard" element={<AgeDashboard />} />
-          <Route path="students" element={<AgeStudents />} />
-          <Route path="applications" element={<AgeApplications />} />
-          <Route path="universities" element={<AgeUniversities />} />
-          <Route path="scholarships" element={<AgeScholarships />} />
-          <Route path="documents" element={<AgeDocuments />} />
-          <Route path="sop-lor" element={<AgeSopLor />} />
-          <Route path="messages" element={<AgeMessages />} />
-          <Route path="meetings" element={<AgeMeetings />} />
-          <Route path="commissions" element={<AgeCommissions />} />
-          <Route path="notifications" element={<AgeNotifications />} />
-          <Route path="profile" element={<AgeProfile />} />
+        {/* Agent Portal Nested Routes (Role-protected: active agent only) */}
+        <Route element={<ProtectedRoute allowedRoles={['agent']} />}>
+          <Route path="/agent" element={<AgentLayout />}>
+            <Route index element={<Navigate to="/agent/dashboard" replace />} />
+            <Route path="dashboard" element={<AgeDashboard />} />
+            <Route path="students" element={<AgeStudents />} />
+            <Route path="applications" element={<AgeApplications />} />
+            <Route path="documents" element={<AgeDocuments />} />
+            <Route path="sop-lor" element={<AgeSopLor />} />
+            <Route path="universities" element={<AgeUniversities />} />
+            <Route path="messages" element={<AgeMessages />} />
+            <Route path="tasks" element={<AgeTasks />} />
+            <Route path="performance" element={<AgePerformance />} />
+            <Route path="notifications" element={<AgeNotifications />} />
+            <Route path="reports" element={<AgeReports />} />
+            <Route path="agency" element={<AgeAgency />} />
+            <Route path="profile" element={<AgeProfile />} />
+            <Route path="settings" element={<AgeSettings />} />
+          </Route>
         </Route>
 
-        <Route path="/agency" element={<DashboardLayout />}>
-          <Route path="dashboard" element={<AgencyDashboard />} />
-          <Route path="wallet" element={<WalletPage />} />
+        {/* Agency Portal Nested Routes (Role-protected: active agency only) */}
+        <Route element={<ProtectedRoute allowedRoles={['agency']} />}>
+          <Route path="/agency" element={<AgencyLayout />}>
+            <Route index element={<Navigate to="/agency/dashboard" replace />} />
+            <Route path="dashboard" element={<AgyDashboard />} />
+            <Route path="agents" element={<AgyAgents />} />
+            <Route path="students" element={<AgyStudents />} />
+            <Route path="applications" element={<AgyApplications />} />
+            <Route path="service-requests" element={<AgyServiceRequests />} />
+            <Route path="university-partnerships" element={<AgyUniversityPartnerships />} />
+            <Route path="messages" element={<AgyMessages />} />
+            <Route path="documents" element={<AgyDocuments />} />
+            <Route path="performance" element={<AgyPerformance />} />
+            <Route path="notifications" element={<AgyNotifications />} />
+            <Route path="reports" element={<AgyReports />} />
+            <Route path="service-history" element={<AgyServiceHistory />} />
+            <Route path="profile" element={<AgyProfile />} />
+            <Route path="settings" element={<AgySettings />} />
+          </Route>
         </Route>
 
-        <Route path="/university" element={<DashboardLayout />}>
-          <Route path="dashboard" element={<UniRepDashboard />} />
+        {/* Uni Rep Portal Nested Routes (Role-protected: active university_rep only) */}
+        <Route element={<ProtectedRoute allowedRoles={['university_rep', 'university']} />}>
+          <Route path="/university-rep" element={<UniRepLayout />}>
+            <Route index element={<Navigate to="/university-rep/dashboard" replace />} />
+            <Route path="dashboard" element={<UniRepDashboard />} />
+            <Route path="university" element={<UniRepUniversity />} />
+            <Route path="programs" element={<UniRepPrograms />} />
+            <Route path="partnerships" element={<UniRepPartnerships />} />
+            <Route path="agencies" element={<UniRepAgencies />} />
+            <Route path="applications" element={<UniRepApplications />} />
+            <Route path="documents" element={<UniRepDocuments />} />
+            <Route path="messages" element={<UniRepMessages />} />
+            <Route path="announcements" element={<UniRepAnnouncements />} />
+            <Route path="scholarships" element={<UniRepScholarships />} />
+            <Route path="intakes" element={<UniRepIntakes />} />
+            <Route path="analytics" element={<UniRepAnalytics />} />
+            <Route path="notifications" element={<UniRepNotifications />} />
+            <Route path="reports" element={<UniRepReports />} />
+            <Route path="profile" element={<UniRepProfile />} />
+            <Route path="settings" element={<UniRepSettings />} />
+          </Route>
+          {/* Legacy / Alias Route Redirect */}
+          <Route path="/university" element={<Navigate to="/university-rep/dashboard" replace />} />
+          <Route path="/university/*" element={<Navigate to="/university-rep/dashboard" replace />} />
         </Route>
 
         {/* Admin Portal Nested Routes (Role-protected: admin only) */}
@@ -200,19 +293,30 @@ function App() {
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<AdmDashboard />} />
+            <Route path="users" element={<AdmUsers />} />
             <Route path="students" element={<AdmStudents />} />
+            <Route path="agencies" element={<AdmAgencies />} />
             <Route path="agents" element={<AdmAgents />} />
             <Route path="live-agents" element={<AdmLiveAgents />} />
+            <Route path="university-representatives" element={<AdmUniReps />} />
             <Route path="universities" element={<AdmUniversities />} />
-            <Route path="scholarships" element={<AdmScholarships />} />
+            <Route path="partnerships" element={<AdmPartnerships />} />
             <Route path="applications" element={<AdmApplications />} />
+            <Route path="payments" element={<AdmPayments />} />
+            <Route path="wallet" element={<AdmWallet />} />
+            <Route path="credits" element={<AdmWallet />} />
+            <Route path="coupons" element={<AdmCoupons />} />
+            <Route path="scholarships" element={<AdmScholarships />} />
+            <Route path="countries" element={<AdmCountries />} />
+            <Route path="reports" element={<AdmReports />} />
+            <Route path="support" element={<AdmSupport />} />
+            <Route path="notifications" element={<AdmNotifications />} />
+            <Route path="ai" element={<AdmAI />} />
+            <Route path="audit-logs" element={<AdmAuditLogs />} />
+            <Route path="admins" element={<AdmAdmins />} />
+            <Route path="settings" element={<AdmSettings />} />
             <Route path="recommendations" element={<AdmRecommendations />} />
             <Route path="sop-lor" element={<AdmSopLor />} />
-            <Route path="wallet" element={<AdmWallet />} />
-            <Route path="payments" element={<AdmPayments />} />
-            <Route path="notifications" element={<AdmNotifications />} />
-            <Route path="reports" element={<AdmReports />} />
-            <Route path="settings" element={<AdmSettings />} />
           </Route>
         </Route>
 

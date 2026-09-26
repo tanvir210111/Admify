@@ -1,125 +1,183 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bell, User, FileCheck, Landmark, ShieldAlert, Award, Calendar, Circle } from "lucide-react";
+import {
+  Bell,
+  CheckCircle,
+  Clock,
+  RefreshCw,
+  FileCheck,
+  UserPlus,
+  MessageSquare,
+  AlertCircle,
+  Building2,
+} from "lucide-react";
+import api from "../../services/api";
+import toast from "react-hot-toast";
 
-const fade = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 280, damping: 24 } } };
+const fade = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 280, damping: 24 } },
+};
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
 
-const NOTIFICATIONS = [
-  { id: 1, type: "applications", prio: "high", title: "Visa Pending Update", desc: "Ahmad Khalid application stage moved to Visa Pending. Prepare submission files.", time: "3 minutes ago", status: "unread", icon: FileCheck },
-  { id: 2, type: "scholarships", prio: "medium", title: "Scholarship Match", desc: "Ahmad Khalid was matched to Toronto Global Excellence Scholarship (CAD 15k).", time: "15 minutes ago", status: "unread", icon: Award },
-  { id: 3, type: "meetings", prio: "low", title: "Meeting Scheduled", desc: "Consultation booked with Sarah Jenkins tomorrow at 2:00 PM.", time: "18 minutes ago", status: "unread", icon: Calendar },
-  { id: 4, type: "payments", prio: "medium", title: "Commission Approved", desc: "Commission invoice #INV-928 ($1,240) approved for Ahmad Khalid enrollment.", time: "1 hour ago", status: "read", icon: Landmark },
-  { id: 5, type: "universities", prio: "low", title: "MOU Update", desc: "University of Manchester updated BSc Data Science eligibility IELTS requirements.", time: "3 hours ago", status: "read", icon: InfoIcon },
-  { id: 6, type: "system", prio: "high", title: "API Outage Warning", desc: "Recommendation service experienced a 5-minute latency spike.", time: "1 day ago", status: "read", icon: ShieldAlert },
-];
-
-const PRIO_MAP = {
-  high:   { label: "High",   cls: "bg-red-500/10 text-red-400 border-red-500/20" },
-  medium: { label: "Medium", cls: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" },
-  low:    { label: "Low",    cls: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-};
-
 export default function AgentNotifications() {
-  const [activeTab, setActiveTab] = useState("all");
-  const [notifs, setNotifs] = useState(NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleMarkRead = (id) => {
-    setNotifs(prev => prev.map(n => n.id === id ? { ...n, status: "read" } : n));
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get("/api/agent/notifications");
+      if (res?.data?.success) {
+        setNotifications(res.data.data.notifications || []);
+      }
+    } catch (err) {
+      console.error("Failed to load notifications:", err);
+      toast.error("Failed to load notifications.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    setNotifs(prev => prev.filter(n => n.id !== id));
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const handleMarkAsRead = async (id) => {
+    try {
+      const res = await api.put(`/api/agent/notifications/${id}/read`);
+      if (res?.data?.success) {
+        setNotifications((prev) =>
+          prev.map((n) => (n._id === id ? { ...n, read: true } : n))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to mark notification read:", err);
+    }
   };
 
-  const filtered = notifs.filter(n => activeTab === "all" || n.type === activeTab);
+  const handleMarkAllRead = async () => {
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
+
+    try {
+      await Promise.all(unread.map((n) => api.put(`/api/agent/notifications/${n._id}/read`)));
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      toast.success("All notifications marked as read.");
+    } catch (err) {
+      toast.error("Failed to mark all as read.");
+    }
+  };
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-6 max-w-[1200px] mx-auto">
+    <motion.div
+      variants={stagger}
+      initial="hidden"
+      animate="show"
+      className="space-y-6 max-w-[1200px] mx-auto text-slate-100 pb-12"
+    >
       {/* Title */}
-      <motion.div variants={fade} className="flex justify-between items-center">
+      <motion.div
+        variants={fade}
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+      >
         <div>
-          <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <Bell className="w-6 h-6 text-violet-400" /> Notifications Center
+          <h1 className="text-2xl font-black text-white flex items-center gap-2">
+            <Bell className="w-6 h-6 text-violet-400" /> Notifications & Operational Alerts
           </h1>
-          <p className="text-slate-400 text-sm mt-1">Audit log alerts, study platform events, student meeting warnings, and system payouts updates</p>
+          <p className="text-slate-400 text-xs mt-1">
+            Real-time notifications on student case assignments, application stage updates, and document verification requests.
+          </p>
         </div>
-        <button
-          onClick={() => setNotifs(prev => prev.map(n => ({ ...n, status: "read" })))}
-          className="px-3.5 py-2 bg-white/5 border border-white/8 hover:bg-white/10 text-slate-300 text-xs font-bold rounded-xl transition-all"
-        >
-          Mark all as read
-        </button>
-      </motion.div>
 
-      {/* Tabs */}
-      <motion.div variants={fade} className="flex flex-wrap gap-2 border-b border-white/6 pb-2">
-        {["all", "applications", "universities", "scholarships", "meetings", "payments", "system"].map(t => (
+        <div className="flex gap-2">
+          {unreadCount > 0 && (
+            <button
+              onClick={handleMarkAllRead}
+              className="px-3 py-2 rounded-xl text-xs font-semibold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-all"
+            >
+              Mark All Read ({unreadCount})
+            </button>
+          )}
           <button
-            key={t}
-            onClick={() => setActiveTab(t)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all border ${
-              activeTab === t
-                ? "bg-violet-600/20 border-violet-500/40 text-white"
-                : "bg-transparent border-transparent text-slate-400 hover:text-white"
-            }`}
+            onClick={fetchNotifications}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B1228] border border-white/10 hover:border-violet-500/40 text-slate-300 hover:text-white transition-all shadow-sm"
           >
-            {t}
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-violet-400" : ""}`} />
+            Refresh
           </button>
-        ))}
+        </div>
       </motion.div>
 
       {/* Notifications List */}
-      <motion.div variants={fade} className="space-y-3">
-        {filtered.map(n => (
-          <div
-            key={n.id}
-            className={`p-4 rounded-2xl border flex items-start gap-4 transition-all hover:bg-white/3 ${
-              n.status === "unread" ? "border-violet-500/20 bg-violet-600/3" : "border-white/6 bg-white/1"
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${
-              n.status === "unread"
-                ? "bg-violet-500/10 border-violet-500/20 text-violet-400"
-                : "bg-slate-800 border-slate-700/50 text-slate-400"
-            }`}>
-              <n.icon className="w-4 h-4" />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${PRIO_MAP[n.prio].cls}`}>
-                    {PRIO_MAP[n.prio].label}
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-mono">{n.time}</span>
-                  {n.status === "unread" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  {n.status === "unread" && (
-                    <button onClick={() => handleMarkRead(n.id)} className="text-[10px] text-violet-400 hover:underline">Mark read</button>
-                  )}
-                  <button onClick={() => handleDelete(n.id)} className="text-[10px] text-red-400 hover:underline">Delete</button>
-                </div>
-              </div>
-              <h4 className="text-white text-xs font-bold mt-2">{n.title}</h4>
-              <p className="text-slate-300 text-xs mt-1 leading-relaxed">{n.desc}</p>
-            </div>
+      <motion.div
+        variants={fade}
+        className="rounded-2xl border overflow-hidden"
+        style={{ background: "#0B1228", borderColor: "rgba(255, 255, 255, 0.08)" }}
+      >
+        {loading ? (
+          <div className="p-16 text-center text-slate-400 text-sm">
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-violet-400 mb-2" />
+            Loading notifications feed...
           </div>
-        ))}
+        ) : notifications.length === 0 ? (
+          <div className="p-16 text-center">
+            <Bell className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+            <h3 className="text-white font-bold text-base">No Notifications</h3>
+            <p className="text-slate-400 text-xs mt-1 max-w-md mx-auto">
+              You are completely caught up with all operational alerts.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {notifications.map((notif) => (
+              <div
+                key={notif._id}
+                onClick={() => !notif.read && handleMarkAsRead(notif._id)}
+                className={`p-4 transition-colors flex items-start justify-between gap-4 cursor-pointer ${
+                  notif.read
+                    ? "opacity-60 bg-transparent hover:bg-white/[0.01]"
+                    : "bg-violet-950/15 hover:bg-violet-950/25 border-l-2 border-violet-500"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`p-2 rounded-xl shrink-0 ${
+                      notif.read
+                        ? "bg-slate-800 text-slate-400"
+                        : "bg-violet-600/20 text-violet-300 border border-violet-500/30"
+                    }`}
+                  >
+                    <Bell className="w-4 h-4" />
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-white">{notif.title}</h4>
+                    <p className="text-xs text-slate-300 leading-relaxed">{notif.message}</p>
+                    <span className="text-[10px] text-slate-500 block">
+                      {new Date(notif.createdAt || Date.now()).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {!notif.read && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMarkAsRead(notif._id);
+                    }}
+                    className="text-[11px] font-semibold text-violet-400 hover:text-violet-300 shrink-0"
+                  >
+                    Mark read
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </motion.div>
     </motion.div>
-  );
-}
-
-function InfoIcon(props) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4" />
-      <path d="M12 8h.01" />
-    </svg>
   );
 }

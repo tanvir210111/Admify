@@ -55,6 +55,40 @@ const applicationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    assignedAgency: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      index: true,
+    },
+    applicationId: {
+      type: String,
+      default: '',
+      index: true,
+    },
+    country: {
+      type: String,
+      default: '',
+    },
+    intake: {
+      type: String,
+      default: '',
+    },
+    documents: [
+      {
+        name: String,
+        type: { type: String },
+        url: String,
+        verified: { type: Boolean, default: false },
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
+    internalNotes: [
+      {
+        text: String,
+        author: String,
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,

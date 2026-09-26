@@ -70,7 +70,7 @@ function DashboardLayout() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main View Area */}
-      <main className="flex-1 lg:pl-68 flex flex-col relative z-10 w-full overflow-hidden min-h-screen">
+      <main className="flex-1 lg:pl-64 flex flex-col relative z-10 w-full overflow-hidden min-h-screen">
         {/* Top Sticky Header */}
         <header className="h-20 bg-[#07142D]/80 backdrop-blur-xl border-b border-slate-800/80 flex items-center justify-between px-4 lg:px-8 relative z-30 sticky top-0">
           <div className="flex items-center gap-4">

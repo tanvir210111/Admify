@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['student', 'agent', 'agency', 'university', 'university representative', 'admin'],
+      enum: ['student', 'agent', 'agency', 'university', 'university representative', 'university_rep', 'admin'],
       default: 'student',
     },
     status: {
@@ -94,6 +94,145 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Agency & University Representative Verification & Lifecycle Status
+    accountStatus: {
+      type: String,
+      enum: ['PENDING', 'UNDER_REVIEW', 'APPROVED', 'ACTIVE', 'REJECTED'],
+      default: function () {
+        return (this.role === 'agency' || this.role === 'university_rep' || this.role === 'university' || this.role === 'university representative') ? 'PENDING' : 'ACTIVE';
+      },
+      index: true,
+    },
+    isActive: {
+      type: Boolean,
+      default: function () {
+        return this.role !== 'agency' && this.role !== 'university_rep' && this.role !== 'university' && this.role !== 'university representative';
+      },
+    },
+    emailVerified: {
+      type: Boolean,
+      default: function () {
+        return this.role !== 'agency' && this.role !== 'university_rep' && this.role !== 'university' && this.role !== 'university representative';
+      },
+    },
+    agencyVerificationStatus: {
+      type: String,
+      enum: ['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED'],
+      default: 'PENDING',
+    },
+    agencyProfile: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AgencyProfile',
+    },
+    // University Representative Affiliation & Lifecycle
+    universityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'University',
+      default: null,
+      index: true,
+    },
+    universityRepApplication: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UniversityRepresentativeApplication',
+      default: null,
+    },
+    universityRepApplicationId: {
+      type: String,
+      default: '',
+      index: true,
+    },
+    uniRepVerificationStatus: {
+      type: String,
+      enum: ['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED'],
+      default: 'PENDING',
+    },
+    department: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    designation: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    officialUniversityEmail: {
+      type: String,
+      default: '',
+      lowercase: true,
+      trim: true,
+    },
+    employeeId: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    dateOfBirth: {
+      type: String,
+      default: '',
+    },
+    gender: {
+      type: String,
+      default: '',
+    },
+    country: {
+      type: String,
+      default: '',
+    },
+    city: {
+      type: String,
+      default: '',
+    },
+    address: {
+      type: String,
+      default: '',
+    },
+    academicScope: {
+      studyLevels: { type: [String], default: [] },
+      programsDepartments: { type: String, default: '' },
+      countriesRegionsHandled: { type: [String], default: [] },
+    },
+    professional: {
+      yearsOfExperience: { type: Number, default: 0 },
+      previousExperience: { type: String, default: '' },
+      languages: { type: [String], default: [] },
+      areasOfExpertise: { type: [String], default: [] },
+      certificationsMemberships: { type: [String], default: [] },
+    },
+    documents: {
+      authorizationLetter: { type: Object, default: () => ({}) },
+      officialUniversityId: { type: Object, default: () => ({}) },
+      employeeIdDocument: { type: Object, default: () => ({}) },
+      supportingDocument: { type: Object, default: () => ({}) },
+    },
+    // Secure single-use activation token for email activation
+    activationTokenHash: {
+      type: String,
+      select: false,
+    },
+    activationTokenExpires: {
+      type: Date,
+      default: null,
+    },
+    activationTokenUsed: {
+      type: Boolean,
+      default: false,
+    },
+    activatedAt: {
+      type: Date,
+      default: null,
+    },
+    // Agent-specific agency association
+    agencyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      index: true,
+    },
+    agentApplicationId: {
+      type: String,
+      default: '',
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -117,6 +256,15 @@ const userSchema = new mongoose.Schema(
           full_name: ret.name,
           phone: ret.phone,
           role: ret.role,
+          accountStatus: ret.accountStatus,
+          isActive: ret.isActive,
+          agencyVerificationStatus: ret.agencyVerificationStatus,
+          uniRepVerificationStatus: ret.uniRepVerificationStatus,
+          universityId: ret.universityId,
+          universityRepApplicationId: ret.universityRepApplicationId,
+          designation: ret.designation,
+          department: ret.department,
+          officialUniversityEmail: ret.officialUniversityEmail,
         };
         return ret;
       },

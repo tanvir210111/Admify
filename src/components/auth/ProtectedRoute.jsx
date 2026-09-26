@@ -25,13 +25,36 @@ const ProtectedRoute = ({ allowedRoles, redirectTo }) => {
   }
 
   // If specific roles are required, verify that the authenticated user possesses the role
+  const userRole = (user.role || user.user_metadata?.role || '').toLowerCase();
+
   if (allowedRoles && allowedRoles.length > 0) {
-    const userRole = (user.role || user.user_metadata?.role || '').toLowerCase();
     const isAuthorized = allowedRoles.some((r) => r.toLowerCase() === userRole);
 
     if (!isAuthorized) {
       // Role unauthorized: redirect away from protected route
       return <Navigate to={targetRedirect} state={{ from: location }} replace />;
+    }
+  }
+
+  // Agency specific check: Account must be ACTIVE to access agency dashboard
+  if (userRole === 'agency') {
+    const isAgencyActive =
+      user.accountStatus === 'ACTIVE' ||
+      user.user_metadata?.accountStatus === 'ACTIVE';
+
+    if (!isAgencyActive) {
+      return <Navigate to="/login" state={{ from: location, reason: 'unactivated_agency' }} replace />;
+    }
+  }
+
+  // University Representative specific check: Account must be ACTIVE to access unirep dashboard
+  if (userRole === 'university_rep' || userRole === 'university') {
+    const isUniRepActive =
+      user.accountStatus === 'ACTIVE' ||
+      user.user_metadata?.accountStatus === 'ACTIVE';
+
+    if (!isUniRepActive) {
+      return <Navigate to="/login" state={{ from: location, reason: 'unactivated_unirep' }} replace />;
     }
   }
 

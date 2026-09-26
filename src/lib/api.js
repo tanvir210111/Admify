@@ -5,9 +5,17 @@
  * Automatically attaches JWT authentication tokens from localStorage to protected requests.
  */
 
-export const API_BASE_URL =
-  (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) ||
-  'https://api.admify.world';
+// Automatically use local proxy or local backend when running on localhost / dev
+const isLocal =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.includes('192.168.'));
+
+export const API_BASE_URL = isLocal
+  ? ''
+  : (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) ||
+    'https://api.admify.world';
 
 /**
  * Helper to construct an absolute or relative endpoint URL
@@ -30,7 +38,7 @@ export const getApiUrl = (endpoint = '') => {
  */
 export async function apiRequest(endpoint, options = {}) {
   const url = getApiUrl(endpoint);
-  const token = localStorage.getItem('admify_token');
+  const token = localStorage.getItem('admify_token') || localStorage.getItem('token');
 
   const headers = {
     'Content-Type': 'application/json',
@@ -48,17 +56,25 @@ export async function apiRequest(endpoint, options = {}) {
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const errorMsg = data?.message || `Request failed with status ${res.status}`;
+      let errorMsg = data?.message;
+      if (res.status === 413) {
+        errorMsg = data?.message || 'One or more uploaded documents are too large. Please reduce the file size and try again.';
+      } else if (!errorMsg) {
+        errorMsg = `Request failed with status ${res.status}`;
+      }
       const error = new Error(errorMsg);
       error.status = res.status;
       error.data = data;
 
       // If unauthorized on a protected endpoint, notify application to clear auth state
+      // (Exclude temporary registration tokens, verification endpoints, and auth entry routes)
       if (
         res.status === 401 &&
         !endpoint.includes('/api/auth/login') &&
         !endpoint.includes('/api/auth/admin/login') &&
-        !endpoint.includes('/api/auth/register')
+        !endpoint.includes('/api/auth/register') &&
+        !endpoint.includes('/api/auth/activate-agency') &&
+        !endpoint.includes('/api/agency/verification')
       ) {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(

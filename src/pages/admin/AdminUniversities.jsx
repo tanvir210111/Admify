@@ -1,109 +1,478 @@
-import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { Building2, Plus, Eye, Edit, Trash2, Search, Globe, GraduationCap, FileCheck } from "lucide-react";
-
-const fade = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 280, damping: 24 } } };
-const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
-
-const UNIVERSITIES = [
-  { name: "University of Toronto",     country: "🇨🇦 Canada",      rank: "#21", fee: "CAD 35k", apps: 342, status: "active",   programs: 280 },
-  { name: "University of Manchester",  country: "🇬🇧 UK",          rank: "#28", fee: "£26k",    apps: 289, status: "active",   programs: 340 },
-  { name: "University of Melbourne",   country: "🇦🇺 Australia",   rank: "#33", fee: "AUD 44k", apps: 201, status: "active",   programs: 220 },
-  { name: "TU Munich",                 country: "🇩🇪 Germany",     rank: "#49", fee: "€500",    apps: 176, status: "active",   programs: 190 },
-  { name: "McGill University",         country: "🇨🇦 Canada",      rank: "#46", fee: "CAD 29k", apps: 154, status: "active",   programs: 310 },
-  { name: "ETH Zurich",                country: "🇨🇭 Switzerland", rank: "#7",  fee: "CHF 1.5k",apps: 98,  status: "pending",  programs: 160 },
-  { name: "University of Amsterdam",   country: "🇳🇱 Netherlands", rank: "#61", fee: "€12k",    apps: 87,  status: "active",   programs: 200 },
-  { name: "Seoul National University", country: "🇰🇷 South Korea", rank: "#41", fee: "KRW 2.5M",apps: 64,  status: "active",   programs: 140 },
-  { name: "University of Auckland",    country: "🇳🇿 New Zealand", rank: "#87", fee: "NZD 32k", apps: 52,  status: "pending",  programs: 175 },
-  { name: "University of Cape Town",   country: "🇿🇦 South Africa",rank: "#171",fee: "ZAR 85k", apps: 38,  status: "active",   programs: 120 },
-];
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Building2, Plus, Eye, Edit, Trash2, Search, Globe, GraduationCap,
+  FileCheck, UserCheck, RefreshCw, X, MapPin, DollarSign,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import AdminUniRepApplicationsTab from "../../components/admin/AdminUniRepApplicationsTab";
 
 const STATUS_MAP = {
-  active:  { label: "Active",  cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-  pending: { label: "Pending", cls: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" },
+  active: { label: "Active", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  inactive: { label: "Inactive", cls: "bg-slate-500/15 text-slate-400 border-slate-500/30" },
+  pending: { label: "Pending", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
 };
 
 export default function AdminUniversities() {
+  const [activeTab, setActiveTab] = useState("institutions"); // 'institutions' | 'unirep'
+  const [universities, setUniversities] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const filtered = UNIVERSITIES.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.country.toLowerCase().includes(search.toLowerCase()));
+  const [countryFilter, setCountryFilter] = useState("all");
+
+  // Create / Edit modal state
+  const [editModal, setEditModal] = useState(null); // null or { isNew: true/false, data }
+  const [formLoading, setFormLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    legalName: "",
+    country: "",
+    city: "",
+    type: "Public",
+    rank: 100,
+    tuition: "",
+    applicationFee: "",
+    livingCost: "",
+    website: "",
+    description: "",
+    status: "active",
+  });
+
+  const fetchUniversities = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const url = countryFilter !== "all"
+        ? `/api/admin/universities?country=${encodeURIComponent(countryFilter)}&search=${encodeURIComponent(search)}`
+        : `/api/admin/universities?search=${encodeURIComponent(search)}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUniversities(data.data?.universities || []);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load universities");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "institutions") {
+      fetchUniversities();
+    }
+  }, [activeTab, countryFilter]);
+
+  const openCreateModal = () => {
+    setFormData({
+      name: "",
+      legalName: "",
+      country: "United States",
+      city: "",
+      type: "Public",
+      rank: 50,
+      tuition: "$20,000 - $40,000 / yr",
+      applicationFee: "$75",
+      livingCost: "$1,200 / mo",
+      website: "https://",
+      description: "",
+      status: "active",
+    });
+    setEditModal({ isNew: true });
+  };
+
+  const openEditModal = (uni) => {
+    setFormData({
+      name: uni.name || "",
+      legalName: uni.legalName || uni.name || "",
+      country: uni.country || "",
+      city: uni.city || "",
+      type: uni.type || "Public",
+      rank: uni.rank || 100,
+      tuition: uni.tuition || "",
+      applicationFee: uni.applicationFee || "",
+      livingCost: uni.livingCost || "",
+      website: uni.website || "",
+      description: uni.description || "",
+      status: uni.status || "active",
+    });
+    setEditModal({ isNew: false, id: uni._id });
+  };
+
+  const handleSaveUniversity = async (e) => {
+    e.preventDefault();
+    setFormLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const url = editModal.isNew ? "/api/admin/universities" : `/api/admin/universities/${editModal.id}`;
+      const method = editModal.isNew ? "POST" : "PUT";
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success(editModal.isNew ? "University added to catalog" : "University updated successfully");
+        setEditModal(null);
+        fetchUniversities();
+      } else {
+        toast.error(data.message || "Failed to save university");
+      }
+    } catch (err) {
+      toast.error("Error saving university");
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleDeleteUniversity = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to remove "${name}" from the university catalog?`)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`/api/admin/universities/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("University removed");
+        fetchUniversities();
+      } else {
+        toast.error(data.message || "Failed to delete university");
+      }
+    } catch (err) {
+      toast.error("Error deleting university");
+    }
+  };
 
   return (
-    <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-6 max-w-[1600px] mx-auto">
-      <motion.div variants={fade} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white flex items-center gap-2"><Building2 className="w-6 h-6 text-emerald-400" /> University Management</h1>
-          <p className="text-slate-400 text-sm mt-1">450+ partner institutions · 23 countries</p>
+          <h1 className="text-2xl font-extrabold text-white flex items-center gap-2.5">
+            <Building2 className="w-6 h-6 text-emerald-400" /> University Institution Governance
+          </h1>
+          <p className="text-slate-400 text-xs mt-0.5">
+            Partner university catalog CRUD, academic programs, tuition fee metadata, and representative verifications
+          </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-bold rounded-xl shadow-lg"><Plus className="w-4 h-4" /> Add University</button>
-      </motion.div>
+        <div className="flex gap-2">
+          {activeTab === "institutions" && (
+            <button
+              onClick={openCreateModal}
+              className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold rounded-xl shadow-lg transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add University
+            </button>
+          )}
+        </div>
+      </div>
 
-      <motion.div variants={stagger} className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Total Universities",  val: "450+", color: "text-emerald-400", icon: Building2 },
-          { label: "Partner Institutions",val: "380",  color: "text-blue-400",    icon: GraduationCap },
-          { label: "Countries Covered",   val: "23",   color: "text-violet-400",  icon: Globe },
-          { label: "Applications Received",val:"8,920",color: "text-orange-400",  icon: FileCheck },
-        ].map((s, i) => (
-          <motion.div key={i} variants={fade} className="p-4 rounded-2xl border" style={{ background: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}>
-            <s.icon className={`w-5 h-5 ${s.color} mb-2`} />
-            <p className={`text-2xl font-black ${s.color}`}>{s.val}</p>
-            <p className="text-slate-400 text-sm mt-0.5">{s.label}</p>
-          </motion.div>
-        ))}
-      </motion.div>
+      {/* Tab Switcher */}
+      <div className="flex gap-2 border-b border-white/8 pb-2">
+        <button
+          onClick={() => setActiveTab("institutions")}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeTab === "institutions"
+              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-900/30"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          University Catalog
+        </button>
+        <button
+          onClick={() => setActiveTab("unirep")}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeTab === "unirep"
+              ? "bg-violet-600 text-white shadow-lg shadow-violet-900/30"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          Uni Rep Applications & Verifications
+        </button>
+      </div>
 
-      <motion.div variants={fade} className="rounded-2xl border overflow-hidden" style={{ background: "rgba(255,255,255,0.02)", borderColor: "rgba(255,255,255,0.08)" }}>
-        <div className="flex gap-3 p-4 border-b border-white/6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search universities..."
-              className="w-full bg-white/4 border border-white/8 rounded-xl py-2 pl-9 pr-3 text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 transition-all" />
+      {activeTab === "unirep" ? (
+        <AdminUniRepApplicationsTab />
+      ) : (
+        <div className="space-y-4">
+          {/* Toolbar */}
+          <div
+            className="p-4 rounded-2xl border flex flex-col sm:flex-row gap-3 items-center justify-between"
+            style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
+          >
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search university by name, country, city..."
+                className="w-full bg-white/4 border border-white/8 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+
+            <button
+              onClick={fetchUniversities}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            </button>
+          </div>
+
+          {/* Universities Table */}
+          <div
+            className="rounded-2xl border overflow-hidden"
+            style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[850px] text-left">
+                <thead>
+                  <tr className="border-b border-white/8 text-[11px] text-slate-400 uppercase tracking-widest bg-white/2">
+                    <th className="px-4 py-3 font-bold">University & Rank</th>
+                    <th className="px-4 py-3 font-bold">Country & Location</th>
+                    <th className="px-4 py-3 font-bold">Type</th>
+                    <th className="px-4 py-3 font-bold">Average Tuition</th>
+                    <th className="px-4 py-3 font-bold">Status</th>
+                    <th className="px-4 py-3 font-bold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-400 text-xs">
+                        Loading universities catalog from backend...
+                      </td>
+                    </tr>
+                  ) : universities.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-500 text-xs">
+                        No universities found in database.
+                      </td>
+                    </tr>
+                  ) : (
+                    universities.map((uni) => (
+                      <tr
+                        key={uni._id}
+                        className="border-b border-white/4 hover:bg-white/2 transition-colors text-xs text-slate-300"
+                      >
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center font-bold text-emerald-300 text-xs flex-shrink-0">
+                              🎓
+                            </div>
+                            <div>
+                              <p className="font-bold text-white text-xs">{uni.name}</p>
+                              <span className="font-mono text-[10px] text-emerald-400">
+                                Global Rank #{uni.rank || "100+"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="text-slate-200 capitalize font-medium">{uni.country}</p>
+                          <p className="text-slate-500 text-[10px]">{uni.location || uni.city || "—"}</p>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-300">{uni.type || "Public"}</td>
+                        <td className="px-4 py-3.5 font-mono text-amber-300 font-semibold">{uni.tuition || "Varies"}</td>
+                        <td className="px-4 py-3.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${STATUS_MAP[uni.status]?.cls || STATUS_MAP.active.cls}`}>
+                            {uni.status || "Active"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => openEditModal(uni)}
+                              className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
+                              title="Edit University Profile"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUniversity(uni._id, uni.name)}
+                              className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors"
+                              title="Delete University"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px] text-left">
-            <thead>
-              <tr className="border-b border-white/6 text-[11px] text-slate-500 uppercase tracking-widest">
-                {["University","Country","Ranking","Tuition Fee","Programs","Applications","Status","Actions"].map(h => (
-                  <th key={h} className="px-4 py-3 font-bold whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((u, i) => (
-                <tr key={i} className="border-b border-white/4 hover:bg-white/3 transition-colors group">
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-600/30 to-teal-600/30 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                        <Building2 className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <span className="text-slate-200 font-semibold text-sm">{u.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5 text-slate-300 text-sm whitespace-nowrap">{u.country}</td>
-                  <td className="px-4 py-3.5"><span className="text-violet-400 font-bold text-sm">{u.rank}</span></td>
-                  <td className="px-4 py-3.5 text-slate-300 font-mono text-sm">{u.fee}</td>
-                  <td className="px-4 py-3.5 text-slate-300 text-sm">{u.programs}</td>
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-white font-bold text-sm">{u.apps}</span>
-                      <div className="w-12 h-1 bg-white/8 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min((u.apps/350)*100, 100)}%` }} /></div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5"><span className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border ${STATUS_MAP[u.status].cls}`}>{STATUS_MAP[u.status].label}</span></td>
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {[Eye, Edit, Trash2].map((Icon, j) => (
-                        <button key={j} className={`p-1.5 rounded-lg transition-colors ${j === 2 ? "hover:bg-red-500/15 text-slate-400 hover:text-red-400" : "hover:bg-white/8 text-slate-400 hover:text-white"}`}><Icon className="w-3.5 h-3.5" /></button>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-    </motion.div>
+      )}
+
+      {/* ── Create / Edit University Modal ── */}
+      <AnimatePresence>
+        {editModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar p-6 rounded-2xl border border-white/10 shadow-2xl"
+              style={{ background: "#0B1228" }}
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-emerald-400" />
+                  {editModal.isNew ? "Add Partner University" : "Edit University Profile"}
+                </h3>
+                <button onClick={() => setEditModal(null)} className="text-slate-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveUniversity} className="space-y-3.5 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">University Name <span className="text-red-400">*</span></label>
+                    <input
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. Oxford University"
+                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">Country <span className="text-red-400">*</span></label>
+                    <input
+                      value={formData.country}
+                      onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                      placeholder="e.g. United Kingdom"
+                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">City</label>
+                    <input
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      placeholder="e.g. Oxford"
+                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">Institution Type</label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="Public">Public Research</option>
+                      <option value="Private">Private</option>
+                      <option value="Collegiate">Collegiate</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">World Rank</label>
+                    <input
+                      type="number"
+                      value={formData.rank}
+                      onChange={(e) => setFormData({ ...formData, rank: Number(e.target.value) })}
+                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">Average Tuition</label>
+                    <input
+                      value={formData.tuition}
+                      onChange={(e) => setFormData({ ...formData, tuition: e.target.value })}
+                      placeholder="e.g. £25,000 / year"
+                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">Application Fee</label>
+                    <input
+                      value={formData.applicationFee}
+                      onChange={(e) => setFormData({ ...formData, applicationFee: e.target.value })}
+                      placeholder="e.g. £75"
+                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">Living Cost</label>
+                    <input
+                      value={formData.livingCost}
+                      onChange={(e) => setFormData({ ...formData, livingCost: e.target.value })}
+                      placeholder="e.g. £1,200 / month"
+                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1 font-semibold">Official Website</label>
+                  <input
+                    value={formData.website}
+                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                    className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1 font-semibold">Description & Overview</label>
+                  <textarea
+                    rows={3}
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Comprehensive background, international student amenities..."
+                    className="w-full bg-white/4 border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-white/8">
+                  <button
+                    type="button"
+                    onClick={() => setEditModal(null)}
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={formLoading}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all disabled:opacity-50"
+                  >
+                    {formLoading ? "Saving..." : editModal.isNew ? "Create University" : "Update University"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+    </div>
   );
 }

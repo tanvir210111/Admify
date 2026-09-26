@@ -18,7 +18,12 @@ export default defineConfig({
       },
     },
     watch: {
-      ignored: ['**/*.crdownload']
+      ignored: [
+        '**/backend/**',
+        '**/data/**',
+        '**/*.crdownload',
+        '**/local_dev_db.json'
+      ]
     }
   }
 })

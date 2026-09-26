@@ -1,190 +1,300 @@
-import React, { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Send, Paperclip, CheckCircle, ShieldAlert, Award, FileText, Calendar, Info, Circle } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { motion } from "framer-motion";
+import {
+  MessageSquare,
+  Search,
+  Send,
+  User,
+  Building2,
+  GraduationCap,
+  RefreshCw,
+  Clock,
+  CheckCheck,
+} from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
+import api from "../../services/api";
+import toast from "react-hot-toast";
 
-const STUDENTS = [
-  { name: "Ahmad Khalid", status: "online", unread: 2, uni: "University of Toronto", prog: "MSc Computer Science", stage: "Visa Pending", gpa: "3.85", ielts: "7.5", deadline: "2026-12-15" },
-  { name: "Sarah Jenkins", status: "offline", unread: 0, uni: "University of Melbourne", prog: "Master of Finance", stage: "Document Upload", gpa: "3.40", ielts: "6.5", deadline: "2027-01-10" },
-  { name: "Liu Wei", status: "online", unread: 0, uni: "University of Manchester", prog: "BSc Data Science", stage: "Enrolled", gpa: "3.70", ielts: "7.0", deadline: "2026-11-30" },
-];
-
-const INITIAL_CONVO = {
-  "Ahmad Khalid": [
-    { sender: "student", text: "Hello! I have uploaded my updated transcript. Could you please check if it meets Toronto's requirements?", time: "14:20" },
-    { sender: "agent", text: "Hi Ahmad! Let me check that. Yes, I see it. The transcript looks great, and your GPA is well above their 3.6 threshold.", time: "14:25" },
-    { sender: "student", text: "Awesome! What are the next steps for my study visa draft?", time: "14:30" }
-  ],
-  "Sarah Jenkins": [
-    { sender: "agent", text: "Hi Sarah, do you have your reference letters ready for the Melbourne application?", time: "Yesterday" },
-    { sender: "student", text: "Yes, I will scan and send them tomorrow morning.", time: "Yesterday" }
-  ],
-  "Liu Wei": [
-    { sender: "student", text: "Hi, I received my official enrollment confirmation letter today!", time: "2 days ago" },
-    { sender: "agent", text: "Incredible news Wei! Congratulations. I will log this into the system.", time: "2 days ago" }
-  ]
+const fade = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 280, damping: 24 } },
 };
+const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
 
 export default function AgentMessages() {
-  const [activeStudent, setActiveStudent] = useState(STUDENTS[0]);
-  const [convos, setConvos] = useState(INITIAL_CONVO);
-  const [inputVal, setInputVal] = useState("");
+  const { user } = useAuth();
+  const [messages, setMessages] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeContact, setActiveContact] = useState(null);
+  const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [search, setSearch] = useState("");
+
   const chatEndRef = useRef(null);
 
-  const activeMessages = convos[activeStudent.name] || [];
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [msgRes, stuRes] = await Promise.all([
+        api.get("/api/agent/messages"),
+        api.get("/api/agent/students"),
+      ]);
 
-  const handleSend = (e) => {
-    e.preventDefault();
-    if (!inputVal.trim()) return;
-
-    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const newMsg = { sender: "agent", text: inputVal, time: timeStr };
-
-    setConvos(prev => ({
-      ...prev,
-      [activeStudent.name]: [...(prev[activeStudent.name] || []), newMsg]
-    }));
-    setInputVal("");
+      if (msgRes?.data?.success) {
+        setMessages(msgRes.data.data.messages || []);
+      }
+      if (stuRes?.data?.success) {
+        const stuList = stuRes.data.data.students || [];
+        setStudents(stuList);
+        if (stuList.length > 0 && !activeContact) {
+          setActiveContact(stuList[0]);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load messaging data:", err);
+      toast.error("Failed to load counselor communication threads.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    fetchData();
+  }, []);
+
+  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [convos, activeStudent]);
+  }, [messages, activeContact]);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputText.trim() || !activeContact) return;
+
+    try {
+      setSending(true);
+      const res = await api.post("/api/agent/messages", {
+        receiverId: activeContact._id,
+        text: inputText.trim(),
+      });
+
+      if (res?.data?.success) {
+        setInputText("");
+        // append locally
+        setMessages((prev) => [...prev, res.data.data.message]);
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to send message.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Filter messages for active contact
+  const activeThread = messages.filter((m) => {
+    if (!activeContact) return false;
+    const agentId = user?._id?.toString();
+    const contactId = activeContact._id?.toString();
+
+    const mUser = (m.user?._id || m.user)?.toString();
+    const mReceiver = (m.receiver?._id || m.receiver)?.toString();
+
+    return (
+      (mUser === agentId && mReceiver === contactId) ||
+      (mUser === contactId && mReceiver === agentId)
+    );
+  });
+
+  const filteredContacts = students.filter((s) => {
+    const q = search.toLowerCase();
+    return (
+      (s.name || "").toLowerCase().includes(q) ||
+      (s.email || "").toLowerCase().includes(q) ||
+      (s.targetCountry || "").toLowerCase().includes(q)
+    );
+  });
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 max-w-[1600px] mx-auto h-[calc(100vh-10rem)] min-h-[500px]">
-
-      {/* 1. Left Panel: Chats List */}
-      <div className="w-full lg:w-72 rounded-2xl border flex flex-col overflow-hidden" style={{ background: "rgba(255,255,255,0.02)", borderColor: "rgba(255,255,255,0.08)" }}>
-        <div className="p-4 border-b border-white/6 flex justify-between items-center">
-          <h3 className="text-white font-bold text-sm flex items-center gap-1.5"><MessageSquare className="w-4 h-4 text-violet-400" /> Students Chats</h3>
+    <motion.div
+      variants={stagger}
+      initial="hidden"
+      animate="show"
+      className="space-y-6 max-w-[1600px] mx-auto text-slate-100 pb-12"
+    >
+      {/* Title */}
+      <motion.div
+        variants={fade}
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+      >
+        <div>
+          <h1 className="text-2xl font-black text-white flex items-center gap-2">
+            <MessageSquare className="w-6 h-6 text-violet-400" /> Authorized Counselor Messaging
+          </h1>
+          <p className="text-slate-400 text-xs mt-1">
+            Secure communications with assigned applicants and sponsoring agency administration.
+          </p>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-          {STUDENTS.map(s => (
-            <button
-              key={s.name}
-              onClick={() => setActiveStudent(s)}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
-                activeStudent.name === s.name ? "bg-violet-600/20 border border-violet-500/30" : "hover:bg-white/5 border border-transparent"
-              }`}
-            >
-              <div className="relative flex-shrink-0">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center font-bold text-sm text-white">
-                  {s.name.charAt(0)}
-                </div>
-                <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#050b1f] ${
-                  s.status === "online" ? "bg-green-500" : "bg-slate-600"
-                }`} />
+        <button
+          onClick={fetchData}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-[#0B1228] border border-white/10 hover:border-violet-500/40 text-slate-300 hover:text-white transition-all shadow-sm"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-violet-400" : ""}`} />
+          Refresh
+        </button>
+      </motion.div>
+
+      {/* Main Messaging Layout */}
+      <motion.div
+        variants={fade}
+        className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[650px] rounded-2xl border overflow-hidden"
+        style={{ background: "#0B1228", borderColor: "rgba(255, 255, 255, 0.08)" }}
+      >
+        {/* Contact List */}
+        <div className="border-r border-white/10 flex flex-col h-full bg-slate-900/40">
+          <div className="p-3 border-b border-white/10 space-y-2">
+            <span className="text-[10px] uppercase font-bold text-violet-400 tracking-wider">
+              Assigned Students ({students.length})
+            </span>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search assigned contacts..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl text-xs bg-slate-900 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto divide-y divide-white/5">
+            {loading ? (
+              <div className="p-6 text-center text-xs text-slate-500">Loading contacts...</div>
+            ) : filteredContacts.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500">
+                No assigned students found.
               </div>
-              <div className="flex-1 min-w-0 text-left">
-                <div className="flex justify-between items-baseline">
-                  <p className="text-slate-200 font-semibold text-xs truncate">{s.name}</p>
-                  {s.unread > 0 && (
-                    <span className="bg-violet-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{s.unread}</span>
-                  )}
+            ) : (
+              filteredContacts.map((contact) => {
+                const isSelected = activeContact?._id === contact._id;
+                return (
+                  <div
+                    key={contact._id}
+                    onClick={() => setActiveContact(contact)}
+                    className={`p-3.5 cursor-pointer transition-colors flex items-center gap-3 ${
+                      isSelected
+                        ? "bg-violet-600/20 border-l-2 border-violet-500"
+                        : "hover:bg-white/[0.02]"
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center font-bold text-violet-300 text-xs shrink-0">
+                      {contact.name ? contact.name.charAt(0) : "S"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-xs text-white truncate">{contact.name}</div>
+                      <div className="text-[10px] text-slate-400 truncate">
+                        {contact.targetCountry ? `Target: ${contact.targetCountry}` : contact.email}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Chat Window */}
+        <div className="md:col-span-2 flex flex-col h-full bg-[#0B1228]">
+          {activeContact ? (
+            <>
+              {/* Chat Header */}
+              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-slate-900/30">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center font-bold text-violet-300 text-xs">
+                    {activeContact.name ? activeContact.name.charAt(0) : "S"}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">{activeContact.name}</h3>
+                    <p className="text-[11px] text-slate-400">{activeContact.email}</p>
+                  </div>
                 </div>
-                <p className="text-slate-500 text-[10px] truncate mt-0.5">{s.prog}</p>
+
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  Assigned Applicant
+                </span>
               </div>
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {/* 2. Center Panel: Chat Window */}
-      <div className="flex-1 rounded-2xl border flex flex-col overflow-hidden" style={{ background: "rgba(255,255,255,0.02)", borderColor: "rgba(255,255,255,0.08)" }}>
-        <div className="p-4 border-b border-white/6 flex items-center justify-between">
-          <div>
-            <h4 className="text-white font-bold text-sm leading-none">{activeStudent.name}</h4>
-            <p className="text-slate-500 text-[10px] mt-1 flex items-center gap-1">
-              <Circle className={`w-1.5 h-1.5 fill-current ${activeStudent.status === "online" ? "text-green-400" : "text-slate-600"}`} />
-              {activeStudent.status === "online" ? "Online" : "Offline"}
-            </p>
-          </div>
-        </div>
-
-        {/* Message Log scrollarea */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-          {activeMessages.map((msg, i) => {
-            const isAgent = msg.sender === "agent";
-            return (
-              <div key={i} className={`flex ${isAgent ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${
-                  isAgent
-                    ? "bg-gradient-to-br from-violet-600 to-blue-600 text-white rounded-tr-none shadow"
-                    : "bg-slate-800 border border-slate-700/50 text-slate-200 rounded-tl-none"
-                }`}>
-                  <p>{msg.text}</p>
-                  <p className="text-[9px] text-slate-400 mt-1 font-mono text-right">{msg.time}</p>
-                </div>
+              {/* Message Feed */}
+              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+                {activeThread.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                    <MessageSquare className="w-8 h-8 mb-2 opacity-40 text-violet-400" />
+                    <p className="text-xs">No conversation history yet with {activeContact.name}.</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Send a guidance note to assist with university documentation or timeline milestones.
+                    </p>
+                  </div>
+                ) : (
+                  activeThread.map((msg, idx) => {
+                    const isMe = (msg.user?._id || msg.user)?.toString() === user?._id?.toString();
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                      >
+                        <div
+                          className={`max-w-[75%] p-3 rounded-2xl text-xs leading-relaxed ${
+                            isMe
+                              ? "bg-violet-600 text-white rounded-br-xs"
+                              : "bg-slate-900 border border-white/10 text-slate-200 rounded-bl-xs"
+                          }`}
+                        >
+                          <p>{msg.text}</p>
+                        </div>
+                        <span className="text-[9px] text-slate-500 mt-1 px-1">
+                          {new Date(msg.createdAt || Date.now()).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={chatEndRef} />
               </div>
-            );
-          })}
-          <div ref={chatEndRef} />
+
+              {/* Message Input */}
+              <form
+                onSubmit={handleSendMessage}
+                className="p-3 border-t border-white/10 flex gap-2 bg-slate-900/40"
+              >
+                <input
+                  type="text"
+                  placeholder={`Write guidance message to ${activeContact.name}...`}
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  className="flex-1 px-4 py-2 rounded-xl text-xs bg-slate-900 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                />
+                <button
+                  type="submit"
+                  disabled={sending || !inputText.trim()}
+                  className="px-4 py-2 rounded-xl font-bold bg-violet-600 hover:bg-violet-500 text-white text-xs transition-colors flex items-center gap-1.5 disabled:opacity-40"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Send
+                </button>
+              </form>
+            </>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+              <User className="w-10 h-10 mb-2 opacity-30 text-slate-400" />
+              <p className="text-xs">Select an assigned applicant to initiate counselor guidance.</p>
+            </div>
+          )}
         </div>
-
-        {/* Messaging Input bar */}
-        <form onSubmit={handleSend} className="p-3 border-t border-white/6 flex gap-2 items-center">
-          <button type="button" className="p-2 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl border border-white/8 transition-colors">
-            <Paperclip className="w-4 h-4" />
-          </button>
-          <input
-            value={inputVal}
-            onChange={e => setInputVal(e.target.value)}
-            placeholder="Type your message to student..."
-            className="flex-1 bg-white/4 border border-white/8 rounded-xl py-2 px-3.5 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 transition-all"
-          />
-          <button type="submit" className="p-2 bg-gradient-to-r from-violet-600 to-blue-600 hover:brightness-110 text-white rounded-xl shadow transition-all">
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
-
-      {/* 3. Right Panel: Student Context Info Card */}
-      <div className="w-full lg:w-72 rounded-2xl border p-5 space-y-4" style={{ background: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}>
-        <h4 className="text-white font-bold text-sm border-b border-white/5 pb-2 flex items-center gap-1.5"><Info className="w-4 h-4 text-violet-400" /> Student Profile</h4>
-
-        <div className="space-y-3.5 text-xs text-slate-300">
-          <div>
-            <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Target Course</p>
-            <p className="text-slate-200 font-bold mt-0.5">{activeStudent.uni}</p>
-            <p className="text-slate-400">{activeStudent.prog}</p>
-          </div>
-
-          <div>
-            <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Application Status</p>
-            <span className="inline-block mt-1 px-2.5 py-0.5 rounded bg-violet-600/10 text-violet-400 border border-violet-500/20 font-semibold">{activeStudent.stage}</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">GPA</p>
-              <p className="text-slate-200 font-bold font-mono">{activeStudent.gpa}</p>
-            </div>
-            <div>
-              <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">IELTS</p>
-              <p className="text-slate-200 font-bold font-mono">{activeStudent.ielts}</p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Key Admissions Deadline</p>
-            <p className="text-slate-200 font-mono font-bold mt-0.5">{activeStudent.deadline}</p>
-          </div>
-
-          <div className="border-t border-white/5 pt-3.5 space-y-2">
-            <p className="text-[10px] text-slate-500 uppercase font-black">Upcoming Tasks</p>
-            <div className="flex items-center gap-1.5 text-slate-400">
-              <input type="checkbox" defaultChecked className="w-3.5 h-3.5 accent-violet-600 cursor-pointer" />
-              <span className="line-through">Verify IELTS certificate</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-slate-200 font-bold">
-              <input type="checkbox" className="w-3.5 h-3.5 accent-violet-600 cursor-pointer" />
-              <span>Submit visa recommendation</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

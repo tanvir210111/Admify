@@ -832,7 +832,7 @@ function AIRecommendationsPage() {
                     className="rounded-3xl bg-[#0B1228] border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between overflow-hidden group shadow-lg"
                   >
                     {/* Cover Image & Match Badge */}
-                    <div className="relative h-44 bg-slate-900 overflow-hidden">
+                    <div className="relative h-48 bg-slate-900 overflow-hidden">
                       <img
                         src={
                           rec.coverImage ||
@@ -841,7 +841,7 @@ function AIRecommendationsPage() {
                         alt={rec.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0B1228] via-[#0B1228]/40 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0B1228] via-[#0B1228]/50 to-transparent" />
 
                       <div className="absolute top-3 left-3 flex items-center gap-1.5">
                         <span
@@ -886,11 +886,13 @@ function AIRecommendationsPage() {
                         </button>
                       </div>
 
-                      <div className="absolute bottom-3 left-4 right-4">
-                        <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-wider">
-                          {rec.country} • {rec.location}
-                        </span>
-                        <h3 className="text-base font-extrabold text-white leading-tight truncate">{rec.name}</h3>
+                      <div className="absolute bottom-3 left-4 right-4 z-10">
+                        <p className="text-[11px] font-semibold text-cyan-300 truncate">
+                          {rec.location || rec.country}
+                        </p>
+                        <h3 className="text-base font-extrabold text-white leading-tight truncate mt-0.5">
+                          {rec.name}
+                        </h3>
                       </div>
                     </div>
 
@@ -899,12 +901,12 @@ function AIRecommendationsPage() {
                       <div className="space-y-3">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-slate-400">Target Program:</span>
-                          <span className="text-white font-bold truncate max-w-[190px]">{rec.prog}</span>
+                          <span className="text-white font-bold truncate max-w-[200px]">{rec.prog}</span>
                         </div>
 
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-slate-400">Annual Tuition:</span>
-                          <span className="text-cyan-300 font-semibold">{convertTextToDual(rec.tuition)}</span>
+                          <span className="text-cyan-300 font-semibold truncate max-w-[200px]">{convertTextToDual(rec.tuition)}</span>
                         </div>
 
                         <div className="flex items-center justify-between text-xs">
@@ -913,7 +915,7 @@ function AIRecommendationsPage() {
                         </div>
 
                         {/* Key Match Drivers */}
-                        <div className="p-3 rounded-2xl bg-[#07142D] border border-slate-800/80 space-y-1.5">
+                        <div className="p-3 rounded-2xl bg-[#07142D] border border-slate-800/80 space-y-2">
                           <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                             Why AI Matched You
                           </span>
@@ -923,13 +925,13 @@ function AIRecommendationsPage() {
                               reason.startsWith("Language Prerequisite Gap") ||
                               reason.startsWith("Reach Target");
                             return (
-                              <div key={i} className="flex items-start gap-2 text-[11px] text-slate-300">
+                              <div key={i} className="flex items-start gap-1.5 text-xs text-slate-300 leading-snug">
                                 {isGap ? (
                                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                                 ) : (
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                                 )}
-                                <span className="leading-snug">{reason}</span>
+                                <span className="line-clamp-1">{reason}</span>
                               </div>
                             );
                           })}

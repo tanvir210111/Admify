@@ -16,6 +16,9 @@ import walletRoutes from './routes/walletRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import agencyRoutes from './routes/agencyRoutes.js';
+import agentRoutes from './routes/agentRoutes.js';
+import universityRepRoutes from './routes/universityRepRoutes.js';
 
 // Middleware imports
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
@@ -39,9 +42,9 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('combined'));
 }
 
-// Body parsers
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsers with production-safe payload limit for agency document scans (up to 4 docs + logo)
+app.use(express.json({ limit: '40mb' }));
+app.use(express.urlencoded({ extended: true, limit: '40mb' }));
 
 // CORS configuration for production and development
 const allowedOrigins = (
@@ -116,6 +119,9 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/agency', agencyRoutes);
+app.use('/api/agent', agentRoutes);
+app.use('/api/university-rep', universityRepRoutes);
 
 // ── Error Handling Middleware ────────────────────────────────────────────────
 app.use(notFound);

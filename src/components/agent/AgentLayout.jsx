@@ -1,210 +1,316 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../../context/AuthContext";
 import {
-  LayoutDashboard, Users, FileCheck, Building2, Award, FileText, Sparkles,
-  MessageSquare, Calendar, Landmark, Bell, User, LogOut, Search, ChevronDown, Menu, X, Globe
+  LayoutDashboard,
+  Users,
+  FileCheck,
+  FileText,
+  Sparkles,
+  Building2,
+  MessageSquare,
+  Calendar,
+  BarChart3,
+  Bell,
+  AlertCircle,
+  ShieldCheck,
+  User,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  ChevronDown,
+  Clock,
+  CheckCircle2,
 } from "lucide-react";
 
 const NAV = [
-  { icon: LayoutDashboard, label: "Dashboard",            path: "/agent/dashboard" },
-  { icon: Users,           label: "My Students",          path: "/agent/students" },
-  { icon: FileCheck,       label: "Applications",         path: "/agent/applications" },
-  { icon: Building2,       label: "Universities",         path: "/agent/universities" },
-  { icon: Award,           label: "Scholarships",         path: "/agent/scholarships" },
-  { icon: FileText,        label: "Document Review",      path: "/agent/documents" },
-  { icon: Sparkles,        label: "SOP & LOR",            path: "/agent/sop-lor" },
-  { icon: MessageSquare,   label: "Messages",             path: "/agent/messages" },
-  { icon: Calendar,        label: "Meetings",             path: "/agent/meetings" },
-  { icon: Landmark,        label: "Commissions",          path: "/agent/commissions" },
-  { icon: Bell,            label: "Notifications",        path: "/agent/notifications" },
-  { icon: User,            label: "Profile Settings",     path: "/agent/profile" },
-];
-
-const NOTIFS = [
-  { icon: "📄", text: "David Miller uploaded a new bank statement", time: "3m ago" },
-  { icon: "🎓", text: "University of Manchester updated eligibility rules", time: "12m ago" },
-  { icon: "📅", text: "Counselling meeting starting in 15 mins", time: "18m ago" },
-  { icon: "💰", text: "Commission approved: $1,240 for Ahmad Khalid", time: "1h ago" },
+  { icon: LayoutDashboard, label: "Dashboard",                path: "/agent/dashboard" },
+  { icon: Users,           label: "My Students",              path: "/agent/students" },
+  { icon: FileCheck,       label: "Applications",             path: "/agent/applications" },
+  { icon: FileText,        label: "Documents",                path: "/agent/documents" },
+  { icon: Sparkles,        label: "SOP / LOR",                path: "/agent/sop-lor" },
+  { icon: Building2,       label: "Universities & Programs",  path: "/agent/universities" },
+  { icon: MessageSquare,   label: "Messages",                 path: "/agent/messages" },
+  { icon: Calendar,        label: "Tasks & Deadlines",        path: "/agent/tasks" },
+  { icon: BarChart3,       label: "My Performance",           path: "/agent/performance" },
+  { icon: Bell,            label: "Notifications",            path: "/agent/notifications" },
+  { icon: AlertCircle,     label: "Reports / Issues",         path: "/agent/reports" },
+  { icon: ShieldCheck,     label: "My Agency",                path: "/agent/agency" },
+  { icon: User,            label: "My Profile",               path: "/agent/profile" },
+  { icon: Settings,        label: "Settings",                 path: "/agent/settings" },
 ];
 
 export default function AgentLayout() {
+  const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notifOpen, setNotifOpen]   = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [search, setSearch] = useState("");
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
 
-  const handleLogout = () => navigate("/login");
+  // Load real Agent notifications
+  useEffect(() => {
+    const fetchNotifs = async () => {
+      try {
+        const token = localStorage.getItem("token") || localStorage.getItem("admify_token");
+        if (!token) return;
+        const res = await fetch("/api/agent/notifications", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data?.notifications)) {
+          setNotifications(data.data.notifications);
+          setUnreadCount(data.data.notifications.filter((n) => !n.read).length);
+        }
+      } catch (err) {
+        console.warn("Failed to load agent notifications:", err);
+      }
+    };
+    fetchNotifs();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } finally {
+      navigate("/login", { replace: true });
+    }
+  };
+
+  const agentName = user?.name || "Admissions Counselor";
+  const agentRole = user?.designation || "Educational Counselor";
 
   return (
-    <div className="flex min-h-screen" style={{ background: "#050B1F", fontFamily: "'Inter',sans-serif" }}>
+    <div className="flex min-h-screen" style={{ background: "#050B1F", fontFamily: "'Inter', sans-serif" }}>
 
-      {/* ── Mobile Drawer Overlay ── */}
+      {/* ── Mobile Overlay ── */}
       <AnimatePresence>
         {sidebarOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/70 z-40 xl:hidden"
+            className="fixed inset-0 bg-black/75 z-40 xl:hidden backdrop-blur-sm"
           />
         )}
       </AnimatePresence>
 
-      {/* ── Fixed Sticky Sidebar ── */}
-      <aside className={`fixed top-0 left-0 h-screen w-64 z-50 flex flex-col transition-transform duration-300 xl:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
-        style={{ background: "linear-gradient(180deg,#07091e 0%,#050b1f 100%)", borderRight: "1px solid rgba(255,255,255,0.06)" }}>
-
-        {/* Logo */}
+      {/* ── Fixed Sidebar ── */}
+      <aside
+        className={`fixed top-0 left-0 h-screen w-64 z-50 flex flex-col transition-transform duration-300 xl:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        style={{
+          background: "linear-gradient(180deg, #07091E 0%, #050B1F 100%)",
+          borderRight: "1px solid rgba(255, 255, 255, 0.06)",
+        }}
+      >
+        {/* Logo & Portal Brand */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 flex-shrink-0">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#070b1a] border border-cyan-500/35 flex items-center justify-center shadow-lg shadow-cyan-500/25 p-1 overflow-hidden shrink-0">
-              <img
-                src="/logo-mark.png"
-                alt="Admify Logo"
-                className="w-full h-full object-contain"
-              />
+          <Link to="/agent/dashboard" className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#070B1A] border border-cyan-500/35 flex items-center justify-center shadow-lg shadow-cyan-500/20 p-1 overflow-hidden shrink-0">
+              <img src="/logo-mark.png" alt="Admify Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <p className="text-white font-extrabold text-base leading-none">Admify</p>
-              <p className="text-cyan-400 text-[9px] font-bold uppercase tracking-widest mt-0.5">Agent Portal</p>
+              <p className="text-cyan-400 text-[10px] font-bold uppercase tracking-widest mt-0.5">Agent Panel</p>
             </div>
           </Link>
-          <button onClick={() => setSidebarOpen(false)} className="xl:hidden text-slate-500 hover:text-white p-1 transition-colors">
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="xl:hidden text-slate-500 hover:text-white p-1 transition-colors"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Sidebar Nav Items */}
-        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 custom-scrollbar">
+        {/* Counselor Identity Card */}
+        <div className="mx-3 my-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-cyan-600/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-xs shrink-0">
+            {agentName.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-white font-semibold text-xs truncate">{agentName}</p>
+            <p className="text-slate-400 text-[10px] truncate">{agentRole}</p>
+          </div>
+        </div>
+
+        {/* Navigation List */}
+        <nav className="flex-1 overflow-y-auto px-3 py-1 space-y-0.5 custom-scrollbar">
           {NAV.map((item) => (
-            <NavLink key={item.path} to={item.path} onClick={() => { if (window.innerWidth < 1280) setSidebarOpen(false); }}
+            <NavLink
+              key={item.path}
+              to={item.path}
+              onClick={() => {
+                if (window.innerWidth < 1280) setSidebarOpen(false);
+              }}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-all duration-200 group ${
+                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 group ${
                   isActive
-                    ? "bg-violet-600/20 border border-violet-500/30 text-white font-bold shadow-[0_0_15px_rgba(139,92,246,0.12)]"
+                    ? "bg-cyan-600/25 border border-cyan-500/40 text-white font-bold shadow-[0_0_15px_rgba(6,182,212,0.15)]"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 }`
               }
             >
               {({ isActive }) => (
                 <>
-                  <item.icon className={`flex-shrink-0 transition-colors ${isActive ? "text-violet-400" : "text-slate-500 group-hover:text-slate-300"}`} style={{ width: 17, height: 17 }} />
+                  <item.icon
+                    className={`flex-shrink-0 transition-colors ${
+                      isActive ? "text-cyan-400" : "text-slate-500 group-hover:text-slate-300"
+                    }`}
+                    style={{ width: 16, height: 16 }}
+                  />
                   <span className="truncate">{item.label}</span>
+                  {item.label === "Notifications" && unreadCount > 0 && (
+                    <span className="ml-auto px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
+                      {unreadCount}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>
           ))}
         </nav>
 
-        {/* Logout at bottom */}
+        {/* Sign Out */}
         <div className="p-3 border-t border-white/5 flex-shrink-0">
-          <button onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm group">
-            <LogOut style={{ width: 17, height: 17 }} className="group-hover:-translate-x-0.5 transition-transform" />
-            <span>Logout</span>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs font-semibold group"
+          >
+            <LogOut style={{ width: 16, height: 16 }} className="group-hover:-translate-x-0.5 transition-transform" />
+            <span>Sign Out</span>
           </button>
         </div>
       </aside>
 
       {/* ── Main Area ── */}
       <div className="flex-1 xl:pl-64 flex flex-col min-h-screen">
-
-        {/* ── Sticky Top Header ── */}
-        <header className="sticky top-0 z-30 h-16 flex items-center justify-between px-4 md:px-6 flex-shrink-0"
-          style={{ background: "rgba(5,11,31,0.95)", backdropFilter: "blur(14px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-
+        {/* Fixed Top Header */}
+        <header
+          className="sticky top-0 z-30 h-16 flex items-center justify-between px-4 md:px-8 flex-shrink-0"
+          style={{
+            background: "rgba(5, 11, 31, 0.92)",
+            backdropFilter: "blur(14px)",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+          }}
+        >
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="xl:hidden p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="xl:hidden p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+            >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search students, commissions, universities..."
-                className="w-60 md:w-80 bg-white/4 border border-white/8 rounded-xl py-2 pl-9 pr-3 text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 transition-all" />
+            <div className="hidden sm:block">
+              <span className="text-xs text-slate-400">Admissions Guidance Casework</span>
+              <p className="text-white font-bold text-sm tracking-tight">{agentName}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-3">
-            {/* Online Status Status Indicator */}
-            <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/8">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400 text-xs font-bold">Online • Available</span>
+          {/* Right Header Actions */}
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Active Counselor</span>
             </div>
 
-            {/* Notifications */}
-            <div className="relative">
-              <button onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); }}
-                className="relative p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-violet-500 rounded-full border border-slate-900" />
-              </button>
-              <AnimatePresence>
-                {notifOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
-                    <motion.div initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-                      className="absolute right-0 top-full mt-2 w-80 rounded-2xl border border-white/10 shadow-2xl z-50 overflow-hidden"
-                      style={{ background: "#0b1228" }}>
-                      <div className="flex justify-between items-center px-4 py-3 border-b border-white/8">
-                        <h4 className="text-white font-bold text-sm">Notifications</h4>
-                        <span className="text-violet-400 text-xs cursor-pointer hover:text-violet-300">Mark all read</span>
-                      </div>
-                      {NOTIFS.map((n, i) => (
-                        <div key={i} className="flex gap-3 px-4 py-3 border-b border-white/5 hover:bg-white/3 cursor-pointer transition-colors">
-                          <span className="text-base flex-shrink-0 mt-0.5">{n.icon}</span>
-                          <div><p className="text-slate-300 text-xs">{n.text}</p><p className="text-slate-600 text-[10px] mt-0.5">{n.time}</p></div>
-                        </div>
-                      ))}
-                      <div className="px-4 py-2.5 text-center text-violet-400 text-xs font-medium cursor-pointer hover:text-violet-300">View all →</div>
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
+            {/* Quick Messages */}
+            <Link
+              to="/agent/messages"
+              className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+              title="Messages"
+            >
+              <MessageSquare className="w-4 h-4" />
+            </Link>
 
-            {/* Profile Dropdown (Only here in header) */}
+            {/* Quick Notifications */}
+            <Link
+              to="/agent/notifications"
+              className="relative p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              )}
+            </Link>
+
+            {/* Profile Menu */}
             <div className="relative">
-              <button onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
-                className="flex items-center gap-2 pl-3 border-l border-white/8 cursor-pointer hover:opacity-80 transition-opacity">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center text-xs font-black text-white flex-shrink-0">JS</div>
-                <div className="hidden md:block text-left">
-                  <p className="text-white text-xs font-bold leading-none">Sarah Jenkins</p>
-                  <p className="text-slate-400 text-[9px] mt-0.5">EduGlobal Consulting · 🇬🇧 UK</p>
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                className="flex items-center gap-2.5 p-1.5 pl-2.5 rounded-xl bg-white/5 hover:bg-white/8 border border-white/8 transition-colors"
+              >
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-600 text-white font-bold text-xs flex items-center justify-center">
+                  {agentName.charAt(0).toUpperCase()}
                 </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden md:block" />
+                <span className="hidden md:inline text-xs font-semibold text-white max-w-[120px] truncate">
+                  {agentName}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </button>
+
               <AnimatePresence>
                 {profileOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
-                    <motion.div initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-                      className="absolute right-0 top-full mt-2 w-52 rounded-2xl border border-white/10 shadow-2xl z-50 overflow-hidden py-1"
-                      style={{ background: "#0b1228" }}>
-                      {[
-                        { label: "Profile Settings", path: "/agent/profile", icon: "👤" },
-                        { label: "My Students",      path: "/agent/students", icon: "🎓" },
-                        { label: "Earnings Center",   path: "/agent/commissions", icon: "💰" },
-                      ].map((m, i) => (
-                        <button key={i} onClick={() => { navigate(m.path); setProfileOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-300 hover:text-white hover:bg-white/5 transition-colors text-sm text-left">
-                          <span>{m.icon}</span> {m.label}
-                        </button>
-                      ))}
-                      <div className="border-t border-white/8 mt-1 pt-1">
-                        <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-400 hover:bg-red-500/10 transition-colors text-sm text-left">
-                          <LogOut className="w-4 h-4" /> Logout
-                        </button>
-                      </div>
-                    </motion.div>
-                  </>
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="absolute right-0 top-full mt-2 w-56 rounded-2xl border border-white/10 shadow-2xl p-2 z-50"
+                    style={{ background: "#0B1228" }}
+                  >
+                    <div className="px-3 py-2 border-b border-white/5">
+                      <p className="text-white text-xs font-bold truncate">{agentName}</p>
+                      <p className="text-slate-400 text-[11px] truncate">{user?.email}</p>
+                    </div>
+                    <div className="py-1 space-y-0.5">
+                      <Link
+                        to="/agent/agency"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                        <span>My Agency</span>
+                      </Link>
+                      <Link
+                        to="/agent/profile"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                      >
+                        <User className="w-4 h-4 text-slate-400" />
+                        <span>Counselor Profile</span>
+                      </Link>
+                      <Link
+                        to="/agent/settings"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                      >
+                        <Settings className="w-4 h-4 text-slate-400" />
+                        <span>Settings</span>
+                      </Link>
+                    </div>
+                    <div className="pt-1 border-t border-white/5">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  </motion.div>
                 )}
               </AnimatePresence>
             </div>
           </div>
         </header>
 
-        {/* ── Page Content ── */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
+        {/* Content Body */}
+        <main className="flex-1 p-4 md:p-8">
           <Outlet />
         </main>
       </div>

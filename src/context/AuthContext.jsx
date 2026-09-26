@@ -142,14 +142,26 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // Register method
-  const register = async ({ name, email, password, phone, role }) => {
+  const register = async ({ name, email, password, phone, role, ...extra }) => {
     const res = await api.post('/api/auth/register', {
       name,
       email,
       password,
       phone,
       role,
+      ...extra,
     });
+
+    if (res?.data?.token) {
+      clearAuthStorage();
+      localStorage.setItem('admify_token', res.data.token);
+      const formatted = formatUser(res.data.user);
+      if (formatted) {
+        localStorage.setItem('admify_user', JSON.stringify(formatted));
+      }
+      setUser(formatted);
+    }
+
     return res;
   };
 
@@ -208,6 +220,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    setUser,
     loading,
     login,
     adminLogin,
@@ -217,7 +230,7 @@ export const AuthProvider = ({ children }) => {
     isTokenValid,
   };
 
-  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

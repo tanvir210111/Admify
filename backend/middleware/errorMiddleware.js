@@ -8,6 +8,12 @@ export const errorHandler = (err, req, res, next) => {
   let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
   let message = err.message || 'Internal Server Error';
 
+  // Handle Body-parser PayloadTooLargeError (HTTP 413)
+  if (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413) {
+    statusCode = 413;
+    message = 'Request payload exceeds maximum allowed size. Please ensure uploaded documents are under 3.5MB each.';
+  }
+
   // Handle Mongoose bad ObjectId / CastError
   if (err.name === 'CastError' && err.kind === 'ObjectId') {
     statusCode = 404;
