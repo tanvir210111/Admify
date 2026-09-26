@@ -58,6 +58,7 @@ import {
   getAdminUniRepApplicationById,
   approveUniRepApplication,
   rejectUniRepApplication,
+  deleteUniRepApplication,
 } from '../controllers/adminController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { authorize } from '../middleware/roleMiddleware.js';
@@ -165,12 +166,14 @@ router.get('/university-rep-applications', getAdminUniRepApplications);
 router.get('/university-rep-applications/:id', getAdminUniRepApplicationById);
 router.post('/university-rep-applications/:id/approve', approveUniRepApplication);
 router.post('/university-rep-applications/:id/reject', rejectUniRepApplication);
+router.delete('/university-rep-applications/:id', deleteUniRepApplication);
 
 // ── Backward Compatible Route Aliases ─────────────────────────────────────────
 router.get('/uni-rep-applications', getAdminUniRepApplications);
 router.get('/uni-rep-applications/:id', getAdminUniRepApplicationById);
 router.post('/uni-rep-applications/:id/approve', approveUniRepApplication);
 router.post('/uni-rep-applications/:id/reject', rejectUniRepApplication);
+router.delete('/uni-rep-applications/:id', deleteUniRepApplication);
 
 // ── Route Aliases for Admin Panel Flexibility ─────────────────────────────────
 router.get('/agencies', getAllAgencyVerifications);

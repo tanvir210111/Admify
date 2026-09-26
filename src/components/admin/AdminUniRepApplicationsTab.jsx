@@ -19,7 +19,8 @@ import {
   Phone,
   ShieldCheck,
   Award,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from "lucide-react";
 import { api } from "../../lib/api";
 import toast from "react-hot-toast";
@@ -51,6 +52,10 @@ export default function AdminUniRepApplicationsTab() {
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
+
+  // Delete modal state
+  const [deleteModal, setDeleteModal] = useState(null); // { app, confirmInput: "" }
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchApplications = async () => {
     setLoading(true);
@@ -116,6 +121,29 @@ export default function AdminUniRepApplicationsTab() {
       toast.error(err.message || "Rejection failed.");
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteModal?.app) return;
+    if (deleteModal.confirmInput !== "DELETE") {
+      toast.error("Please type DELETE to confirm permanent deletion.");
+      return;
+    }
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/api/admin/university-rep-applications/${deleteModal.app._id}`);
+      toast.success(res?.message || res?.data?.message || "University representative permanently deleted.");
+      const deletedId = deleteModal.app._id;
+      setDeleteModal(null);
+      if (selectedApp && selectedApp._id === deletedId) {
+        setSelectedApp(null);
+      }
+      fetchApplications();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || "Deletion failed.");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -242,17 +270,38 @@ export default function AdminUniRepApplicationsTab() {
                         </span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button
-                          onClick={() => {
-                            setSelectedApp(app);
-                            setShowRejectForm(false);
-                            setRejectionReason("");
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl text-xs font-semibold transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Review
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedApp(app);
+                              setShowRejectForm(false);
+                              setRejectionReason("");
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Review
+                          </button>
+                          {app.status === "REJECTED" ? (
+                            <button
+                              onClick={() => setDeleteModal({ app, confirmInput: "" })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                              title="Delete rejected representative permanently"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-800/40 text-slate-500 border border-slate-700/40 rounded-xl text-xs font-semibold opacity-40 cursor-not-allowed"
+                              title="University representative must be rejected before deletion."
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -521,7 +570,17 @@ export default function AdminUniRepApplicationsTab() {
                 </button>
 
                 <div className="flex items-center gap-2">
-                  {selectedApp.status !== "APPROVED" && selectedApp.status !== "ACTIVE" && (
+                  {selectedApp.status === "REJECTED" && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteModal({ app: selectedApp, confirmInput: "" })}
+                      className="px-4 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Permanently
+                    </button>
+                  )}
+                  {selectedApp.status !== "APPROVED" && selectedApp.status !== "ACTIVE" && selectedApp.status !== "REJECTED" && (
                     <>
                       {showRejectForm ? (
                         <button
@@ -556,6 +615,70 @@ export default function AdminUniRepApplicationsTab() {
                     </>
                   )}
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Delete Confirmation Modal ── */}
+      <AnimatePresence>
+        {deleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-slate-900 border border-rose-500/30 w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4"
+            >
+              <div className="flex items-center gap-3 text-rose-400">
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <AlertCircle className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Delete University Representative?</h3>
+                  <p className="text-xs text-rose-300/80">Permanent database deletion</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                This action permanently deletes the rejected university representative record for{" "}
+                <strong className="text-white">
+                  {deleteModal.app?.representative?.fullName || deleteModal.app?.representativeInfo?.fullName || deleteModal.app?.user?.name || "Representative"}
+                </strong>{" "}
+                ({deleteModal.app?.university?.name || deleteModal.app?.universityInfo?.universityName || "University Partner"}).
+              </p>
+
+              <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/50 text-rose-300 text-xs">
+                This cannot be undone. To proceed, please type <span className="font-mono font-bold text-white uppercase">DELETE</span> below:
+              </div>
+
+              <input
+                type="text"
+                value={deleteModal.confirmInput}
+                onChange={(e) => setDeleteModal({ ...deleteModal, confirmInput: e.target.value })}
+                placeholder="Type DELETE to confirm"
+                className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500 font-mono"
+                autoFocus
+              />
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModal(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteModal.confirmInput !== "DELETE" || deleteLoading}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {deleteLoading ? "Deleting..." : "Delete Permanently"}
+                </button>
               </div>
             </motion.div>
           </div>

@@ -948,6 +948,17 @@ class DevStore {
     return db.universityRepApplications[index];
   }
 
+  async deleteUniRepApplication(id) {
+    const db = this.read();
+    if (!Array.isArray(db.universityRepApplications)) return true;
+    const idStr = id ? id.toString() : '';
+    db.universityRepApplications = db.universityRepApplications.filter(
+      (a) => a._id !== idStr && a.applicationId?.toUpperCase() !== idStr.toUpperCase()
+    );
+    this.write(db);
+    return true;
+  }
+
   async findUniRepApplications(filter = {}) {
     const db = this.read();
     if (!Array.isArray(db.universityRepApplications)) db.universityRepApplications = [];

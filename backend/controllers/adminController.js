@@ -3854,6 +3854,19 @@ export const getAdminUniRepApplications = async (req, res, next) => {
             appObj.user.walletCredits = 'N/A';
             appObj.user.availableCredits = 'N/A';
           }
+          appObj.representative = appObj.representative || {
+            fullName: appObj.user?.name || null,
+            officialEmail: appObj.user?.email || null,
+            phone: appObj.user?.phone || null,
+            designation: 'International Admissions Officer',
+            employeeId: null,
+          };
+          appObj.university = appObj.university || {
+            name: null,
+            city: null,
+            website: null,
+            country: null,
+          };
           const hasEmployeeId = Boolean(appObj.representative?.employeeId && appObj.representative.employeeId.trim());
           const hasCity = Boolean(appObj.university?.city && appObj.university.city.trim());
           const hasWebsite = Boolean(appObj.university?.website && appObj.university.website.trim());
@@ -3922,6 +3935,19 @@ export const getAdminUniRepApplications = async (req, res, next) => {
             appObj.user.walletCredits = 'N/A';
             appObj.user.availableCredits = 'N/A';
           }
+          appObj.representative = appObj.representative || {
+            fullName: appObj.user?.name || null,
+            officialEmail: appObj.user?.email || null,
+            phone: appObj.user?.phone || null,
+            designation: 'International Admissions Officer',
+            employeeId: null,
+          };
+          appObj.university = appObj.university || {
+            name: null,
+            city: null,
+            website: null,
+            country: null,
+          };
           const hasEmployeeId = Boolean(appObj.representative?.employeeId && appObj.representative.employeeId.trim());
           const hasCity = Boolean(appObj.university?.city && appObj.university.city.trim());
           const hasWebsite = Boolean(appObj.university?.website && appObj.university.website.trim());
@@ -4017,6 +4043,28 @@ export const getAdminUniRepApplicationById = async (req, res, next) => {
         application = await UniversityRepresentativeApplication.findOne({ applicationId: id.toUpperCase().trim() })
           .populate('user', 'name email phone role status accountStatus uniRepVerificationStatus createdAt')
           .populate('reviewedBy', 'name email');
+      }
+
+      if (application) {
+        const appObj = application.toObject ? application.toObject() : { ...application };
+        if (appObj.user) {
+          appObj.user.walletCredits = 'N/A';
+          appObj.user.availableCredits = 'N/A';
+        }
+        appObj.representative = appObj.representative || {
+          fullName: appObj.user?.name || null,
+          officialEmail: appObj.user?.email || null,
+          phone: appObj.user?.phone || null,
+          designation: 'International Admissions Officer',
+          employeeId: null,
+        };
+        appObj.university = appObj.university || {
+          name: null,
+          city: null,
+          website: null,
+          country: null,
+        };
+        application = appObj;
       }
 
       // If not in UniversityRepresentativeApplication, check User collection for legacy account
@@ -4157,6 +4205,30 @@ export const approveUniRepApplication = async (req, res, next) => {
         applicationId: application?.applicationId || repUser.universityRepApplicationId || 'ADM-REP-2026',
         activationToken: rawActivationToken,
       });
+      if (!application && repUser) {
+        application = {
+          _id: repUser.universityRepApplication || repUser._id,
+          user: repUser,
+          applicationId: repUser.universityRepApplicationId || `UNIREP-${repUser._id.toString().slice(-6).toUpperCase()}`,
+          university: {
+            name: repUser.universityName || null,
+            city: repUser.city || null,
+            website: repUser.website || null,
+            country: repUser.country || null,
+          },
+          representative: {
+            fullName: repUser.name || null,
+            officialEmail: repUser.email || null,
+            phone: repUser.phone || null,
+            designation: repUser.designation || 'International Admissions Officer',
+            employeeId: repUser.employeeId || null,
+          },
+          status: 'APPROVED',
+          profileStatus: 'APPROVED',
+          isProfileComplete: Boolean(repUser.employeeId && repUser.city && repUser.website),
+          isLegacyRecord: true,
+        };
+      }
     } else {
       application = await devStore.findUniRepApplicationById(id);
       if (!application) application = await devStore.findUniRepApplicationByAppId(id);
@@ -4208,7 +4280,7 @@ export const approveUniRepApplication = async (req, res, next) => {
       module: 'university-reps',
       targetType: 'UniversityRepresentativeApplication',
       targetId: id,
-      targetName: application.representative?.fullName,
+      targetName: application?.representative?.fullName || repUser?.name || 'University Representative',
       newValue: { status: 'APPROVED' },
     });
 
@@ -4241,13 +4313,15 @@ export const rejectUniRepApplication = async (req, res, next) => {
 
     const now = new Date();
     let application = null;
+    let repUser = null;
 
     if (mongoose.connection.readyState === 1) {
       if (mongoose.Types.ObjectId.isValid(id)) application = await UniversityRepresentativeApplication.findById(id);
       if (!application && mongoose.Types.ObjectId.isValid(id)) application = await UniversityRepresentativeApplication.findOne({ user: id });
-      if (!application) application = await UniversityRepresentativeApplication.findOne({ applicationId: id.toUpperCase() });
+      if (!application) application = await UniversityRepresentativeApplication.findOne({ applicationId: id.toUpperCase().trim() });
 
       if (application) {
+        repUser = await User.findById(application.user);
         application.status = 'REJECTED';
         application.reviewedAt = now;
         application.reviewedBy = req.user._id;
@@ -4271,7 +4345,7 @@ export const rejectUniRepApplication = async (req, res, next) => {
           isActive: false,
         });
       } else if (mongoose.Types.ObjectId.isValid(id)) {
-        const repUser = await User.findById(id);
+        repUser = await User.findById(id);
         if (!repUser || (repUser.role !== 'university_rep' && repUser.role !== 'universityRep' && repUser.role !== 'university')) {
           return res.status(404).json({ success: false, message: 'University representative account not found.' });
         }
@@ -4281,6 +4355,32 @@ export const rejectUniRepApplication = async (req, res, next) => {
           status: 'pending',
           isActive: false,
         });
+
+        // Construct normalized application representation for return
+        application = {
+          _id: repUser.universityRepApplication || repUser._id,
+          user: repUser,
+          applicationId: repUser.universityRepApplicationId || `UNIREP-${repUser._id.toString().slice(-6).toUpperCase()}`,
+          university: {
+            name: repUser.universityName || null,
+            city: repUser.city || null,
+            website: repUser.website || null,
+            country: repUser.country || null,
+          },
+          representative: {
+            fullName: repUser.name || null,
+            officialEmail: repUser.email || null,
+            phone: repUser.phone || null,
+            designation: repUser.designation || 'International Admissions Officer',
+            employeeId: repUser.employeeId || null,
+          },
+          status: 'REJECTED',
+          profileStatus: 'REJECTED',
+          isProfileComplete: Boolean(repUser.employeeId && repUser.city && repUser.website),
+          isLegacyRecord: true,
+          rejectionReason: rejectionReason.trim(),
+          adminNotes: adminNotes || '',
+        };
       } else {
         return res.status(404).json({ success: false, message: 'Application not found.' });
       }
@@ -4288,32 +4388,68 @@ export const rejectUniRepApplication = async (req, res, next) => {
       application = await devStore.findUniRepApplicationById(id);
       if (!application) application = await devStore.findUniRepApplicationByUserId(id);
       if (!application) application = await devStore.findUniRepApplicationByAppId(id);
-      if (!application) return res.status(404).json({ success: false, message: 'Application not found.' });
+      
+      let userId = application?.user?._id || application?.user || (mongoose.Types.ObjectId.isValid(id) ? id : null);
+      if (userId) {
+        repUser = await devStore.findUserById(userId);
+      }
 
-      const userId = application.user?._id || application.user;
-      const history = Array.isArray(application.statusHistory) ? [...application.statusHistory] : [];
-      history.push({
-        status: 'REJECTED',
-        changedAt: now.toISOString(),
-        changedBy: req.user._id,
-        note: `Rejected: ${rejectionReason.trim()}`,
-      });
+      if (!application && !repUser) {
+        return res.status(404).json({ success: false, message: 'Application not found.' });
+      }
 
-      application = await devStore.updateUniRepApplication(application._id, {
-        status: 'REJECTED',
-        reviewedAt: now.toISOString(),
-        reviewedBy: req.user._id,
-        rejectionReason: rejectionReason.trim(),
-        adminNotes: adminNotes || '',
-        statusHistory: history,
-      });
+      if (application) {
+        const history = Array.isArray(application.statusHistory) ? [...application.statusHistory] : [];
+        history.push({
+          status: 'REJECTED',
+          changedAt: now.toISOString(),
+          changedBy: req.user._id,
+          note: `Rejected: ${rejectionReason.trim()}`,
+        });
 
-      await devStore.updateUser(userId, {
-        accountStatus: 'REJECTED',
-        uniRepVerificationStatus: 'REJECTED',
-        status: 'pending',
-        isActive: false,
-      });
+        application = await devStore.updateUniRepApplication(application._id, {
+          status: 'REJECTED',
+          reviewedAt: now.toISOString(),
+          reviewedBy: req.user._id,
+          rejectionReason: rejectionReason.trim(),
+          adminNotes: adminNotes || '',
+          statusHistory: history,
+        });
+      } else if (repUser) {
+        application = {
+          _id: repUser.universityRepApplication || repUser._id,
+          user: repUser,
+          applicationId: repUser.universityRepApplicationId || `UNIREP-${repUser._id.toString().slice(-6).toUpperCase()}`,
+          university: {
+            name: repUser.universityName || null,
+            city: repUser.city || null,
+            website: repUser.website || null,
+            country: repUser.country || null,
+          },
+          representative: {
+            fullName: repUser.name || null,
+            officialEmail: repUser.email || null,
+            phone: repUser.phone || null,
+            designation: repUser.designation || 'International Admissions Officer',
+            employeeId: repUser.employeeId || null,
+          },
+          status: 'REJECTED',
+          profileStatus: 'REJECTED',
+          isProfileComplete: Boolean(repUser.employeeId && repUser.city && repUser.website),
+          isLegacyRecord: true,
+          rejectionReason: rejectionReason.trim(),
+          adminNotes: adminNotes || '',
+        };
+      }
+
+      if (userId) {
+        await devStore.updateUser(userId, {
+          accountStatus: 'REJECTED',
+          uniRepVerificationStatus: 'REJECTED',
+          status: 'pending',
+          isActive: false,
+        });
+      }
     }
 
     await recordAuditLog({
@@ -4322,7 +4458,7 @@ export const rejectUniRepApplication = async (req, res, next) => {
       module: 'university-reps',
       targetType: 'UniversityRepresentativeApplication',
       targetId: id,
-      targetName: application.representative?.fullName,
+      targetName: application?.representative?.fullName || repUser?.name || 'University Representative',
       newValue: { status: 'REJECTED' },
       reason: rejectionReason,
     });
@@ -4332,6 +4468,188 @@ export const rejectUniRepApplication = async (req, res, next) => {
       message: 'University Representative application rejected.',
       data: { application },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Permanently delete rejected university representative application and canonical account
+// @route   DELETE /api/admin/university-rep-applications/:id
+// @access  Private (Admin)
+export const deleteUniRepApplication = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Application or User ID is required.' });
+    }
+
+    let application = null;
+    let repUser = null;
+
+    if (mongoose.connection.readyState === 1) {
+      // 1. Resolve application by _id, user ID, or applicationId
+      if (mongoose.Types.ObjectId.isValid(id)) {
+        application = await UniversityRepresentativeApplication.findById(id);
+        if (!application) {
+          application = await UniversityRepresentativeApplication.findOne({ user: id });
+        }
+      }
+      if (!application) {
+        application = await UniversityRepresentativeApplication.findOne({
+          applicationId: id.toUpperCase().trim(),
+        });
+      }
+
+      if (application) {
+        if (application.user) {
+          repUser = await User.findById(application.user);
+        }
+      } else if (mongoose.Types.ObjectId.isValid(id)) {
+        repUser = await User.findById(id);
+      }
+
+      if (!application && !repUser) {
+        return res.status(404).json({ success: false, message: 'University representative record not found.' });
+      }
+
+      // Security check: If target is only a User, ensure they are a university representative
+      if (!application && repUser) {
+        const isUniRep = ['university_rep', 'universityRep', 'university', 'university representative'].includes(repUser.role);
+        if (!isUniRep) {
+          return res.status(400).json({ success: false, message: 'Target user is not a university representative.' });
+        }
+      }
+
+      // 2. Strict status rule: must be REJECTED before deletion
+      const appStatus = (application?.status || '').toUpperCase();
+      const userAccountStatus = (repUser?.accountStatus || '').toUpperCase();
+      const userUniRepStatus = (repUser?.uniRepVerificationStatus || '').toUpperCase();
+
+      const isRejected =
+        appStatus === 'REJECTED' ||
+        userAccountStatus === 'REJECTED' ||
+        userUniRepStatus === 'REJECTED';
+
+      if (!isRejected) {
+        return res.status(409).json({
+          success: false,
+          message: 'University representative must be rejected before deletion.',
+        });
+      }
+
+      const repName = application?.representative?.fullName || repUser?.name || 'University Representative';
+      const uniName = application?.university?.name || repUser?.universityName || 'University Partner';
+      const appId = application?.applicationId || repUser?.universityRepApplicationId || id;
+      const userId = repUser?._id?.toString() || (application?.user ? application.user.toString() : null);
+
+      // 3. Record Immutable Admin Audit Log
+      await recordAuditLog({
+        req,
+        action: 'ADMIN_DELETE_UNIREP',
+        module: 'university-reps',
+        targetType: 'UniversityRepresentativeApplication',
+        targetId: id,
+        targetName: `${repName} (${uniName})`,
+        previousValue: {
+          applicationId: appId,
+          userId,
+          representativeName: repName,
+          universityName: uniName,
+          status: 'REJECTED',
+        },
+        newValue: null,
+        reason: req.body?.reason || 'Administrator permanently deleted rejected university representative',
+      });
+
+      // 4. Permanent physical database deletion
+      if (application) {
+        await UniversityRepresentativeApplication.deleteOne({ _id: application._id });
+      }
+      if (userId) {
+        await UniversityRepresentativeApplication.deleteMany({ user: userId });
+        await User.deleteOne({ _id: userId });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'University representative permanently deleted from system.',
+        data: {
+          deletedId: id,
+          deletedApplicationId: appId,
+          deletedUserId: userId,
+        },
+      });
+    } else {
+      // devStore memory store fallback
+      application = await devStore.findUniRepApplicationById(id);
+      if (!application) application = await devStore.findUniRepApplicationByUserId(id);
+      if (!application) application = await devStore.findUniRepApplicationByAppId(id);
+
+      let userId = application?.user?._id || application?.user || (mongoose.Types.ObjectId.isValid(id) ? id : null);
+      if (userId) {
+        repUser = await devStore.findUserById(userId);
+      }
+
+      if (!application && !repUser) {
+        return res.status(404).json({ success: false, message: 'University representative record not found.' });
+      }
+
+      const appStatus = (application?.status || '').toUpperCase();
+      const userAccountStatus = (repUser?.accountStatus || '').toUpperCase();
+      const userUniRepStatus = (repUser?.uniRepVerificationStatus || '').toUpperCase();
+
+      const isRejected =
+        appStatus === 'REJECTED' ||
+        userAccountStatus === 'REJECTED' ||
+        userUniRepStatus === 'REJECTED';
+
+      if (!isRejected) {
+        return res.status(409).json({
+          success: false,
+          message: 'University representative must be rejected before deletion.',
+        });
+      }
+
+      const repName = application?.representative?.fullName || repUser?.name || 'University Representative';
+      const uniName = application?.university?.name || repUser?.universityName || 'University Partner';
+      const appId = application?.applicationId || repUser?.universityRepApplicationId || id;
+
+      await recordAuditLog({
+        req,
+        action: 'ADMIN_DELETE_UNIREP',
+        module: 'university-reps',
+        targetType: 'UniversityRepresentativeApplication',
+        targetId: id,
+        targetName: `${repName} (${uniName})`,
+        previousValue: {
+          applicationId: appId,
+          userId: userId?.toString(),
+          representativeName: repName,
+          universityName: uniName,
+          status: 'REJECTED',
+        },
+        newValue: null,
+        reason: req.body?.reason || 'Administrator permanently deleted rejected university representative',
+      });
+
+      if (application) {
+        await devStore.deleteUniRepApplication(application._id);
+      }
+      if (userId) {
+        await devStore.deleteUser(userId);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'University representative permanently deleted from system.',
+        data: {
+          deletedId: id,
+          deletedApplicationId: appId,
+          deletedUserId: userId?.toString(),
+        },
+      });
+    }
   } catch (error) {
     next(error);
   }

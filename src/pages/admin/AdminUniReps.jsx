@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   GraduationCap, Building2, Search, Filter, Eye, CheckCircle2,
   XCircle, AlertTriangle, FileText, ExternalLink, ShieldCheck,
-  RefreshCw, X, Clock, ChevronRight, Phone, Mail, Award,
+  RefreshCw, X, Clock, ChevronRight, Phone, Mail, Award, Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
@@ -29,6 +29,10 @@ export default function AdminUniReps() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Delete Modal State
+  const [deleteModal, setDeleteModal] = useState(null); // { app, confirmInput: "" }
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Document Viewer
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -80,7 +84,7 @@ export default function AdminUniReps() {
         setActionModal(null);
         setAdminNotes("");
         fetchApplications();
-        if (selectedApp && selectedApp._id === actionModal.app._id) {
+        if (selectedApp && actionModal?.app && selectedApp._id === actionModal.app._id) {
           setSelectedApp({ ...selectedApp, status: "APPROVED" });
         }
       } else {
@@ -108,11 +112,12 @@ export default function AdminUniReps() {
       const isSuccess = res?.success || res?.data?.success;
       if (isSuccess) {
         toast.success(res?.message || res?.data?.message || "Application rejected.");
+        const appId = actionModal.app._id;
         setActionModal(null);
         setRejectionReason("");
         setAdminNotes("");
         fetchApplications();
-        if (selectedApp && selectedApp._id === actionModal.app._id) {
+        if (selectedApp && selectedApp._id === appId) {
           setSelectedApp({ ...selectedApp, status: "REJECTED" });
         }
       } else {
@@ -122,6 +127,34 @@ export default function AdminUniReps() {
       toast.error(err.response?.data?.message || err?.message || "Network error during rejection");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteModal?.app) return;
+    if (deleteModal.confirmInput !== "DELETE") {
+      toast.error("Please type DELETE to confirm permanent deletion.");
+      return;
+    }
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/api/admin/university-rep-applications/${deleteModal.app._id}`);
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "University representative permanently deleted.");
+        const deletedId = deleteModal.app._id;
+        setDeleteModal(null);
+        if (selectedApp && selectedApp._id === deletedId) {
+          setSelectedApp(null);
+        }
+        fetchApplications();
+      } else {
+        toast.error(res?.message || res?.data?.message || "Deletion failed");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || err?.message || "Network error during deletion");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -250,15 +283,15 @@ export default function AdminUniReps() {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => setSelectedApp(app)}
-                            className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
+                            className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
                             title="Inspect Dossier"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
-                          {app.status !== "APPROVED" && app.status !== "ACTIVE" && (
+                          {app.status !== "APPROVED" && app.status !== "ACTIVE" && app.status !== "REJECTED" && (
                             <button
                               onClick={() => setActionModal({ app, targetStatus: "APPROVED" })}
-                              className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold transition-colors"
+                              className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold transition-colors cursor-pointer"
                             >
                               Approve
                             </button>
@@ -266,9 +299,28 @@ export default function AdminUniReps() {
                           {app.status !== "REJECTED" && (
                             <button
                               onClick={() => setActionModal({ app, targetStatus: "REJECTED" })}
-                              className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-[10px] font-bold transition-colors"
+                              className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-[10px] font-bold transition-colors cursor-pointer"
                             >
                               Reject
+                            </button>
+                          )}
+                          {app.status === "REJECTED" ? (
+                            <button
+                              onClick={() => setDeleteModal({ app, confirmInput: "" })}
+                              className="px-2 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 text-[10px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Delete rejected representative permanently"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              Delete
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="px-2 py-1 rounded-lg bg-white/5 text-slate-500 border border-white/5 text-[10px] font-bold opacity-40 cursor-not-allowed flex items-center gap-1"
+                              title="University representative must be rejected before deletion."
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              Delete
                             </button>
                           )}
                         </div>
@@ -350,7 +402,7 @@ export default function AdminUniReps() {
                       <span className="text-slate-500 text-[10px] block">Website</span>
                       {selectedApp.university?.website ? (
                         <a
-                          href={selectedApp.university.website.startsWith("http") ? selectedApp.university.website : `https://${selectedApp.university.website}`}
+                          href={selectedApp.university?.website?.startsWith("http") ? selectedApp.university.website : `https://${selectedApp.university.website}`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-emerald-400 hover:underline flex items-center gap-1 font-mono text-[11px]"
@@ -416,10 +468,10 @@ export default function AdminUniReps() {
 
               {/* Action Buttons */}
               <div className="pt-4 border-t border-white/8 flex gap-2">
-                {selectedApp.status !== "APPROVED" && selectedApp.status !== "ACTIVE" && (
+                {selectedApp.status !== "APPROVED" && selectedApp.status !== "ACTIVE" && selectedApp.status !== "REJECTED" && (
                   <button
                     onClick={() => setActionModal({ app: selectedApp, targetStatus: "APPROVED" })}
-                    className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors"
+                    className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer"
                   >
                     Approve Application
                   </button>
@@ -427,9 +479,17 @@ export default function AdminUniReps() {
                 {selectedApp.status !== "REJECTED" && (
                   <button
                     onClick={() => setActionModal({ app: selectedApp, targetStatus: "REJECTED" })}
-                    className="px-4 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs transition-colors"
+                    className="px-4 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs transition-colors cursor-pointer"
                   >
                     Reject
+                  </button>
+                )}
+                {selectedApp.status === "REJECTED" && (
+                  <button
+                    onClick={() => setDeleteModal({ app: selectedApp, confirmInput: "" })}
+                    className="flex-1 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
                   </button>
                 )}
               </div>
@@ -460,14 +520,18 @@ export default function AdminUniReps() {
 
               <div className="space-y-3.5 text-xs">
                 <p className="text-slate-300">
-                  Representative: <strong className="text-white">{actionModal.app.representative?.fullName}</strong> (
-                  {actionModal.app.university?.name})
+                  Representative: <strong className="text-white">
+                    {actionModal.app?.representative?.fullName || actionModal.app?.user?.name || "Representative"}
+                  </strong> (
+                  {actionModal.app?.university?.name || "University Partner"})
                 </p>
 
                 {actionModal.targetStatus === "APPROVED" ? (
                   <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-300 text-[11px]">
                     Approving this representative will generate a cryptographically secure, single-use 48-hour activation link and
-                    dispatch an activation email to <strong className="text-white">{actionModal.app.representative?.officialEmail}</strong>.
+                    dispatch an activation email to <strong className="text-white">
+                      {actionModal.app?.representative?.officialEmail || actionModal.app?.user?.email || "Not provided"}
+                    </strong>.
                   </div>
                 ) : (
                   <div>
@@ -514,6 +578,71 @@ export default function AdminUniReps() {
                     {actionLoading ? "Processing..." : `Confirm ${actionModal.targetStatus === "APPROVED" ? "Approval" : "Rejection"}`}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Delete Confirmation Modal ── */}
+      <AnimatePresence>
+        {deleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md p-6 rounded-2xl border border-rose-500/30 shadow-2xl space-y-4"
+              style={{ background: "#0B1228" }}
+            >
+              <div className="flex items-center gap-3 text-rose-400">
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <AlertTriangle className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Delete University Representative?</h3>
+                  <p className="text-xs text-rose-300/80">Permanent database deletion</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                This action will permanently delete the rejected university representative record for{" "}
+                <strong className="text-white">
+                  {deleteModal.app?.representative?.fullName || deleteModal.app?.user?.name || "Representative"}
+                </strong>{" "}
+                ({deleteModal.app?.university?.name || "University Partner"}).
+              </p>
+
+              <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/50 text-rose-300 text-xs">
+                This cannot be undone. To proceed, please type <span className="font-mono font-bold text-white uppercase">DELETE</span> below:
+              </div>
+
+              <input
+                type="text"
+                value={deleteModal.confirmInput}
+                onChange={(e) => setDeleteModal({ ...deleteModal, confirmInput: e.target.value })}
+                placeholder="Type DELETE to confirm"
+                className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-500 font-mono"
+                autoFocus
+              />
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/8">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModal(null)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteModal.confirmInput !== "DELETE" || deleteLoading}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {deleteLoading ? "Deleting..." : "Delete Permanently"}
+                </button>
               </div>
             </motion.div>
           </div>
