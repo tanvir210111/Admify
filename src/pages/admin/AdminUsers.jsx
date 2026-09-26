@@ -4,7 +4,7 @@ import {
   Users, Search, Filter, Eye, Edit, Shield, CheckCircle, XCircle,
   AlertTriangle, RefreshCw, X, ChevronRight, Coins, Mail, Phone,
   Calendar, Building2, UserCheck, ShieldAlert, Globe, MapPin,
-  Briefcase, GraduationCap, Award, Info, Lock, ExternalLink
+  Briefcase, GraduationCap, Award, Info, Lock, ExternalLink, Trash2
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
@@ -50,6 +50,11 @@ export default function AdminUsers() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Permanent Delete Modal state
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Edit form state (Strictly single Account Status, no redundant Operational Status)
   const [editForm, setEditForm] = useState({
@@ -119,6 +124,40 @@ export default function AdminUsers() {
       targetCountry: user.targetCountry || "",
       adminNotes: user.adminNotes || "",
     });
+  };
+
+  // Open delete confirmation modal
+  const openDeleteModal = (user) => {
+    setUserToDelete(user);
+    setDeleteConfirmInput("");
+  };
+
+  // Handle permanent deletion after strict confirmation
+  const handleConfirmDelete = async () => {
+    if (!userToDelete || deleteConfirmInput !== "DELETE") return;
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/api/admin/users/${userToDelete._id}`);
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "User permanently deleted.");
+        const deletedId = userToDelete._id;
+        setUserToDelete(null);
+        setDeleteConfirmInput("");
+        setUsers((prev) => prev.filter((u) => u._id !== deletedId));
+        if (selectedUser?._id === deletedId) {
+          setSelectedUser(null);
+        }
+        fetchUsers();
+      } else {
+        toast.error(res?.message || res?.data?.message || "Failed to delete user");
+      }
+    } catch (err) {
+      console.error("Delete error:", err);
+      toast.error(err.response?.data?.message || err?.message || "Failed to delete user");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   // Save edit
@@ -453,7 +492,7 @@ export default function AdminUsers() {
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
                       </td>
 
-                      {/* 6. Actions */}
+                      {/* 6. Actions (View, Edit, Suspend/Restore, Delete) */}
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
@@ -475,11 +514,29 @@ export default function AdminUsers() {
                             className={`p-1.5 rounded-lg transition-colors ${
                               isSuspended
                                 ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400"
-                                : "bg-red-500/10 hover:bg-red-500/20 text-red-400"
+                                : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400"
                             }`}
                             title={isSuspended ? "Restore Account" : "Suspend Account"}
                           >
                             {isSuspended ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (!isSuspended) {
+                                toast.error("User must be suspended before deletion.");
+                                return;
+                              }
+                              openDeleteModal(u);
+                            }}
+                            disabled={!isSuspended}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              isSuspended
+                                ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 cursor-pointer"
+                                : "bg-white/2 text-slate-600 border border-white/4 cursor-not-allowed opacity-40"
+                            }`}
+                            title={isSuspended ? "Permanently Delete User" : "User must be suspended before deletion."}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -825,7 +882,7 @@ export default function AdminUsers() {
                 )}
               </div>
 
-              <div className="pt-4 border-t border-white/8 flex gap-2">
+              <div className="pt-4 border-t border-white/8 flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={() => openEditModal(selectedUser)}
                   className="flex-1 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors"
@@ -837,10 +894,33 @@ export default function AdminUsers() {
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
                     selectedUser.status === "suspended" || selectedUser.accountStatus === "SUSPENDED"
                       ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                      : "bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30"
+                      : "bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30"
                   }`}
                 >
                   {selectedUser.status === "suspended" || selectedUser.accountStatus === "SUSPENDED" ? "Restore" : "Suspend"}
+                </button>
+                <button
+                  onClick={() => {
+                    const isSusp = selectedUser.status === "suspended" || selectedUser.accountStatus === "SUSPENDED";
+                    if (!isSusp) {
+                      toast.error("User must be suspended before deletion.");
+                      return;
+                    }
+                    openDeleteModal(selectedUser);
+                  }}
+                  disabled={!(selectedUser.status === "suspended" || selectedUser.accountStatus === "SUSPENDED")}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+                    selectedUser.status === "suspended" || selectedUser.accountStatus === "SUSPENDED"
+                      ? "bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
+                      : "bg-white/4 text-slate-600 cursor-not-allowed opacity-40"
+                  }`}
+                  title={
+                    selectedUser.status === "suspended" || selectedUser.accountStatus === "SUSPENDED"
+                      ? "Permanently Delete User"
+                      : "User must be suspended before deletion."
+                  }
+                >
+                  Delete User
                 </button>
               </div>
             </motion.div>
@@ -1115,6 +1195,114 @@ export default function AdminUsers() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Permanent Delete Confirmation Modal ── */}
+      <AnimatePresence>
+        {userToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md p-6 rounded-2xl border border-rose-500/30 shadow-2xl shadow-rose-950/40"
+              style={{ background: "#0B1228" }}
+            >
+              <div className="flex justify-between items-start mb-4 pb-3 border-b border-white/8">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Delete User Permanently?</h3>
+                    <p className="text-slate-400 text-[11px]">Strict admin destructive action</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setUserToDelete(null);
+                    setDeleteConfirmInput("");
+                  }}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                {/* User Summary Card */}
+                <div className="p-3 rounded-xl bg-white/3 border border-white/6 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 text-[11px]">Name:</span>
+                    <span className="font-bold text-white">{userToDelete.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 text-[11px]">Email:</span>
+                    <span className="font-semibold text-slate-200">{userToDelete.email}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 text-[11px]">Role:</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                      {userToDelete.role}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 text-[11px]">Current Status:</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                      SUSPENDED
+                    </span>
+                  </div>
+                </div>
+
+                {/* Warning Message */}
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                  <span>
+                    This action permanently deletes this user and their associated account data from the database. This action cannot be undone.
+                  </span>
+                </div>
+
+                {/* Explicit Confirmation Input */}
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-semibold block text-xs">
+                    Type <span className="font-mono font-bold text-rose-400">DELETE</span> to confirm:
+                  </label>
+                  <input
+                    type="text"
+                    value={deleteConfirmInput}
+                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                    placeholder="Type DELETE to confirm"
+                    className="w-full bg-white/4 border border-rose-500/30 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-rose-400"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-2 pt-3 border-t border-white/8">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserToDelete(null);
+                      setDeleteConfirmInput("");
+                    }}
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    disabled={deleteConfirmInput !== "DELETE" || deleteLoading}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    {deleteLoading ? "Deleting..." : "Permanently Delete"}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

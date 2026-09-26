@@ -19,6 +19,7 @@ import Report from '../models/Report.js';
 import AuditLog from '../models/AuditLog.js';
 import PlatformSetting from '../models/PlatformSetting.js';
 import ChatMessage from '../models/ChatMessage.js';
+import Task from '../models/Task.js';
 import devStore from '../utils/devStore.js';
 import emailService from '../services/emailService.js';
 import { getActiveCreditsBreakdown } from './walletController.js';
@@ -900,6 +901,163 @@ export const updateAdminUser = async (req, res, next) => {
       success: true,
       message: 'User profile updated successfully',
       data: { user: updatedUser },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Permanently delete suspended user and their exclusive related records
+// @route   DELETE /api/admin/users/:id
+// @access  Private (Admin)
+export const deleteAdminUser = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'User ID is required.' });
+    }
+
+    let user = null;
+
+    if (mongoose.connection.readyState === 1) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ success: false, message: 'Invalid user ID format.' });
+      }
+      user = await User.findById(id);
+    } else {
+      user = await devStore.findUserById(id);
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    // 1. Protect Admin accounts
+    // Cannot delete currently logged in admin
+    const currentAdminId = req.user?._id?.toString();
+    const currentAdminEmail = req.user?.email?.toLowerCase();
+    if (currentAdminId && (currentAdminId === user._id.toString() || currentAdminEmail === user.email?.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot delete your own admin account.',
+      });
+    }
+
+    // Cannot delete protected superadmin account
+    const superAdminEmail = (process.env.ADMIN_EMAIL || 'admin@admify.world').toLowerCase();
+    if (user.email?.toLowerCase() === superAdminEmail || user.email?.toLowerCase() === 'admin@admify.world') {
+      return res.status(403).json({
+        success: false,
+        message: 'Protected superadmin account cannot be deleted.',
+      });
+    }
+
+    // Cannot delete the last remaining admin account
+    if (user.role === 'admin') {
+      let adminCount = 0;
+      if (mongoose.connection.readyState === 1) {
+        adminCount = await User.countDocuments({ role: 'admin' });
+      } else {
+        const db = devStore.read();
+        adminCount = (db.users || []).filter((u) => u.role === 'admin').length;
+      }
+      if (adminCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot delete the last remaining admin account.',
+        });
+      }
+    }
+
+    // 2. Enforce suspended status
+    const isSuspended = user.status === 'suspended' || user.accountStatus === 'SUSPENDED';
+    if (!isSuspended) {
+      return res.status(400).json({
+        success: false,
+        message: 'User must be suspended before deletion.',
+      });
+    }
+
+    // 3. Record Audit Log before deletion (safe metadata only, no passwords/hashes/tokens)
+    await recordAuditLog({
+      req,
+      action: 'USER_PERMANENT_DELETE',
+      module: 'USERS',
+      targetType: 'User',
+      targetId: user._id.toString(),
+      targetName: user.name,
+      previousValue: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        accountStatus: user.accountStatus,
+        status: user.status,
+      },
+      newValue: null,
+      reason: req.body?.reason || 'Admin permanently deleted suspended user',
+    });
+
+    // 4. Permanent physical deletion of User and exclusive related records
+    const uid = user._id.toString();
+
+    if (mongoose.connection.readyState === 1) {
+      // Delete user physically from database
+      await User.deleteOne({ _id: user._id });
+
+      // Clean up exclusive user data based on role
+      if (user.role === 'student') {
+        await Application.deleteMany({ user: user._id });
+        await CreditTransaction.deleteMany({ user: user._id });
+        await PaymentOrder.deleteMany({ user: user._id });
+        await Notification.deleteMany({ user: user._id });
+      } else if (user.role === 'agency') {
+        await AgencyProfile.deleteOne({ user: user._id });
+        await AgencyServiceOrder.deleteMany({ $or: [{ agency: user._id }, { user: user._id }] });
+        await UniversityAgencyConnection.deleteMany({ agency: user._id });
+        // Unbind any affiliated agents so they don't reference a deleted agency
+        await User.updateMany({ agencyId: user._id }, { $unset: { agencyId: 1 } });
+      } else if (user.role === 'agent') {
+        await AgentApplication.deleteMany({
+          $or: [{ user: user._id }, { email: user.email }, { applicationId: user.agentApplicationId }],
+        });
+        await Task.deleteMany({ agent: user._id });
+      } else if (user.role === 'university_rep' || user.role === 'university' || user.role === 'university representative') {
+        await UniversityRepresentativeApplication.deleteMany({
+          $or: [{ user: user._id }, { email: user.email }],
+        });
+        // Note: Do NOT delete the University itself!
+      }
+    } else {
+      // devStore mode physical deletion
+      const db = devStore.read();
+      db.users = (db.users || []).filter((u) => u._id?.toString() !== uid);
+
+      if (user.role === 'student') {
+        db.applications = (db.applications || []).filter((a) => a.user?.toString() !== uid);
+        db.creditTransactions = (db.creditTransactions || []).filter((c) => c.user?.toString() !== uid);
+        db.paymentOrders = (db.paymentOrders || []).filter((p) => p.user?.toString() !== uid);
+        db.notifications = (db.notifications || []).filter((n) => n.user?.toString() !== uid);
+      } else if (user.role === 'agency') {
+        db.agencyProfiles = (db.agencyProfiles || []).filter((p) => p.user?.toString() !== uid && p._id?.toString() !== uid);
+        db.agencyServiceOrders = (db.agencyServiceOrders || []).filter((o) => o.agency?.toString() !== uid && o.user?.toString() !== uid);
+        db.universityAgencyConnections = (db.universityAgencyConnections || []).filter((c) => c.agency?.toString() !== uid);
+        (db.users || []).forEach((u) => {
+          if (u.agencyId?.toString() === uid) delete u.agencyId;
+        });
+      } else if (user.role === 'agent') {
+        db.agentApplications = (db.agentApplications || []).filter((a) => a.user?.toString() !== uid && a.email !== user.email && a.applicationId !== user.agentApplicationId);
+        db.tasks = (db.tasks || []).filter((t) => t.agent?.toString() !== uid);
+      } else if (user.role === 'university_rep' || user.role === 'university' || user.role === 'university representative') {
+        db.universityRepApplications = (db.universityRepApplications || []).filter((a) => a.user?.toString() !== uid && a.email !== user.email);
+      }
+      devStore.write(db);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'User permanently deleted.',
     });
   } catch (error) {
     next(error);

@@ -5,6 +5,7 @@ import {
   getAdminUsers,
   getAdminUserById,
   updateAdminUser,
+  deleteAdminUser,
   adjustUserCredits,
   getAdminCreditTransactions,
   getAdminApplications,
@@ -74,6 +75,7 @@ router.get('/search', globalAdminSearch);
 router.get('/users', getAdminUsers);
 router.get('/users/:id', getAdminUserById);
 router.put('/users/:id', updateAdminUser);
+router.delete('/users/:id', deleteAdminUser);
 
 // ── Credit & Wallet Management ────────────────────────────────────────────────
 router.post('/credits/adjust', adjustUserCredits);
