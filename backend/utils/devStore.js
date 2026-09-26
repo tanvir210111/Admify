@@ -525,6 +525,12 @@ class DevStore {
         copy.role === 'university_rep' ||
         copy.role === 'university' ||
         copy.role === 'university representative';
+      if (copy.role !== 'student') {
+        copy.walletCredits = 'N/A';
+        copy.availableCredits = 'N/A';
+        copy.freeCredits = 'N/A';
+        copy.paidCredits = 'N/A';
+      }
       copy.user_metadata = {
         full_name: copy.name,
         phone: copy.phone,
@@ -944,12 +950,256 @@ class DevStore {
 
   async findUniRepApplications(filter = {}) {
     const db = this.read();
-    if (!Array.isArray(db.universityRepApplications)) return [];
+    if (!Array.isArray(db.universityRepApplications)) db.universityRepApplications = [];
+    if (!Array.isArray(db.users)) db.users = [];
+
+    // Reconcile uni rep users
+    const uniUsers = db.users.filter(
+      (u) => u.role === 'university_rep' || u.role === 'universityRep' || u.role === 'university' || u.role === 'university representative'
+    );
+    let dirty = false;
+    for (const u of uniUsers) {
+      const uid = u._id ? u._id.toString() : '';
+      let app = db.universityRepApplications.find(
+        (a) =>
+          a.user?.toString() === uid ||
+          a.user?._id?.toString() === uid ||
+          (u.universityRepApplicationId && a.applicationId?.toUpperCase() === u.universityRepApplicationId?.toUpperCase())
+      );
+      if (!app) {
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+        const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+        const appId = u.universityRepApplicationId || `ADM-REP-2026-${timeCode}${randomSuffix}`;
+        app = {
+          _id: new mongoose.Types.ObjectId().toString(),
+          applicationId: appId,
+          user: uid,
+          userObj: {
+            _id: uid,
+            name: u.name,
+            email: u.email,
+            phone: u.phone,
+            role: u.role,
+            status: u.status,
+            accountStatus: u.accountStatus || 'PENDING',
+            uniRepVerificationStatus: u.uniRepVerificationStatus || 'PENDING',
+          },
+          university: {
+            name: u.universityName || (u.email && u.email.includes('@') ? u.email.split('@')[1].replace(/\.[a-z]+$/, '').toUpperCase() + ' University' : 'Partner University'),
+            legalName: u.universityName || 'Partner University',
+            logo: '',
+            website: '',
+            country: u.country || 'Global',
+            city: u.city || '',
+            type: 'Public',
+            domain: u.email && u.email.includes('@') ? u.email.split('@')[1] : '',
+          },
+          representative: {
+            fullName: u.name || '',
+            designation: u.designation || 'International Admissions Officer',
+            officialEmail: u.email || '',
+            phone: u.phone || '',
+            employeeId: u.employeeId || '',
+          },
+          status: (u.uniRepVerificationStatus || u.accountStatus || 'PENDING').toUpperCase() === 'APPROVED' ? 'APPROVED' : (u.uniRepVerificationStatus || 'PENDING').toUpperCase(),
+          submittedAt: u.createdAt || new Date().toISOString(),
+          createdAt: u.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        db.universityRepApplications.unshift(app);
+        u.universityRepApplication = app._id;
+        u.universityRepApplicationId = appId;
+        dirty = true;
+      }
+    }
+    if (dirty) this.write(db);
+
     return db.universityRepApplications.filter((app) => {
-      if (filter.status && app.status !== filter.status) return false;
-      if (filter.user && app.user !== filter.user.toString()) return false;
+      if (filter.status && filter.status !== 'all') {
+        const st = filter.status.toUpperCase();
+        if (st === 'APPROVED' || st === 'ACTIVE') {
+          if (app.status !== 'APPROVED' && app.status !== 'ACTIVE') return false;
+        } else if (app.status !== st) {
+          return false;
+        }
+      }
+      if (filter.search && filter.search.trim()) {
+        const s = filter.search.toLowerCase().trim();
+        const match =
+          app.applicationId?.toLowerCase().includes(s) ||
+          app.university?.name?.toLowerCase().includes(s) ||
+          app.representative?.fullName?.toLowerCase().includes(s) ||
+          app.representative?.officialEmail?.toLowerCase().includes(s);
+        if (!match) return false;
+      }
+      if (filter.user && app.user?.toString() !== filter.user.toString()) return false;
       return true;
     });
+  }
+
+  // ── Agent Applications & Directory ──────────────────────────────────────────
+  async findAgentApplications(filter = {}) {
+    const db = this.read();
+    if (!Array.isArray(db.agentApplications)) db.agentApplications = [];
+    if (!Array.isArray(db.users)) db.users = [];
+
+    // Reconcile agent users with agent applications
+    const agentUsers = db.users.filter((u) => u.role === 'agent');
+    let dirty = false;
+    for (const ag of agentUsers) {
+      const agUid = ag._id ? ag._id.toString() : '';
+      let app = db.agentApplications.find(
+        (a) =>
+          a.agentUser?.toString() === agUid ||
+          (ag.agentApplicationId && a.applicationId?.toUpperCase() === ag.agentApplicationId?.toUpperCase()) ||
+          (ag.email && a.email?.toLowerCase() === ag.email.toLowerCase())
+      );
+      if (!app) {
+        let agencyUser = null;
+        if (ag.agencyId) {
+          agencyUser = db.users.find((u) => u._id?.toString() === ag.agencyId.toString());
+        }
+        if (!agencyUser) {
+          agencyUser = db.users.find((u) => u.role === 'agency');
+        }
+        const agencyName = agencyUser ? agencyUser.name : 'Partner Agency';
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+        const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+        const applicationId = ag.agentApplicationId || `ADM-AGT-2026-${timeCode}${randomSuffix}`;
+
+        app = {
+          _id: new mongoose.Types.ObjectId().toString(),
+          applicationId,
+          agency: agencyUser ? agencyUser._id.toString() : null,
+          agencyName,
+          agentName: ag.name,
+          email: ag.email,
+          phone: ag.phone || '+8801700000000',
+          designation: ag.designation || 'Educational Counselor',
+          countrySpecialization: [],
+          status: 'REGISTERED',
+          activationCodeStatus: 'USED',
+          agentUser: agUid,
+          registeredAt: ag.createdAt || new Date().toISOString(),
+          createdAt: ag.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        db.agentApplications.unshift(app);
+        ag.agentApplicationId = applicationId;
+        if (agencyUser && !ag.agencyId) ag.agencyId = agencyUser._id.toString();
+        dirty = true;
+      }
+    }
+    if (dirty) this.write(db);
+
+    return db.agentApplications.filter((app) => {
+      if (filter.status && filter.status !== 'all') {
+        if (app.status?.toUpperCase() !== filter.status.toUpperCase()) return false;
+      }
+      if (filter.agency && app.agency?.toString() !== filter.agency.toString()) return false;
+      if (filter.agencyId && app.agency?.toString() !== filter.agencyId.toString()) return false;
+      if (filter.search && filter.search.trim()) {
+        const s = filter.search.toLowerCase().trim();
+        const match =
+          app.applicationId?.toLowerCase().includes(s) ||
+          app.agentName?.toLowerCase().includes(s) ||
+          app.email?.toLowerCase().includes(s) ||
+          app.phone?.toLowerCase().includes(s) ||
+          app.agencyName?.toLowerCase().includes(s);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }
+
+  async findAgentApplicationById(id) {
+    if (!id) return null;
+    const db = this.read();
+    if (!Array.isArray(db.agentApplications)) return null;
+    const idStr = id.toString().toUpperCase().trim();
+    return (
+      db.agentApplications.find(
+        (a) =>
+          a._id?.toString() === id.toString() ||
+          a.applicationId?.toUpperCase() === idStr ||
+          a.agentUser?.toString() === id.toString()
+      ) || null
+    );
+  }
+
+  async createAgentApplication(data) {
+    const db = this.read();
+    if (!Array.isArray(db.agentApplications)) db.agentApplications = [];
+    const newApp = {
+      _id: new mongoose.Types.ObjectId().toString(),
+      ...data,
+      agency: data.agency?.toString(),
+      agentUser: data.agentUser ? data.agentUser.toString() : null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    db.agentApplications.unshift(newApp);
+    this.write(db);
+    return newApp;
+  }
+
+  async findAgents({ status, search, agencyId } = {}) {
+    const db = this.read();
+    // Ensure agent applications are reconciled
+    await this.findAgentApplications();
+    const refreshed = this.read();
+    let agents = (refreshed.users || []).filter((u) => u.role === 'agent');
+
+    return agents
+      .map((ag) => {
+        const item = { ...ag };
+        const uid = item._id ? item._id.toString() : '';
+        const app = (refreshed.agentApplications || []).find(
+          (a) => a.agentUser === uid || (item.email && a.email === item.email)
+        );
+        item.agentApplication = app || null;
+        let agencyUser = null;
+        if (item.agencyId) {
+          agencyUser = (refreshed.users || []).find(
+            (u) => u._id?.toString() === item.agencyId.toString()
+          );
+        } else if (app && app.agency) {
+          agencyUser = (refreshed.users || []).find(
+            (u) => u._id?.toString() === app.agency.toString()
+          );
+        }
+        item.agencyId = agencyUser
+          ? {
+              _id: agencyUser._id,
+              name: agencyUser.name,
+              email: agencyUser.email,
+              phone: agencyUser.phone,
+              applicationId: agencyUser.applicationId,
+            }
+          : null;
+        item.agencyName = agencyUser ? agencyUser.name : app?.agencyName || 'Partner Agency';
+        item.walletCredits = 'N/A';
+        item.availableCredits = 'N/A';
+        return item;
+      })
+      .filter((ag) => {
+        if (status && status !== 'all') {
+          const st = status.toUpperCase();
+          if ((ag.accountStatus || 'ACTIVE').toUpperCase() !== st) return false;
+        }
+        if (agencyId && ag.agencyId?._id?.toString() !== agencyId.toString()) return false;
+        if (search && search.trim()) {
+          const s = search.toLowerCase().trim();
+          const match =
+            ag.name?.toLowerCase().includes(s) ||
+            ag.email?.toLowerCase().includes(s) ||
+            ag.phone?.toLowerCase().includes(s) ||
+            ag.agentApplicationId?.toLowerCase().includes(s) ||
+            ag.agencyName?.toLowerCase().includes(s);
+          if (!match) return false;
+        }
+        return true;
+      });
   }
 
   // ── Universities ──────────────────────────────────────────────────────────

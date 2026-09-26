@@ -49,6 +49,7 @@ import {
   getAllAgencyVerifications,
   getAgencyVerificationDetails,
   updateAgencyVerificationStatus,
+  getAdminAgents,
   getAdminAgentApplications,
   getAdminAgentApplicationById,
   approveAgentApplication,
@@ -174,7 +175,8 @@ router.post('/uni-rep-applications/:id/reject', rejectUniRepApplication);
 // ── Route Aliases for Admin Panel Flexibility ─────────────────────────────────
 router.get('/agencies', getAllAgencyVerifications);
 router.put('/agencies/:id/verification', updateAgencyVerificationStatus);
-router.get('/agents', getAdminAgentApplications);
+router.get('/agents', getAdminAgents);
+router.get('/agents/applications', getAdminAgentApplications);
 router.put('/agents/:id/status', approveAgentApplication);
 router.post('/agents/:id/generate-code', approveAgentApplication);
 router.get('/university-representatives', getAdminUniRepApplications);

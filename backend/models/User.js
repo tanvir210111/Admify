@@ -240,16 +240,23 @@ const userSchema = new mongoose.Schema(
       virtuals: true,
       transform: (doc, ret) => {
         delete ret.password;
-        // Dynamically evaluate active usable credits (respecting 1-month expiry and purchase forfeiture)
-        const now = new Date();
-        const isFreeExpired = ret.freeCreditExpiresAt && new Date(ret.freeCreditExpiresAt) < now;
-        const isFreeForfeited = Boolean(ret.freeCreditsForfeited);
-        const activeFree = (!isFreeExpired && !isFreeForfeited) ? (ret.freeCredits || 0) : 0;
-        const activePaid = ret.paidCredits || 0;
-        ret.availableCredits = activeFree + activePaid;
-        ret.walletCredits = ret.availableCredits;
-        ret.activeFreeCredits = activeFree;
-        ret.isFreeExpired = isFreeExpired;
+        if (ret.role !== 'student') {
+          ret.availableCredits = 'N/A';
+          ret.walletCredits = 'N/A';
+          ret.activeFreeCredits = 0;
+          ret.isFreeExpired = false;
+        } else {
+          // Dynamically evaluate active usable credits (respecting 1-month expiry and purchase forfeiture)
+          const now = new Date();
+          const isFreeExpired = ret.freeCreditExpiresAt && new Date(ret.freeCreditExpiresAt) < now;
+          const isFreeForfeited = Boolean(ret.freeCreditsForfeited);
+          const activeFree = (!isFreeExpired && !isFreeForfeited) ? (ret.freeCredits || 0) : 0;
+          const activePaid = ret.paidCredits || 0;
+          ret.availableCredits = activeFree + activePaid;
+          ret.walletCredits = ret.availableCredits;
+          ret.activeFreeCredits = activeFree;
+          ret.isFreeExpired = isFreeExpired;
+        }
 
         // Compatibility layer for frontend checking user.user_metadata
         ret.user_metadata = {

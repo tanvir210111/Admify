@@ -3372,28 +3372,246 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
   }
 };
 
+// ── Accredited Agents Management & Directory ──────────────────────────────────
+export const getAdminAgents = async (req, res, next) => {
+  try {
+    const { status, search = '', agencyId } = req.query;
+
+    if (mongoose.connection.readyState === 1) {
+      // 1. Auto-reconcile Agent users with AgentApplication and Agency User
+      const agentUsers = await User.find({ role: 'agent' });
+      for (const ag of agentUsers) {
+        let app = null;
+        if (ag.agentApplicationId) {
+          app = await AgentApplication.findOne({ applicationId: ag.agentApplicationId });
+        }
+        if (!app) {
+          app = await AgentApplication.findOne({ $or: [{ email: ag.email }, { agentUser: ag._id }] });
+        }
+        if (!app) {
+          let targetAgencyId = ag.agencyId;
+          let agencyName = 'Partner Agency';
+          if (!targetAgencyId) {
+            const defaultAgency = await User.findOne({ role: 'agency' });
+            if (defaultAgency) {
+              targetAgencyId = defaultAgency._id;
+              agencyName = defaultAgency.name || 'Partner Agency';
+            }
+          } else {
+            const agUser = await User.findById(targetAgencyId);
+            if (agUser) agencyName = agUser.name;
+          }
+
+          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+          const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+          const applicationId = `ADM-AGT-2026-${timeCode}${randomSuffix}`;
+
+          if (targetAgencyId) {
+            app = await AgentApplication.create({
+              applicationId,
+              agency: targetAgencyId,
+              agencyName,
+              agentName: ag.name,
+              email: ag.email,
+              phone: ag.phone || '+8801700000000',
+              designation: ag.designation || 'Educational Counselor',
+              status: 'REGISTERED',
+              activationCodeStatus: 'USED',
+              agentUser: ag._id,
+              registeredAt: ag.createdAt || new Date(),
+            });
+            ag.agencyId = targetAgencyId;
+            ag.agentApplicationId = applicationId;
+            await ag.save();
+          }
+        } else {
+          let needsSave = false;
+          if (!ag.agencyId && app.agency) {
+            ag.agencyId = app.agency;
+            needsSave = true;
+          }
+          if (!ag.agentApplicationId && app.applicationId) {
+            ag.agentApplicationId = app.applicationId;
+            needsSave = true;
+          }
+          if (!app.agentUser) {
+            app.agentUser = ag._id;
+            await app.save();
+          }
+          if (needsSave) await ag.save();
+        }
+      }
+
+      // 2. Build Query
+      const query = { role: 'agent' };
+      if (status && status !== 'all') {
+        const st = status.toUpperCase();
+        query.accountStatus = st;
+      }
+      if (agencyId) {
+        query.agencyId = agencyId;
+      }
+
+      if (search && search.trim()) {
+        const s = search.trim();
+        const regex = new RegExp(s, 'i');
+        const matchedAgencies = await User.find({
+          role: 'agency',
+          $or: [{ name: regex }, { email: regex }],
+        }).select('_id');
+        const matchedAgencyIds = matchedAgencies.map((m) => m._id);
+
+        query.$or = [
+          { name: regex },
+          { email: regex },
+          { phone: regex },
+          { agentApplicationId: regex },
+          { designation: regex },
+          { agencyId: { $in: matchedAgencyIds } },
+        ];
+      }
+
+      const rawAgents = await User.find(query)
+        .select('-password -activationTokenHash')
+        .populate('agencyId', 'name email phone applicationId')
+        .sort({ createdAt: -1 });
+
+      const agents = await Promise.all(
+        rawAgents.map(async (doc) => {
+          const a = doc.toObject ? doc.toObject() : { ...doc };
+          let app = null;
+          if (a.agentApplicationId) {
+            app = await AgentApplication.findOne({ applicationId: a.agentApplicationId })
+              .populate('agency', 'name email phone applicationId')
+              .lean();
+          }
+          if (!app) {
+            app = await AgentApplication.findOne({ $or: [{ email: a.email }, { agentUser: a._id }] })
+              .populate('agency', 'name email phone applicationId')
+              .lean();
+          }
+          a.agentApplication = app;
+          if (app && app.agencyName && !a.agencyId?.name) {
+            a.agencyName = app.agencyName;
+          } else if (a.agencyId?.name) {
+            a.agencyName = a.agencyId.name;
+          }
+          a.walletCredits = 'N/A';
+          a.availableCredits = 'N/A';
+          return a;
+        })
+      );
+
+      return res.status(200).json({
+        success: true,
+        count: agents.length,
+        data: { agents, applications: [] },
+        agents,
+      });
+    } else {
+      const agents = await devStore.findAgents({ status, search, agencyId });
+      return res.status(200).json({
+        success: true,
+        count: agents.length,
+        data: { agents, applications: [] },
+        agents,
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ── Agent Applications Admin Review ───────────────────────────────────────────
 export const getAdminAgentApplications = async (req, res, next) => {
   try {
-    const { status, agencyId } = req.query;
-    const filter = {};
-    if (status) filter.status = status.toUpperCase();
-    if (agencyId) filter.agency = agencyId;
+    const { status, agencyId, search = '' } = req.query;
 
-    let applications = [];
     if (mongoose.connection.readyState === 1) {
-      applications = await AgentApplication.find(filter)
+      // Auto-reconcile agent users so their application records exist
+      const agentUsers = await User.find({ role: 'agent' });
+      for (const ag of agentUsers) {
+        let app = null;
+        if (ag.agentApplicationId) {
+          app = await AgentApplication.findOne({ applicationId: ag.agentApplicationId });
+        }
+        if (!app) {
+          app = await AgentApplication.findOne({ $or: [{ email: ag.email }, { agentUser: ag._id }] });
+        }
+        if (!app) {
+          let targetAgencyId = ag.agencyId;
+          let agencyName = 'Partner Agency';
+          if (!targetAgencyId) {
+            const defaultAgency = await User.findOne({ role: 'agency' });
+            if (defaultAgency) {
+              targetAgencyId = defaultAgency._id;
+              agencyName = defaultAgency.name || 'Partner Agency';
+            }
+          } else {
+            const agUser = await User.findById(targetAgencyId);
+            if (agUser) agencyName = agUser.name;
+          }
+
+          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+          const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+          const applicationId = ag.agentApplicationId || `ADM-AGT-2026-${timeCode}${randomSuffix}`;
+
+          if (targetAgencyId) {
+            app = await AgentApplication.create({
+              applicationId,
+              agency: targetAgencyId,
+              agencyName,
+              agentName: ag.name,
+              email: ag.email,
+              phone: ag.phone || '+8801700000000',
+              designation: ag.designation || 'Educational Counselor',
+              status: 'REGISTERED',
+              activationCodeStatus: 'USED',
+              agentUser: ag._id,
+              registeredAt: ag.createdAt || new Date(),
+            });
+            ag.agencyId = targetAgencyId;
+            ag.agentApplicationId = applicationId;
+            await ag.save();
+          }
+        }
+      }
+
+      const filter = {};
+      if (status && status !== 'all') filter.status = status.toUpperCase();
+      if (agencyId) filter.agency = agencyId;
+
+      let applications = await AgentApplication.find(filter)
         .populate('agency', 'name email phone applicationId')
         .sort({ createdAt: -1 });
-    } else {
-      applications = await devStore.findAgentApplications(filter);
-    }
 
-    return res.status(200).json({
-      success: true,
-      count: applications.length,
-      data: { applications },
-    });
+      if (search && search.trim()) {
+        const s = search.toLowerCase().trim();
+        applications = applications.filter(
+          (a) =>
+            a.applicationId?.toLowerCase().includes(s) ||
+            a.agentName?.toLowerCase().includes(s) ||
+            a.email?.toLowerCase().includes(s) ||
+            a.phone?.toLowerCase().includes(s) ||
+            a.agencyName?.toLowerCase().includes(s)
+        );
+      }
+
+      return res.status(200).json({
+        success: true,
+        count: applications.length,
+        data: { applications },
+        applications,
+      });
+    } else {
+      let applications = await devStore.findAgentApplications({ status, agencyId, search });
+      return res.status(200).json({
+        success: true,
+        count: applications.length,
+        data: { applications },
+        applications,
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -3593,56 +3811,127 @@ export const rejectAgentApplication = async (req, res, next) => {
 export const getAdminUniRepApplications = async (req, res, next) => {
   try {
     const { status, search = '' } = req.query;
-    const query = {};
-    if (status && status !== 'all') query.status = status.toUpperCase();
 
     if (mongoose.connection.readyState === 1) {
+      // 1. Auto-reconcile Uni Rep users
+      const uniRepUsers = await User.find({
+        role: { $in: ['university_rep', 'universityRep', 'university', 'university representative'] },
+      });
+
+      for (const u of uniRepUsers) {
+        let app = null;
+        if (u.universityRepApplication && mongoose.Types.ObjectId.isValid(u.universityRepApplication)) {
+          app = await UniversityRepresentativeApplication.findById(u.universityRepApplication);
+        }
+        if (!app) {
+          app = await UniversityRepresentativeApplication.findOne({ user: u._id });
+        }
+        if (!app && u.universityRepApplicationId) {
+          app = await UniversityRepresentativeApplication.findOne({ applicationId: u.universityRepApplicationId.toUpperCase() });
+        }
+        if (!app) {
+          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+          const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+          const applicationId = u.universityRepApplicationId || `ADM-REP-2026-${timeCode}${randomSuffix}`;
+
+          app = await UniversityRepresentativeApplication.create({
+            applicationId,
+            user: u._id,
+            university: {
+              name: u.universityName || (u.email && u.email.includes('@') ? u.email.split('@')[1].replace(/\.[a-z]+$/, '').toUpperCase() + ' University' : 'Partner University'),
+              legalName: u.universityName || 'Partner University',
+              logo: '',
+              website: '',
+              country: u.country || 'Global',
+              city: u.city || '',
+              type: 'Public',
+              domain: u.email && u.email.includes('@') ? u.email.split('@')[1] : '',
+              matchedUniversityId: u.universityId || null,
+            },
+            representative: {
+              fullName: u.name || '',
+              designation: u.designation || 'International Admissions Officer',
+              officialEmail: u.email || '',
+              phone: u.phone || '',
+              employeeId: u.employeeId || '',
+            },
+            status: (u.uniRepVerificationStatus || u.accountStatus || 'PENDING').toUpperCase() === 'APPROVED' ? 'APPROVED' : (u.uniRepVerificationStatus || 'PENDING').toUpperCase(),
+            submittedAt: u.createdAt || new Date(),
+          });
+        }
+        if (!u.universityRepApplication || u.universityRepApplication.toString() !== app._id.toString()) {
+          u.universityRepApplication = app._id;
+          if (!u.universityRepApplicationId) u.universityRepApplicationId = app.applicationId;
+          await u.save();
+        }
+      }
+
+      // 2. Build Query
+      const query = {};
+      if (status && status !== 'all') {
+        const st = status.toUpperCase();
+        if (st === 'APPROVED' || st === 'ACTIVE') {
+          query.status = { $in: ['APPROVED', 'ACTIVE'] };
+        } else {
+          query.status = st;
+        }
+      }
+
+      if (search && search.trim()) {
+        const s = search.trim();
+        const regex = new RegExp(s, 'i');
+        const matchedUsers = await User.find({
+          role: { $in: ['university_rep', 'universityRep', 'university', 'university representative'] },
+          $or: [{ name: regex }, { email: regex }, { phone: regex }],
+        }).select('_id');
+        const matchedUserIds = matchedUsers.map((mu) => mu._id);
+
+        query.$or = [
+          { applicationId: regex },
+          { 'university.name': regex },
+          { 'university.legalName': regex },
+          { 'representative.fullName': regex },
+          { 'representative.officialEmail': regex },
+          { 'representative.phone': regex },
+          { user: { $in: matchedUserIds } },
+        ];
+      }
+
       const applications = await UniversityRepresentativeApplication.find(query)
-        .populate('user', 'name email phone role status accountStatus uniRepVerificationStatus')
+        .populate('user', 'name email phone role status accountStatus uniRepVerificationStatus createdAt')
         .populate('reviewedBy', 'name email')
         .sort({ createdAt: -1 });
 
-      let filtered = applications;
-      if (search.trim()) {
-        const s = search.toLowerCase().trim();
-        filtered = applications.filter(
-          (app) =>
-            app.applicationId?.toLowerCase().includes(s) ||
-            app.university?.name?.toLowerCase().includes(s) ||
-            app.representative?.fullName?.toLowerCase().includes(s) ||
-            app.representative?.officialEmail?.toLowerCase().includes(s)
-        );
-      }
+      applications.forEach((app) => {
+        if (app.user) {
+          app.user.walletCredits = 'N/A';
+          app.user.availableCredits = 'N/A';
+        }
+      });
 
       return res.status(200).json({
         success: true,
-        count: filtered.length,
-        data: { applications: filtered },
+        count: applications.length,
+        data: { applications },
+        applications,
       });
     } else {
-      let apps = await devStore.findUniRepApplications(query);
+      let apps = await devStore.findUniRepApplications({ status, search });
       for (const app of apps) {
         if (!app.userObj && app.user) {
           app.user = await devStore.findUserById(app.user);
         }
-      }
-
-      let filtered = apps;
-      if (search.trim()) {
-        const s = search.toLowerCase().trim();
-        filtered = apps.filter(
-          (app) =>
-            app.applicationId?.toLowerCase().includes(s) ||
-            app.university?.name?.toLowerCase().includes(s) ||
-            app.representative?.fullName?.toLowerCase().includes(s) ||
-            app.representative?.officialEmail?.toLowerCase().includes(s)
-        );
+        if (app.user) {
+          app.user.walletCredits = 'N/A';
+          app.user.availableCredits = 'N/A';
+        }
       }
 
       return res.status(200).json({
         success: true,
-        count: filtered.length,
-        data: { applications: filtered },
+        count: apps.length,
+        data: { applications: apps },
+        applications: apps,
       });
     }
   } catch (error) {
@@ -3660,6 +3949,11 @@ export const getAdminUniRepApplicationById = async (req, res, next) => {
         application = await UniversityRepresentativeApplication.findById(id)
           .populate('user', 'name email phone role status accountStatus uniRepVerificationStatus')
           .populate('reviewedBy', 'name email');
+        if (!application) {
+          application = await UniversityRepresentativeApplication.findOne({ user: id })
+            .populate('user', 'name email phone role status accountStatus uniRepVerificationStatus')
+            .populate('reviewedBy', 'name email');
+        }
       }
       if (!application) {
         application = await UniversityRepresentativeApplication.findOne({ applicationId: id.toUpperCase() })
@@ -3668,6 +3962,7 @@ export const getAdminUniRepApplicationById = async (req, res, next) => {
       }
     } else {
       application = await devStore.findUniRepApplicationById(id);
+      if (!application) application = await devStore.findUniRepApplicationByUserId(id);
       if (!application) application = await devStore.findUniRepApplicationByAppId(id);
       if (application && application.user) {
         application.user = await devStore.findUserById(application.user);
@@ -3681,6 +3976,7 @@ export const getAdminUniRepApplicationById = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: { application },
+      application,
     });
   } catch (error) {
     next(error);
@@ -3703,6 +3999,7 @@ export const approveUniRepApplication = async (req, res, next) => {
 
     if (mongoose.connection.readyState === 1) {
       if (mongoose.Types.ObjectId.isValid(id)) application = await UniversityRepresentativeApplication.findById(id);
+      if (!application && mongoose.Types.ObjectId.isValid(id)) application = await UniversityRepresentativeApplication.findOne({ user: id });
       if (!application) application = await UniversityRepresentativeApplication.findOne({ applicationId: id.toUpperCase() });
 
       if (!application) return res.status(404).json({ success: false, message: 'Application not found.' });
@@ -3830,6 +4127,7 @@ export const rejectUniRepApplication = async (req, res, next) => {
 
     if (mongoose.connection.readyState === 1) {
       if (mongoose.Types.ObjectId.isValid(id)) application = await UniversityRepresentativeApplication.findById(id);
+      if (!application && mongoose.Types.ObjectId.isValid(id)) application = await UniversityRepresentativeApplication.findOne({ user: id });
       if (!application) application = await UniversityRepresentativeApplication.findOne({ applicationId: id.toUpperCase() });
 
       if (!application) return res.status(404).json({ success: false, message: 'Application not found.' });
@@ -3858,6 +4156,7 @@ export const rejectUniRepApplication = async (req, res, next) => {
       });
     } else {
       application = await devStore.findUniRepApplicationById(id);
+      if (!application) application = await devStore.findUniRepApplicationByUserId(id);
       if (!application) application = await devStore.findUniRepApplicationByAppId(id);
       if (!application) return res.status(404).json({ success: false, message: 'Application not found.' });
 
