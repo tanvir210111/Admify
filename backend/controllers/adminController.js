@@ -623,15 +623,84 @@ export const getAdminUsers = async (req, res, next) => {
 
     if (mongoose.connection.readyState === 1) {
       total = await User.countDocuments(filter);
-      users = await User.find(filter)
+      const rawUsers = await User.find(filter)
         .select('-password -activationTokenHash')
+        .populate('agencyId', 'name email phone')
+        .populate('universityId', 'name country location')
+        .populate('agencyProfile', 'agencyName legalName agencyType country city website verificationStatus applicationId')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(Number(limit));
+
+      users = await Promise.all(
+        rawUsers.map(async (doc) => {
+          const u = doc.toObject ? doc.toObject() : { ...doc };
+          if (u.role === 'agency' && !u.agencyProfile) {
+            u.agencyProfile = await AgencyProfile.findOne({ user: u._id }).select('agencyName legalName agencyType country city website verificationStatus applicationId').lean();
+          }
+          if (u.role === 'agent' && !u.agencyId) {
+            const app = await AgentApplication.findOne({ $or: [{ applicationId: u.agentApplicationId }, { email: u.email }] }).select('agency agencyName designation countrySpecialization').lean();
+            if (app) {
+              u.agentApplication = app;
+              if (app.agencyName) u.agencyName = app.agencyName;
+            }
+          }
+          if ((u.role === 'university_rep' || u.role === 'university' || u.role === 'university representative') && !u.universityId) {
+            const app = await UniversityRepresentativeApplication.findOne({ user: u._id }).select('university applicationId status representative').lean();
+            if (app) {
+              u.uniRepApplication = app;
+              if (app.university) u.universityDetails = app.university;
+            }
+          }
+          return u;
+        })
+      );
     } else {
       const all = await devStore.findUsers({ role, status, search });
       total = all.length;
-      users = all.slice((page - 1) * limit, page * limit);
+      const rawUsers = all.slice((page - 1) * limit, page * limit);
+      const db = devStore.read();
+      users = rawUsers.map((u) => {
+        const item = { ...u };
+        const uid = item._id ? item._id.toString() : '';
+        if (item.role === 'agency') {
+          item.agencyProfile = (db.agencyProfiles || []).find((p) => (
+            p.user?.toString() === uid ||
+            p.user?._id?.toString() === uid ||
+            p.userId?.toString() === uid ||
+            (p.officialBusinessEmail && p.officialBusinessEmail === item.email)
+          ));
+        } else if (item.role === 'agent') {
+          if (item.agencyId) {
+            const agIdStr = item.agencyId.toString();
+            item.agencyId = (db.users || []).find((ag) => ag._id?.toString() === agIdStr);
+          }
+          const app = (db.agentApplications || []).find((a) => (
+            (item.email && a.email === item.email) ||
+            (item.agentApplicationId && a.applicationId === item.agentApplicationId)
+          ));
+          if (app) {
+            item.agentApplication = app;
+            if (app.agencyName) item.agencyName = app.agencyName;
+          }
+        } else if (item.role === 'university_rep' || item.role === 'university' || item.role === 'university representative') {
+          if (item.universityId) {
+            const uIdStr = item.universityId.toString();
+            item.universityId = (db.universities || []).find((un) => un._id?.toString() === uIdStr);
+          }
+          const app = (db.universityRepApplications || []).find((a) => (
+            a.user?.toString() === uid ||
+            a.user?._id?.toString() === uid ||
+            a.userId?.toString() === uid ||
+            (item.email && a.email === item.email)
+          ));
+          if (app) {
+            item.uniRepApplication = app;
+            if (app.university) item.universityDetails = app.university;
+          }
+        }
+        return item;
+      });
     }
 
     return res.status(200).json({
@@ -656,6 +725,7 @@ export const getAdminUserById = async (req, res, next) => {
       applications: [],
       agencyProfile: null,
       agentApplications: [],
+      agentApplication: null,
       uniRepApplication: null,
       paymentOrders: [],
       creditTransactions: [],
@@ -663,15 +733,24 @@ export const getAdminUserById = async (req, res, next) => {
     };
 
     if (mongoose.connection.readyState === 1) {
-      user = await User.findById(id).select('-password -activationTokenHash');
+      user = await User.findById(id)
+        .select('-password -activationTokenHash')
+        .populate('agencyId', 'name email phone')
+        .populate('universityId', 'name country location')
+        .populate('agencyProfile');
+
       if (user) {
         if (user.role === 'student') {
           related.applications = await Application.find({ user: user._id }).sort({ createdAt: -1 });
           related.paymentOrders = await PaymentOrder.find({ user: user._id }).sort({ createdAt: -1 });
           related.creditTransactions = await CreditTransaction.find({ user: user._id }).sort({ createdAt: -1 });
         } else if (user.role === 'agency') {
-          related.agencyProfile = await AgencyProfile.findOne({ user: user._id });
+          related.agencyProfile = user.agencyProfile || await AgencyProfile.findOne({ user: user._id });
           related.agentApplications = await AgentApplication.find({ agency: user._id });
+        } else if (user.role === 'agent') {
+          related.agentApplication = await AgentApplication.findOne({
+            $or: [{ applicationId: user.agentApplicationId }, { email: user.email }]
+          });
         } else if (user.role === 'university_rep' || user.role === 'university' || user.role === 'university representative') {
           related.uniRepApplication = await UniversityRepresentativeApplication.findOne({ user: user._id });
         }
@@ -682,6 +761,14 @@ export const getAdminUserById = async (req, res, next) => {
       if (user) {
         const db = devStore.read();
         const uid = user._id.toString();
+        if (user.agencyId) {
+          const agIdStr = user.agencyId.toString();
+          user.agencyId = (db.users || []).find((ag) => ag._id?.toString() === agIdStr) || user.agencyId;
+        }
+        if (user.universityId) {
+          const uIdStr = user.universityId.toString();
+          user.universityId = (db.universities || []).find((un) => un._id?.toString() === uIdStr) || user.universityId;
+        }
         if (user.role === 'student') {
           related.applications = (db.applications || []).filter((a) => a.user === uid);
           related.paymentOrders = (db.paymentOrders || []).filter((p) => p.user === uid);
@@ -689,6 +776,8 @@ export const getAdminUserById = async (req, res, next) => {
         } else if (user.role === 'agency') {
           related.agencyProfile = await devStore.findAgencyProfileByUserId(uid);
           related.agentApplications = await devStore.findAgentApplications({ agency: uid });
+        } else if (user.role === 'agent') {
+          related.agentApplication = (db.agentApplications || []).find((a) => a.email === user.email || a.applicationId === user.agentApplicationId);
         } else if (user.role === 'university_rep' || user.role === 'university' || user.role === 'university representative') {
           related.uniRepApplication = await devStore.findUniRepApplicationByUserId(uid);
         }
