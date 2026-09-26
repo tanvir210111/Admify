@@ -112,11 +112,15 @@ export default function AdminUniRepApplicationsTab() {
         rejectionReason: rejectionReason.trim(),
         adminNotes: adminNotes.trim(),
       });
-      toast.success(res?.message || "Uni Rep application rejected.");
+      toast.success(res?.message || res?.data?.message || "Uni Rep application rejected.");
+      const rejectedId = selectedApp._id;
+      setApplications((prev) =>
+        prev.map((a) => (a._id === rejectedId ? { ...a, status: "REJECTED", profileStatus: "REJECTED" } : a))
+      );
       setSelectedApp(null);
       setShowRejectForm(false);
       setRejectionReason("");
-      fetchApplications();
+      await fetchApplications();
     } catch (err) {
       toast.error(err.message || "Rejection failed.");
     } finally {
@@ -221,9 +225,15 @@ export default function AdminUniRepApplicationsTab() {
                 applications.map((app) => {
                   const rep = app.representative || app.representativeInfo || {};
                   const uni = app.university || app.universityInfo || {};
-                  const statusKey = app.profileStatus === 'PROFILE_INCOMPLETE' || app.status === 'PROFILE_INCOMPLETE' || (!app.isProfileComplete && app.status === 'PENDING')
-                    ? 'PROFILE_INCOMPLETE'
-                    : app.status;
+                  const statusKey = app.status === 'REJECTED' || app.profileStatus === 'REJECTED'
+                    ? 'REJECTED'
+                    : (app.status === 'APPROVED' || app.status === 'ACTIVE'
+                      ? app.status
+                      : (app.status === 'UNDER_REVIEW' || app.profileStatus === 'UNDER_REVIEW'
+                        ? 'UNDER_REVIEW'
+                        : (!app.isProfileComplete || app.status === 'PROFILE_INCOMPLETE' || app.profileStatus === 'PROFILE_INCOMPLETE'
+                          ? 'PROFILE_INCOMPLETE'
+                          : (app.status || 'PENDING'))));
                   const statusInfo = STATUS_MAP[statusKey] || STATUS_MAP.PENDING;
 
                   return (

@@ -116,10 +116,13 @@ export default function AdminUniReps() {
         setActionModal(null);
         setRejectionReason("");
         setAdminNotes("");
-        fetchApplications();
+        setApplications((prev) =>
+          prev.map((a) => (a._id === appId ? { ...a, status: "REJECTED", profileStatus: "REJECTED" } : a))
+        );
         if (selectedApp && selectedApp._id === appId) {
-          setSelectedApp({ ...selectedApp, status: "REJECTED" });
+          setSelectedApp((prev) => (prev ? { ...prev, status: "REJECTED", profileStatus: "REJECTED" } : null));
         }
+        await fetchApplications();
       } else {
         toast.error(res?.message || res?.data?.message || "Rejection failed");
       }
@@ -243,9 +246,15 @@ export default function AdminUniReps() {
                 </tr>
               ) : (
                 applications.map((app) => {
-                  const statusKey = app.profileStatus === 'PROFILE_INCOMPLETE' || app.status === 'PROFILE_INCOMPLETE' || (!app.isProfileComplete && app.status === 'PENDING')
-                    ? 'PROFILE_INCOMPLETE'
-                    : app.status;
+                  const statusKey = app.status === 'REJECTED' || app.profileStatus === 'REJECTED'
+                    ? 'REJECTED'
+                    : (app.status === 'APPROVED' || app.status === 'ACTIVE'
+                      ? app.status
+                      : (app.status === 'UNDER_REVIEW' || app.profileStatus === 'UNDER_REVIEW'
+                        ? 'UNDER_REVIEW'
+                        : (!app.isProfileComplete || app.status === 'PROFILE_INCOMPLETE' || app.profileStatus === 'PROFILE_INCOMPLETE'
+                          ? 'PROFILE_INCOMPLETE'
+                          : (app.status || 'PENDING'))));
                   const statusInfo = STATUS_MAP[statusKey] || STATUS_MAP.PENDING;
                   return (
                     <tr

@@ -3871,7 +3871,34 @@ export const getAdminUniRepApplications = async (req, res, next) => {
           const hasCity = Boolean(appObj.university?.city && appObj.university.city.trim());
           const hasWebsite = Boolean(appObj.university?.website && appObj.university.website.trim());
           appObj.isProfileComplete = hasEmployeeId && hasCity && hasWebsite;
-          appObj.profileStatus = !appObj.isProfileComplete && appObj.status === 'PENDING' ? 'PROFILE_INCOMPLETE' : appObj.status;
+
+          const rawAppStatus = (appObj.status || '').toUpperCase();
+          const rawUserStatus = (appObj.user?.uniRepVerificationStatus || appObj.user?.accountStatus || '').toUpperCase();
+          const isExplicitRejected = rawAppStatus === 'REJECTED' || rawUserStatus === 'REJECTED' || appObj.user?.status === 'rejected';
+          const isExplicitActive = rawAppStatus === 'ACTIVE' || rawUserStatus === 'ACTIVE' || appObj.user?.status === 'active';
+          const isExplicitApproved = rawAppStatus === 'APPROVED' || rawAppStatus === 'VERIFIED' || rawUserStatus === 'VERIFIED' || rawUserStatus === 'APPROVED';
+          const isUnderReview = rawAppStatus === 'UNDER_REVIEW' || rawUserStatus === 'UNDER_REVIEW';
+
+          if (isExplicitRejected) {
+            appObj.status = 'REJECTED';
+            appObj.profileStatus = 'REJECTED';
+          } else if (isExplicitActive) {
+            appObj.status = 'ACTIVE';
+            appObj.profileStatus = 'ACTIVE';
+          } else if (isExplicitApproved) {
+            appObj.status = 'APPROVED';
+            appObj.profileStatus = 'APPROVED';
+          } else if (isUnderReview) {
+            appObj.status = 'UNDER_REVIEW';
+            appObj.profileStatus = 'UNDER_REVIEW';
+          } else if (!appObj.isProfileComplete) {
+            appObj.status = 'PROFILE_INCOMPLETE';
+            appObj.profileStatus = 'PROFILE_INCOMPLETE';
+          } else {
+            appObj.status = appObj.status || 'PENDING';
+            appObj.profileStatus = appObj.status;
+          }
+
           unifiedList.push(appObj);
         } else {
           // Legacy/incomplete user: DO NOT call Model.create(), DO NOT invent fake data
@@ -3889,6 +3916,26 @@ export const getAdminUniRepApplications = async (req, res, next) => {
           const uniCountry = u.country || u.universityId?.country || null;
 
           const hasRequired = Boolean(repEmpId && uniCity && uniWeb);
+          const rawStatus = (u.uniRepVerificationStatus || u.accountStatus || (u.status === 'rejected' ? 'REJECTED' : 'PENDING')).toUpperCase();
+          const isExplicitRejected = rawStatus === 'REJECTED' || u.uniRepVerificationStatus === 'REJECTED' || u.accountStatus === 'REJECTED' || u.status === 'rejected';
+          const isExplicitActive = rawStatus === 'ACTIVE' || u.accountStatus === 'ACTIVE' || u.status === 'active';
+          const isExplicitApproved = rawStatus === 'APPROVED' || rawStatus === 'VERIFIED' || u.uniRepVerificationStatus === 'VERIFIED' || u.uniRepVerificationStatus === 'APPROVED';
+          const isUnderReview = rawStatus === 'UNDER_REVIEW' || u.uniRepVerificationStatus === 'UNDER_REVIEW';
+
+          let resolvedStatus = 'PENDING';
+          if (isExplicitRejected) {
+            resolvedStatus = 'REJECTED';
+          } else if (isExplicitActive) {
+            resolvedStatus = 'ACTIVE';
+          } else if (isExplicitApproved) {
+            resolvedStatus = 'APPROVED';
+          } else if (isUnderReview) {
+            resolvedStatus = 'UNDER_REVIEW';
+          } else if (!hasRequired) {
+            resolvedStatus = 'PROFILE_INCOMPLETE';
+          } else {
+            resolvedStatus = 'PENDING';
+          }
 
           unifiedList.push({
             _id: u.universityRepApplication || u._id,
@@ -3915,10 +3962,14 @@ export const getAdminUniRepApplications = async (req, res, next) => {
             documents: u.documents || {},
             academicScope: u.academicScope || { studyLevels: [], programsDepartments: '', countriesRegionsHandled: [] },
             professional: u.professional || { yearsOfExperience: 0, previousExperience: '', languages: [], areasOfExpertise: [], certificationsMemberships: [] },
-            status: u.uniRepVerificationStatus === 'VERIFIED' ? 'APPROVED' : (hasRequired ? (u.uniRepVerificationStatus || 'PENDING') : 'PROFILE_INCOMPLETE'),
-            profileStatus: hasRequired ? (u.uniRepVerificationStatus || 'PENDING') : 'PROFILE_INCOMPLETE',
+            status: resolvedStatus,
+            profileStatus: resolvedStatus,
             isProfileComplete: hasRequired,
             isLegacyRecord: true,
+            rejectionReason: u.rejectionReason || '',
+            rejectedAt: u.rejectedAt || null,
+            rejectedBy: u.rejectedBy || null,
+            adminNotes: u.adminNotes || '',
             submittedAt: u.createdAt,
             createdAt: u.createdAt,
             updatedAt: u.updatedAt,
@@ -3952,7 +4003,34 @@ export const getAdminUniRepApplications = async (req, res, next) => {
           const hasCity = Boolean(appObj.university?.city && appObj.university.city.trim());
           const hasWebsite = Boolean(appObj.university?.website && appObj.university.website.trim());
           appObj.isProfileComplete = hasEmployeeId && hasCity && hasWebsite;
-          appObj.profileStatus = !appObj.isProfileComplete && appObj.status === 'PENDING' ? 'PROFILE_INCOMPLETE' : appObj.status;
+
+          const rawAppStatus = (appObj.status || '').toUpperCase();
+          const rawUserStatus = (appObj.user?.uniRepVerificationStatus || appObj.user?.accountStatus || '').toUpperCase();
+          const isExplicitRejected = rawAppStatus === 'REJECTED' || rawUserStatus === 'REJECTED' || appObj.user?.status === 'rejected';
+          const isExplicitActive = rawAppStatus === 'ACTIVE' || rawUserStatus === 'ACTIVE' || appObj.user?.status === 'active';
+          const isExplicitApproved = rawAppStatus === 'APPROVED' || rawAppStatus === 'VERIFIED' || rawUserStatus === 'VERIFIED' || rawUserStatus === 'APPROVED';
+          const isUnderReview = rawAppStatus === 'UNDER_REVIEW' || rawUserStatus === 'UNDER_REVIEW';
+
+          if (isExplicitRejected) {
+            appObj.status = 'REJECTED';
+            appObj.profileStatus = 'REJECTED';
+          } else if (isExplicitActive) {
+            appObj.status = 'ACTIVE';
+            appObj.profileStatus = 'ACTIVE';
+          } else if (isExplicitApproved) {
+            appObj.status = 'APPROVED';
+            appObj.profileStatus = 'APPROVED';
+          } else if (isUnderReview) {
+            appObj.status = 'UNDER_REVIEW';
+            appObj.profileStatus = 'UNDER_REVIEW';
+          } else if (!appObj.isProfileComplete) {
+            appObj.status = 'PROFILE_INCOMPLETE';
+            appObj.profileStatus = 'PROFILE_INCOMPLETE';
+          } else {
+            appObj.status = appObj.status || 'PENDING';
+            appObj.profileStatus = appObj.status;
+          }
+
           unifiedList.push(appObj);
         }
       }
@@ -3963,14 +4041,17 @@ export const getAdminUniRepApplications = async (req, res, next) => {
       if (status && status !== 'all') {
         const st = status.toUpperCase();
         filtered = filtered.filter((app) => {
+          if (st === 'REJECTED') {
+            return app.status === 'REJECTED' || app.profileStatus === 'REJECTED';
+          }
           if (st === 'APPROVED' || st === 'ACTIVE') {
-            return app.status === 'APPROVED' || app.status === 'ACTIVE' || app.user?.accountStatus === 'ACTIVE';
+            return (app.status === 'APPROVED' || app.status === 'ACTIVE' || app.user?.accountStatus === 'ACTIVE') && app.status !== 'REJECTED';
           }
           if (st === 'PROFILE_INCOMPLETE') {
-            return app.profileStatus === 'PROFILE_INCOMPLETE' || !app.isProfileComplete;
+            return (app.profileStatus === 'PROFILE_INCOMPLETE' || app.status === 'PROFILE_INCOMPLETE' || !app.isProfileComplete) && app.status !== 'REJECTED' && app.status !== 'APPROVED' && app.status !== 'ACTIVE';
           }
           if (st === 'PENDING') {
-            return (app.status === 'PENDING' || app.profileStatus === 'PROFILE_INCOMPLETE') && app.status !== 'APPROVED';
+            return (app.status === 'PENDING' || app.profileStatus === 'PENDING') && app.status !== 'APPROVED' && app.status !== 'REJECTED' && app.status !== 'ACTIVE';
           }
           return app.status === st || app.profileStatus === st;
         });
@@ -4078,6 +4159,26 @@ export const getAdminUniRepApplicationById = async (req, res, next) => {
           const uniCity = u.city || null;
           const uniWeb = u.website || null;
           const hasRequired = Boolean(repEmpId && uniCity && uniWeb);
+          const rawStatus = (u.uniRepVerificationStatus || u.accountStatus || (u.status === 'rejected' ? 'REJECTED' : 'PENDING')).toUpperCase();
+          const isExplicitRejected = rawStatus === 'REJECTED' || u.uniRepVerificationStatus === 'REJECTED' || u.accountStatus === 'REJECTED' || u.status === 'rejected';
+          const isExplicitActive = rawStatus === 'ACTIVE' || u.accountStatus === 'ACTIVE' || u.status === 'active';
+          const isExplicitApproved = rawStatus === 'APPROVED' || rawStatus === 'VERIFIED' || u.uniRepVerificationStatus === 'VERIFIED' || u.uniRepVerificationStatus === 'APPROVED';
+          const isUnderReview = rawStatus === 'UNDER_REVIEW' || u.uniRepVerificationStatus === 'UNDER_REVIEW';
+
+          let resolvedStatus = 'PENDING';
+          if (isExplicitRejected) {
+            resolvedStatus = 'REJECTED';
+          } else if (isExplicitActive) {
+            resolvedStatus = 'ACTIVE';
+          } else if (isExplicitApproved) {
+            resolvedStatus = 'APPROVED';
+          } else if (isUnderReview) {
+            resolvedStatus = 'UNDER_REVIEW';
+          } else if (!hasRequired) {
+            resolvedStatus = 'PROFILE_INCOMPLETE';
+          } else {
+            resolvedStatus = 'PENDING';
+          }
 
           application = {
             _id: u.universityRepApplication || u._id,
@@ -4104,10 +4205,14 @@ export const getAdminUniRepApplicationById = async (req, res, next) => {
             documents: u.documents || {},
             academicScope: u.academicScope || { studyLevels: [], programsDepartments: '', countriesRegionsHandled: [] },
             professional: u.professional || { yearsOfExperience: 0, previousExperience: '', languages: [], areasOfExpertise: [], certificationsMemberships: [] },
-            status: u.uniRepVerificationStatus === 'VERIFIED' ? 'APPROVED' : (hasRequired ? (u.uniRepVerificationStatus || 'PENDING') : 'PROFILE_INCOMPLETE'),
-            profileStatus: hasRequired ? (u.uniRepVerificationStatus || 'PENDING') : 'PROFILE_INCOMPLETE',
+            status: resolvedStatus,
+            profileStatus: resolvedStatus,
             isProfileComplete: hasRequired,
             isLegacyRecord: true,
+            rejectionReason: u.rejectionReason || '',
+            rejectedAt: u.rejectedAt || null,
+            rejectedBy: u.rejectedBy || null,
+            adminNotes: u.adminNotes || '',
             submittedAt: u.createdAt,
             createdAt: u.createdAt,
             updatedAt: u.updatedAt,
@@ -4326,6 +4431,9 @@ export const rejectUniRepApplication = async (req, res, next) => {
         application.reviewedAt = now;
         application.reviewedBy = req.user._id;
         application.rejectionReason = rejectionReason.trim();
+        application.rejectedAt = now;
+        application.rejectedBy = req.user._id;
+        application.profileStatus = 'REJECTED';
         if (adminNotes) application.adminNotes = adminNotes;
 
         if (!Array.isArray(application.statusHistory)) application.statusHistory = [];
@@ -4341,7 +4449,11 @@ export const rejectUniRepApplication = async (req, res, next) => {
         await User.findByIdAndUpdate(application.user, {
           accountStatus: 'REJECTED',
           uniRepVerificationStatus: 'REJECTED',
-          status: 'pending',
+          status: 'rejected',
+          rejectionReason: rejectionReason.trim(),
+          adminNotes: adminNotes ? adminNotes.trim() : '',
+          rejectedAt: now,
+          rejectedBy: req.user._id,
           isActive: false,
         });
       } else if (mongoose.Types.ObjectId.isValid(id)) {
@@ -4352,7 +4464,11 @@ export const rejectUniRepApplication = async (req, res, next) => {
         await User.findByIdAndUpdate(repUser._id, {
           accountStatus: 'REJECTED',
           uniRepVerificationStatus: 'REJECTED',
-          status: 'pending',
+          status: 'rejected',
+          rejectionReason: rejectionReason.trim(),
+          adminNotes: adminNotes ? adminNotes.trim() : '',
+          rejectedAt: now,
+          rejectedBy: req.user._id,
           isActive: false,
         });
 
@@ -4379,6 +4495,8 @@ export const rejectUniRepApplication = async (req, res, next) => {
           isProfileComplete: Boolean(repUser.employeeId && repUser.city && repUser.website),
           isLegacyRecord: true,
           rejectionReason: rejectionReason.trim(),
+          rejectedAt: now,
+          rejectedBy: req.user._id,
           adminNotes: adminNotes || '',
         };
       } else {
@@ -4409,8 +4527,11 @@ export const rejectUniRepApplication = async (req, res, next) => {
 
         application = await devStore.updateUniRepApplication(application._id, {
           status: 'REJECTED',
+          profileStatus: 'REJECTED',
           reviewedAt: now.toISOString(),
           reviewedBy: req.user._id,
+          rejectedAt: now.toISOString(),
+          rejectedBy: req.user._id,
           rejectionReason: rejectionReason.trim(),
           adminNotes: adminNotes || '',
           statusHistory: history,
@@ -4438,6 +4559,8 @@ export const rejectUniRepApplication = async (req, res, next) => {
           isProfileComplete: Boolean(repUser.employeeId && repUser.city && repUser.website),
           isLegacyRecord: true,
           rejectionReason: rejectionReason.trim(),
+          rejectedAt: now.toISOString(),
+          rejectedBy: req.user._id,
           adminNotes: adminNotes || '',
         };
       }
@@ -4446,7 +4569,11 @@ export const rejectUniRepApplication = async (req, res, next) => {
         await devStore.updateUser(userId, {
           accountStatus: 'REJECTED',
           uniRepVerificationStatus: 'REJECTED',
-          status: 'pending',
+          status: 'rejected',
+          rejectionReason: rejectionReason.trim(),
+          adminNotes: adminNotes ? adminNotes.trim() : '',
+          rejectedAt: now.toISOString(),
+          rejectedBy: req.user._id,
           isActive: false,
         });
       }
@@ -4467,6 +4594,7 @@ export const rejectUniRepApplication = async (req, res, next) => {
       success: true,
       message: 'University Representative application rejected.',
       data: { application },
+      application,
     });
   } catch (error) {
     next(error);
@@ -4528,8 +4656,10 @@ export const deleteUniRepApplication = async (req, res, next) => {
 
       const isRejected =
         appStatus === 'REJECTED' ||
+        (application?.profileStatus || '').toUpperCase() === 'REJECTED' ||
         userAccountStatus === 'REJECTED' ||
-        userUniRepStatus === 'REJECTED';
+        userUniRepStatus === 'REJECTED' ||
+        (repUser?.status || '').toUpperCase() === 'REJECTED';
 
       if (!isRejected) {
         return res.status(409).json({
@@ -4601,8 +4731,10 @@ export const deleteUniRepApplication = async (req, res, next) => {
 
       const isRejected =
         appStatus === 'REJECTED' ||
+        (application?.profileStatus || '').toUpperCase() === 'REJECTED' ||
         userAccountStatus === 'REJECTED' ||
-        userUniRepStatus === 'REJECTED';
+        userUniRepStatus === 'REJECTED' ||
+        (repUser?.status || '').toUpperCase() === 'REJECTED';
 
       if (!isRejected) {
         return res.status(409).json({

@@ -977,10 +977,32 @@ class DevStore {
           a.user?._id?.toString() === uid ||
           (u.universityRepApplicationId && a.applicationId?.toUpperCase() === u.universityRepApplicationId?.toUpperCase())
       );
-      if (!app) {
+      if (app) {
+        const rawStatus = (u.uniRepVerificationStatus || u.accountStatus || (u.status === 'rejected' ? 'REJECTED' : '')).toUpperCase();
+        if (rawStatus === 'REJECTED' && app.status !== 'REJECTED') {
+          app.status = 'REJECTED';
+          app.profileStatus = 'REJECTED';
+          dirty = true;
+        }
+      } else {
         const randomSuffix = Math.floor(1000 + Math.random() * 9000);
         const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
         const appId = u.universityRepApplicationId || `ADM-REP-2026-${timeCode}${randomSuffix}`;
+        const hasRequired = Boolean(u.employeeId && u.city && u.website);
+        const rawStatus = (u.uniRepVerificationStatus || u.accountStatus || (u.status === 'rejected' ? 'REJECTED' : 'PENDING')).toUpperCase();
+        const isExplicitRejected = rawStatus === 'REJECTED' || u.uniRepVerificationStatus === 'REJECTED' || u.accountStatus === 'REJECTED' || u.status === 'rejected';
+        const isExplicitActive = rawStatus === 'ACTIVE' || u.accountStatus === 'ACTIVE' || u.status === 'active';
+        const isExplicitApproved = rawStatus === 'APPROVED' || rawStatus === 'VERIFIED' || u.uniRepVerificationStatus === 'VERIFIED' || u.uniRepVerificationStatus === 'APPROVED';
+        const isUnderReview = rawStatus === 'UNDER_REVIEW' || u.uniRepVerificationStatus === 'UNDER_REVIEW';
+
+        let resolvedStatus = 'PENDING';
+        if (isExplicitRejected) resolvedStatus = 'REJECTED';
+        else if (isExplicitActive) resolvedStatus = 'ACTIVE';
+        else if (isExplicitApproved) resolvedStatus = 'APPROVED';
+        else if (isUnderReview) resolvedStatus = 'UNDER_REVIEW';
+        else if (!hasRequired) resolvedStatus = 'PROFILE_INCOMPLETE';
+        else resolvedStatus = 'PENDING';
+
         app = {
           _id: new mongoose.Types.ObjectId().toString(),
           applicationId: appId,
@@ -1014,9 +1036,13 @@ class DevStore {
             phone: u.phone || '',
             employeeId: u.employeeId || null,
           },
-          isProfileComplete: Boolean(u.employeeId && u.city && u.website),
-          profileStatus: Boolean(u.employeeId && u.city && u.website) ? (u.uniRepVerificationStatus || 'PENDING') : 'PROFILE_INCOMPLETE',
-          status: (u.uniRepVerificationStatus || u.accountStatus || 'PENDING').toUpperCase() === 'APPROVED' ? 'APPROVED' : (Boolean(u.employeeId && u.city && u.website) ? (u.uniRepVerificationStatus || 'PENDING').toUpperCase() : 'PROFILE_INCOMPLETE'),
+          isProfileComplete: hasRequired,
+          profileStatus: resolvedStatus,
+          status: resolvedStatus,
+          rejectionReason: u.rejectionReason || '',
+          rejectedAt: u.rejectedAt || null,
+          rejectedBy: u.rejectedBy || null,
+          adminNotes: u.adminNotes || '',
           submittedAt: u.createdAt || new Date().toISOString(),
           createdAt: u.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1032,9 +1058,17 @@ class DevStore {
     return db.universityRepApplications.filter((app) => {
       if (filter.status && filter.status !== 'all') {
         const st = filter.status.toUpperCase();
-        if (st === 'APPROVED' || st === 'ACTIVE') {
+        if (st === 'REJECTED') {
+          if (app.status !== 'REJECTED' && app.profileStatus !== 'REJECTED') return false;
+        } else if (st === 'APPROVED' || st === 'ACTIVE') {
           if (app.status !== 'APPROVED' && app.status !== 'ACTIVE') return false;
-        } else if (app.status !== st) {
+        } else if (st === 'PROFILE_INCOMPLETE') {
+          if (app.status === 'REJECTED' || app.status === 'APPROVED' || app.status === 'ACTIVE') return false;
+          if (app.status !== 'PROFILE_INCOMPLETE' && app.profileStatus !== 'PROFILE_INCOMPLETE' && app.isProfileComplete) return false;
+        } else if (st === 'PENDING') {
+          if (app.status === 'REJECTED' || app.status === 'APPROVED' || app.status === 'ACTIVE') return false;
+          if (app.status !== 'PENDING' && app.profileStatus !== 'PENDING') return false;
+        } else if (app.status !== st && app.profileStatus !== st) {
           return false;
         }
       }
