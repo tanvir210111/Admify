@@ -970,10 +970,10 @@ export const deleteAdminUser = async (req, res, next) => {
       }
     }
 
-    // 2. Enforce suspended status
+    // 2. Enforce suspended status (HTTP 409 Conflict — not a client validation error)
     const isSuspended = user.status === 'suspended' || user.accountStatus === 'SUSPENDED';
     if (!isSuspended) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: 'User must be suspended before deletion.',
       });
@@ -4780,6 +4780,186 @@ export const deleteUniRepApplication = async (req, res, next) => {
           deletedApplicationId: appId,
           deletedUserId: userId?.toString(),
         },
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── Agency Permanent Deletion (REJECTED lifecycle only) ───────────────────────
+// @desc    Permanently delete a REJECTED agency (profile + user account).
+//          Backend enforces REJECTED-status guard. Returns HTTP 409 if not rejected.
+// @route   DELETE /api/admin/agencies/verifications/:id
+// @access  Private (Admin)
+export const deleteAgencyVerification = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Agency ID is required.' });
+    }
+
+    let agencyProfile = null;
+    let agencyUser = null;
+
+    if (mongoose.connection.readyState === 1) {
+      // 1. Resolve AgencyProfile by _id, userId, or applicationId
+      if (mongoose.Types.ObjectId.isValid(id)) {
+        agencyProfile = await AgencyProfile.findById(id);
+        if (!agencyProfile) {
+          agencyProfile = await AgencyProfile.findOne({ user: id });
+        }
+      }
+      if (!agencyProfile) {
+        agencyProfile = await AgencyProfile.findOne({ applicationId: id.trim() });
+      }
+
+      if (agencyProfile) {
+        if (agencyProfile.user) {
+          agencyUser = await User.findById(agencyProfile.user);
+        }
+      } else if (mongoose.Types.ObjectId.isValid(id)) {
+        agencyUser = await User.findById(id);
+        if (agencyUser && agencyUser.role === 'agency') {
+          agencyProfile = await AgencyProfile.findOne({ user: agencyUser._id });
+        } else {
+          agencyUser = null;
+        }
+      }
+
+      if (!agencyProfile && !agencyUser) {
+        return res.status(404).json({ success: false, message: 'Agency record not found.' });
+      }
+
+      // 2. Strict REJECTED guard — backend is the final authority
+      const profileStatus = (agencyProfile?.verificationStatus || '').toUpperCase();
+      const userStatus = (agencyUser?.accountStatus || agencyUser?.agencyVerificationStatus || '').toUpperCase();
+      const isRejected = profileStatus === 'REJECTED' || userStatus === 'REJECTED';
+
+      if (!isRejected) {
+        return res.status(409).json({
+          success: false,
+          message: 'Agency must be rejected before deletion. Current status: ' + (profileStatus || userStatus || 'UNKNOWN'),
+        });
+      }
+
+      // 3. Prevent deleting another admin
+      if (agencyUser?.role === 'admin') {
+        return res.status(403).json({ success: false, message: 'Cannot delete an admin account through this endpoint.' });
+      }
+
+      const agencyName = agencyProfile?.agencyName || agencyUser?.name || 'Agency';
+      const appId = agencyProfile?.applicationId || agencyUser?.applicationId || id;
+      const userId = agencyUser?._id?.toString() || (agencyProfile?.user ? agencyProfile.user.toString() : null);
+
+      // 4. Immutable audit log before physical deletion
+      await recordAuditLog({
+        req,
+        action: 'ADMIN_DELETE_AGENCY',
+        module: 'agencies',
+        targetType: 'AgencyProfile',
+        targetId: id,
+        targetName: agencyName,
+        previousValue: {
+          applicationId: appId,
+          userId,
+          agencyName,
+          verificationStatus: 'REJECTED',
+        },
+        newValue: null,
+        reason: req.body?.reason || 'Administrator permanently deleted rejected agency',
+      });
+
+      // 5. Physical deletion — AgencyProfile + User account + owned records
+      //    Agents belonging to this agency have their agencyId unlinked (NOT deleted)
+      if (agencyProfile) {
+        await AgencyProfile.deleteOne({ _id: agencyProfile._id });
+      }
+      if (userId) {
+        // Unbind agents so they retain their account but lose the agency reference
+        await User.updateMany({ agencyId: agencyUser._id }, { $unset: { agencyId: 1 } });
+        // Clean up agency-owned orders
+        await AgencyServiceOrder.deleteMany({ $or: [{ agency: agencyUser._id }, { user: agencyUser._id }] });
+        // Clean up university-agency connections
+        await UniversityAgencyConnection.deleteMany({ agency: agencyUser._id });
+        // Delete the user account
+        await User.deleteOne({ _id: agencyUser._id });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Agency permanently deleted from the system.',
+        data: { deletedId: id, deletedApplicationId: appId, deletedUserId: userId },
+      });
+    } else {
+      // devStore fallback
+      agencyProfile = await devStore.findAgencyProfileById(id);
+      if (!agencyProfile) agencyProfile = await devStore.findAgencyProfileByUserId(id);
+      if (!agencyProfile) agencyProfile = await devStore.findAgencyProfileByApplicationId(id);
+
+      const userId = agencyProfile?.user?._id || agencyProfile?.user || (id !== agencyProfile?._id ? id : null);
+      if (userId) {
+        agencyUser = await devStore.findUserById(userId);
+      }
+
+      if (!agencyProfile && !agencyUser) {
+        return res.status(404).json({ success: false, message: 'Agency record not found.' });
+      }
+
+      const profileStatus = (agencyProfile?.verificationStatus || '').toUpperCase();
+      const userStatus = (agencyUser?.accountStatus || agencyUser?.agencyVerificationStatus || '').toUpperCase();
+      const isRejected = profileStatus === 'REJECTED' || userStatus === 'REJECTED';
+
+      if (!isRejected) {
+        return res.status(409).json({
+          success: false,
+          message: 'Agency must be rejected before deletion. Current status: ' + (profileStatus || userStatus || 'UNKNOWN'),
+        });
+      }
+
+      const agencyName = agencyProfile?.agencyName || agencyUser?.name || 'Agency';
+      const appId = agencyProfile?.applicationId || agencyUser?.applicationId || id;
+
+      await recordAuditLog({
+        req,
+        action: 'ADMIN_DELETE_AGENCY',
+        module: 'agencies',
+        targetType: 'AgencyProfile',
+        targetId: id,
+        targetName: agencyName,
+        previousValue: { applicationId: appId, userId: userId?.toString(), agencyName, verificationStatus: 'REJECTED' },
+        newValue: null,
+        reason: req.body?.reason || 'Administrator permanently deleted rejected agency',
+      });
+
+      // Physical devStore deletion
+      const db = devStore.read();
+      if (agencyProfile) {
+        db.agencyProfiles = (db.agencyProfiles || []).filter(
+          (p) => p._id?.toString() !== agencyProfile._id?.toString()
+        );
+      }
+      if (userId) {
+        const uidStr = userId.toString();
+        // Unbind agents
+        (db.users || []).forEach((u) => {
+          if (u.agencyId?.toString() === uidStr) delete u.agencyId;
+        });
+        db.agencyServiceOrders = (db.agencyServiceOrders || []).filter(
+          (o) => o.agency?.toString() !== uidStr && o.user?.toString() !== uidStr
+        );
+        db.universityAgencyConnections = (db.universityAgencyConnections || []).filter(
+          (c) => c.agency?.toString() !== uidStr
+        );
+        db.users = (db.users || []).filter((u) => u._id?.toString() !== uidStr);
+      }
+      devStore.write(db);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Agency permanently deleted from the system.',
+        data: { deletedId: id, deletedApplicationId: appId, deletedUserId: userId?.toString() },
       });
     }
   } catch (error) {

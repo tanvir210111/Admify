@@ -113,9 +113,7 @@ export default function AdminAgents() {
     }
     setDeleteLoading(true);
     try {
-      const res = await api.delete(`/api/admin/users/${deleteModal._id}`, {
-        confirmPermanentDelete: true,
-      });
+      const res = await api.delete(`/api/admin/users/${deleteModal._id}`);
       if (res?.success) {
         toast.success("Agent account permanently deleted.");
         setDeleteModal(null);
@@ -126,7 +124,12 @@ export default function AdminAgents() {
         toast.error(res?.message || "Failed to delete agent.");
       }
     } catch (err) {
-      toast.error(err?.message || "Deletion failed.");
+      const status = err?.status;
+      if (status === 409) {
+        toast.error("Agent must be suspended before deletion.");
+      } else {
+        toast.error(err?.message || "Deletion failed.");
+      }
     } finally {
       setDeleteLoading(false);
     }
@@ -583,27 +586,38 @@ export default function AdminAgents() {
               {/* Drawer Footer Actions */}
               <div className="border-t border-white/10 pt-4 flex gap-2">
                 {(selectedAgent.accountStatus || selectedAgent.status || "").toUpperCase() === "SUSPENDED" ? (
-                  <button
-                    onClick={() => {
-                      setStatusModal({ agent: selectedAgent, targetStatus: "ACTIVE" });
-                    }}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors"
-                  >
-                    Restore Agent
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setStatusModal({ agent: selectedAgent, targetStatus: "ACTIVE" });
+                      }}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Restore Agent
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDeleteModal(selectedAgent);
+                      }}
+                      className="px-3.5 py-2.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => {
                       setStatusModal({ agent: selectedAgent, targetStatus: "SUSPENDED" });
                     }}
-                    className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-colors"
+                    className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
                     Suspend Agent
                   </button>
                 )}
                 <button
                   onClick={() => setSelectedAgent(null)}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors"
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                 >
                   Close
                 </button>

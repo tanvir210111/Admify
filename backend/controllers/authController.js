@@ -676,6 +676,25 @@ export const login = async (req, res, next) => {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // SUSPENSION LOGIN GATE: Block login if account is suspended
+    // ──────────────────────────────────────────────────────────────────────────
+    const isSuspended =
+      user.status === 'suspended' ||
+      user.accountStatus === 'SUSPENDED';
+
+    if (isSuspended) {
+      const msg =
+        user.role === 'agent'
+          ? 'Your agent account has been suspended or deactivated by your Agency or Admin.'
+          : 'Your account has been suspended by Admin. Please contact support.';
+      return res.status(403).json({
+        success: false,
+        accountStatus: 'SUSPENDED',
+        message: msg,
+      });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // AGENCY LOGIN GATE: Block login if agency account is not fully active
     // ──────────────────────────────────────────────────────────────────────────
     if (user.role === 'agency') {

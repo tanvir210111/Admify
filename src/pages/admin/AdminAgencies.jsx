@@ -4,7 +4,7 @@ import {
   Building2, Search, Filter, Eye, CheckCircle2, XCircle, AlertTriangle,
   FileText, ExternalLink, ShieldCheck, RefreshCw, X, Clock,
   ChevronRight, Phone, Mail, Globe, MapPin, Award, Briefcase, Calendar,
-  Hash, Users, User,
+  Hash, Users, User, Trash2, ShieldAlert,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
@@ -30,6 +30,11 @@ export default function AdminAgencies() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Delete modal state
+  const [deleteModal, setDeleteModal] = useState(null); // agency object
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
 
   // Document viewer modal
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -107,6 +112,36 @@ export default function AdminAgencies() {
       toast.error(err.response?.data?.message || err?.message || "Network error while updating agency status");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDeleteAgency = async () => {
+    if (!deleteModal) return;
+    if (deleteConfirmInput.toUpperCase() !== "DELETE") {
+      toast.error("Please type DELETE to confirm permanent deletion.");
+      return;
+    }
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/api/admin/agencies/verifications/${deleteModal._id}`);
+      if (res?.success) {
+        toast.success(`Agency "${deleteModal.agencyName || deleteModal.user?.name || 'Agency'}" permanently deleted.`);
+        setDeleteModal(null);
+        setDeleteConfirmInput("");
+        if (selectedAgency?._id === deleteModal._id) setSelectedAgency(null);
+        fetchAgencies();
+      } else {
+        toast.error(res?.message || "Failed to delete agency.");
+      }
+    } catch (err) {
+      const status = err?.status;
+      if (status === 409) {
+        toast.error("Agency must be REJECTED before it can be deleted.");
+      } else {
+        toast.error(err?.message || "Agency deletion failed.");
+      }
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -295,6 +330,26 @@ export default function AdminAgencies() {
                               Reject
                             </button>
                           )}
+                          {/* Delete: only enabled when REJECTED */}
+                          <button
+                            onClick={() => {
+                              if (statusKey === "REJECTED") {
+                                setDeleteModal(agency);
+                                setDeleteConfirmInput("");
+                              } else {
+                                toast.error("Agency must be rejected before deletion.");
+                              }
+                            }}
+                            disabled={statusKey !== "REJECTED"}
+                            title={statusKey === "REJECTED" ? "Permanently delete rejected agency" : "Agency must be rejected before deletion"}
+                            className={`p-1.5 rounded-lg border transition-all ${
+                              statusKey === "REJECTED"
+                                ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border-rose-500/30 cursor-pointer"
+                                : "bg-white/2 text-slate-600 border-white/5 cursor-not-allowed opacity-40"
+                            }`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -368,6 +423,15 @@ export default function AdminAgencies() {
                         className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs cursor-pointer"
                       >
                         Reject
+                      </button>
+                    )}
+                    {selectedAgency.verificationStatus === "REJECTED" && (
+                      <button
+                        onClick={() => setDeleteModal(selectedAgency)}
+                        className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
                       </button>
                     )}
                   </div>
@@ -576,6 +640,24 @@ export default function AdminAgencies() {
                   </div>
                 )}
               </div>
+
+              {/* Drawer Footer Actions */}
+              <div className="border-t border-white/10 pt-4 mt-6 flex gap-2">
+                {selectedAgency.verificationStatus === "REJECTED" && (
+                  <button
+                    onClick={() => setDeleteModal(selectedAgency)}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Agency Permanently
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedAgency(null)}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer ml-auto"
+                >
+                  Close
+                </button>
+              </div>
             </motion.div>
           </>
         )}
@@ -685,6 +767,70 @@ export default function AdminAgencies() {
                 ) : (
                   <iframe src={previewDoc.fileData} title="Document" className="w-full h-[60vh] rounded" />
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Agency Permanent Delete Confirmation Modal ── */}
+      <AnimatePresence>
+        {deleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-slate-900 border border-rose-500/40 rounded-2xl p-6 shadow-2xl text-slate-100 space-y-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Delete Agency</h3>
+                  <p className="text-xs text-rose-400">Irreversible Action</p>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 space-y-1">
+                <p className="font-bold">Agency: <span className="text-white">{deleteModal.agencyName || deleteModal.user?.name || "Agency"}</span></p>
+                <p>Application ID: <span className="font-mono text-violet-300">{deleteModal.applicationId || "N/A"}</span></p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  This action permanently removes the rejected agency account and its verification/application record from the system.
+                  Affiliated agents will have their agency reference unlinked but their accounts will remain intact.
+                </p>
+              </div>
+
+              <p className="text-xs text-slate-400">
+                To prevent accidental destruction, type <strong className="text-white">DELETE</strong> to confirm permanent removal.
+              </p>
+
+              <input
+                type="text"
+                placeholder="Type DELETE to confirm"
+                value={deleteConfirmInput}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                className="w-full px-3 py-2 bg-black/50 border border-rose-500/30 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-rose-500"
+              />
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setDeleteModal(null); setDeleteConfirmInput(""); }}
+                  disabled={deleteLoading}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAgency}
+                  disabled={deleteLoading || deleteConfirmInput.toUpperCase() !== "DELETE"}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold text-white transition-all shadow-lg shadow-rose-600/20"
+                >
+                  {deleteLoading ? "Deleting..." : "Permanently Delete"}
+                </button>
               </div>
             </motion.div>
           </div>
