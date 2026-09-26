@@ -10,6 +10,7 @@ import api from "../../lib/api";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending Review", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
+  PROFILE_INCOMPLETE: { label: "Profile Incomplete", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
   UNDER_REVIEW: { label: "Under Review", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   APPROVED: { label: "Approved (Active/Pending Email)", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
   ACTIVE: { label: "Active & Verified", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
@@ -161,7 +162,7 @@ export default function AdminUniReps() {
         </form>
 
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto min-w-0 max-w-full">
-          {["all", "PENDING", "UNDER_REVIEW", "APPROVED", "ACTIVE", "REJECTED"].map((st) => (
+          {["all", "PENDING", "PROFILE_INCOMPLETE", "UNDER_REVIEW", "APPROVED", "ACTIVE", "REJECTED"].map((st) => (
             <button
               key={st}
               onClick={() => setFilter(st)}
@@ -209,7 +210,10 @@ export default function AdminUniReps() {
                 </tr>
               ) : (
                 applications.map((app) => {
-                  const statusInfo = STATUS_MAP[app.status] || STATUS_MAP.PENDING;
+                  const statusKey = app.profileStatus === 'PROFILE_INCOMPLETE' || app.status === 'PROFILE_INCOMPLETE' || (!app.isProfileComplete && app.status === 'PENDING')
+                    ? 'PROFILE_INCOMPLETE'
+                    : app.status;
+                  const statusInfo = STATUS_MAP[statusKey] || STATUS_MAP.PENDING;
                   return (
                     <tr
                       key={app._id}
@@ -218,21 +222,21 @@ export default function AdminUniReps() {
                       <td className="px-4 py-3.5">
                         <div>
                           <p className="font-bold text-white text-xs">
-                            {app.representative?.fullName || app.user?.name || "Representative"}
+                            {app.representative?.fullName || app.user?.name || "Not provided"}
                           </p>
                           <p className="text-emerald-400 font-semibold text-[11px] flex items-center gap-1 mt-0.5">
                             <Building2 className="w-3 h-3" />
-                            {app.university?.name || "University Partner"}
+                            {app.university?.name || "Not provided"}
                           </p>
-                          <span className="font-mono text-[9px] text-slate-500">{app.applicationId}</span>
+                          <span className="font-mono text-[9px] text-slate-500">{app.applicationId || "Legacy Profile"}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        <p className="text-slate-200 font-semibold">{app.representative?.designation || "Admissions Officer"}</p>
+                        <p className="text-slate-200 font-semibold">{app.representative?.designation || "Not provided"}</p>
                         <p className="text-slate-400 text-[10px]">{app.representative?.department || "Admissions Dept"}</p>
                       </td>
                       <td className="px-4 py-3.5 text-slate-300 font-mono text-[11px]">
-                        {app.representative?.officialEmail || app.user?.email}
+                        {app.representative?.officialEmail || app.user?.email || "Not provided"}
                       </td>
                       <td className="px-4 py-3.5">
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${statusInfo.cls}`}>
@@ -313,27 +317,59 @@ export default function AdminUniReps() {
                   </button>
                 </div>
 
+                {/* Incomplete Profile Alert Banner */}
+                {!selectedApp.isProfileComplete && (
+                  <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Incomplete Registration Profile</span>
+                      <span className="text-amber-200/80 text-[11px] leading-relaxed">
+                        Legacy verification fields (Employee ID, University City, and/or Website) were not provided in initial registration. Account can still be reviewed and governed safely.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* University Info */}
                 <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2 text-xs">
                   <p className="text-[11px] font-bold uppercase text-slate-400">Institutional Affiliation</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <span className="text-slate-500 text-[10px] block">University</span>
-                      <span className="text-white font-semibold">{selectedApp.university?.name}</span>
+                      <span className="text-white font-semibold">{selectedApp.university?.name || "Not provided"}</span>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Country</span>
-                      <span className="text-white font-semibold">{selectedApp.university?.country || "—"}</span>
+                      <span className="text-white font-semibold">{selectedApp.university?.country || "Not provided"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">City</span>
+                      <span className="text-white font-semibold">{selectedApp.university?.city || "Not provided"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Website</span>
+                      {selectedApp.university?.website ? (
+                        <a
+                          href={selectedApp.university.website.startsWith("http") ? selectedApp.university.website : `https://${selectedApp.university.website}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-emerald-400 hover:underline flex items-center gap-1 font-mono text-[11px]"
+                        >
+                          {selectedApp.university.website} <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      ) : (
+                        <span className="text-slate-400">Not provided</span>
+                      )}
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Official Email</span>
                       <span className="text-emerald-400 font-mono text-[11px] font-bold">
-                        {selectedApp.representative?.officialEmail}
+                        {selectedApp.representative?.officialEmail || selectedApp.user?.email || "Not provided"}
                       </span>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Employee / Staff ID</span>
-                      <span className="text-slate-200 font-mono">{selectedApp.representative?.employeeId || "—"}</span>
+                      <span className="text-slate-200 font-mono">{selectedApp.representative?.employeeId || "Not provided"}</span>
                     </div>
                   </div>
                 </div>

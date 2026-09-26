@@ -32,6 +32,7 @@ const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
 
 const STATUS_MAP = {
   PENDING: { label: "Pending", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
+  PROFILE_INCOMPLETE: { label: "Profile Incomplete", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
   UNDER_REVIEW: { label: "Under Review", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   APPROVED: { label: "Approved", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
   ACTIVE: { label: "Active", cls: "bg-teal-500/15 text-teal-400 border-teal-500/30" },
@@ -140,8 +141,9 @@ export default function AdminUniRepApplicationsTab() {
             className="bg-slate-800/80 border border-slate-700/60 text-slate-300 text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-violet-500"
           >
             <option value="all">All Statuses</option>
+            <option value="PENDING">Pending Review</option>
+            <option value="PROFILE_INCOMPLETE">Profile Incomplete</option>
             <option value="UNDER_REVIEW">Under Review</option>
-            <option value="PENDING">Pending (Draft)</option>
             <option value="APPROVED">Approved</option>
             <option value="ACTIVE">Active</option>
             <option value="REJECTED">Rejected</option>
@@ -188,64 +190,73 @@ export default function AdminUniRepApplicationsTab() {
                   </td>
                 </tr>
               ) : (
-                applications.map((app) => (
-                  <tr key={app._id} className="hover:bg-slate-800/30 transition-colors group">
-                    <td className="px-5 py-4">
-                      <span className="font-mono text-xs text-violet-400 font-bold">
-                        {app.applicationId || "N/A"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-slate-200">
-                          {app.representativeInfo?.fullName || "Unnamed Rep"}
+                applications.map((app) => {
+                  const rep = app.representative || app.representativeInfo || {};
+                  const uni = app.university || app.universityInfo || {};
+                  const statusKey = app.profileStatus === 'PROFILE_INCOMPLETE' || app.status === 'PROFILE_INCOMPLETE' || (!app.isProfileComplete && app.status === 'PENDING')
+                    ? 'PROFILE_INCOMPLETE'
+                    : app.status;
+                  const statusInfo = STATUS_MAP[statusKey] || STATUS_MAP.PENDING;
+
+                  return (
+                    <tr key={app._id} className="hover:bg-slate-800/30 transition-colors group">
+                      <td className="px-5 py-4">
+                        <span className="font-mono text-xs text-violet-400 font-bold">
+                          {app.applicationId || "Legacy Profile"}
                         </span>
-                        <span className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                          <Mail className="w-3 h-3" />
-                          {app.representativeInfo?.officialEmail}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-slate-200">
+                            {rep.fullName || app.user?.name || "Not provided"}
+                          </span>
+                          <span className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                            <Mail className="w-3 h-3" />
+                            {rep.officialEmail || app.user?.email || "Not provided"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-slate-300">
+                            {uni.name || uni.universityName || "Not provided"}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {uni.country || uni.city || "Not provided"} {uni.domain || uni.officialEmailDomain ? `· @${uni.domain || uni.officialEmailDomain}` : ""}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-xs text-slate-400">
+                        {rep.designation || "Not provided"}
+                      </td>
+                      <td className="px-5 py-4 text-xs text-slate-400">
+                        {app.submittedAt || app.createdAt ? new Date(app.submittedAt || app.createdAt).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span
+                          className={`inline-flex px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border ${
+                            statusInfo.cls
+                          }`}
+                        >
+                          {statusInfo.label}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-slate-300">
-                          {app.universityInfo?.universityName || "N/A"}
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          {app.universityInfo?.country} {app.universityInfo?.officialEmailDomain ? `· @${app.universityInfo.officialEmailDomain}` : ""}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-xs text-slate-400">
-                      {app.representativeInfo?.designation || "Authorized Rep"}
-                    </td>
-                    <td className="px-5 py-4 text-xs text-slate-400">
-                      {app.submittedAt ? new Date(app.submittedAt).toLocaleDateString() : "Pending Submit"}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span
-                        className={`inline-flex px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border ${
-                          STATUS_MAP[app.status]?.cls || "bg-slate-800 text-slate-400 border-slate-700"
-                        }`}
-                      >
-                        {STATUS_MAP[app.status]?.label || app.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <button
-                        onClick={() => {
-                          setSelectedApp(app);
-                          setShowRejectForm(false);
-                          setRejectionReason("");
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl text-xs font-semibold transition-colors"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        Review
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <button
+                          onClick={() => {
+                            setSelectedApp(app);
+                            setShowRejectForm(false);
+                            setRejectionReason("");
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl text-xs font-semibold transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Review
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -291,87 +302,124 @@ export default function AdminUniRepApplicationsTab() {
               {/* Modal Body */}
               <div className="p-6 overflow-y-auto space-y-6 flex-1 text-sm">
                 {/* Status Alert Banner */}
-                <div className="flex items-center justify-between p-4 rounded-xl border bg-slate-800/40 border-slate-700">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-violet-400" />
-                    <span className="text-slate-300 font-medium">Application Status:</span>
-                    <span className={`px-2 py-0.5 text-xs font-bold rounded-full border ${STATUS_MAP[selectedApp.status]?.cls}`}>
-                      {STATUS_MAP[selectedApp.status]?.label || selectedApp.status}
-                    </span>
+                {(() => {
+                  const modalStatusKey = selectedApp.profileStatus === 'PROFILE_INCOMPLETE' || selectedApp.status === 'PROFILE_INCOMPLETE' || (!selectedApp.isProfileComplete && selectedApp.status === 'PENDING')
+                    ? 'PROFILE_INCOMPLETE'
+                    : selectedApp.status;
+                  const statusInfo = STATUS_MAP[modalStatusKey] || STATUS_MAP.PENDING;
+                  return (
+                    <div className="flex items-center justify-between p-4 rounded-xl border bg-slate-800/40 border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-violet-400" />
+                        <span className="text-slate-300 font-medium">Application Status:</span>
+                        <span className={`px-2 py-0.5 text-xs font-bold rounded-full border ${statusInfo.cls}`}>
+                          {statusInfo.label}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Submitted: {selectedApp.submittedAt || selectedApp.createdAt ? new Date(selectedApp.submittedAt || selectedApp.createdAt).toLocaleString() : "N/A"}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Legacy Profile Incomplete Banner */}
+                {!selectedApp.isProfileComplete && (
+                  <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Incomplete Registration Profile</span>
+                      <span className="text-amber-200/80 text-[11px] leading-relaxed">
+                        Legacy verification fields (Employee ID, University City, and/or Website) were not provided during initial registration. Account can still be reviewed and governed safely.
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-500">
-                    Submitted: {selectedApp.submittedAt ? new Date(selectedApp.submittedAt).toLocaleString() : "N/A"}
-                  </div>
-                </div>
+                )}
 
                 {/* Section A: University Information */}
-                <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-violet-400" /> University Information
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-500 block">University Name</span>
-                      <span className="text-slate-200 font-medium text-sm">{selectedApp.universityInfo?.universityName || "N/A"}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Legal / Official Name</span>
-                      <span className="text-slate-200 font-medium text-sm">{selectedApp.universityInfo?.officialLegalName || "N/A"}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Official Website</span>
-                      <a
-                        href={selectedApp.universityInfo?.officialWebsite}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-violet-400 hover:underline flex items-center gap-1"
-                      >
-                        {selectedApp.universityInfo?.officialWebsite || "N/A"} <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Email Domain</span>
-                      <span className="font-mono text-slate-200">@{selectedApp.universityInfo?.officialEmailDomain || "N/A"}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Location</span>
-                      <span className="text-slate-300">{selectedApp.universityInfo?.city}, {selectedApp.universityInfo?.country}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Institution Type</span>
-                      <span className="text-slate-300">{selectedApp.universityInfo?.universityType || "Public"}</span>
-                    </div>
-                  </div>
-                </div>
+                {(() => {
+                  const uni = selectedApp.university || selectedApp.universityInfo || {};
+                  const rep = selectedApp.representative || selectedApp.representativeInfo || {};
+                  return (
+                    <>
+                      <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-violet-400" /> University Information
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-slate-500 block">University Name</span>
+                            <span className="text-slate-200 font-medium text-sm">{uni.name || uni.universityName || "Not provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Legal / Official Name</span>
+                            <span className="text-slate-200 font-medium text-sm">{uni.legalName || uni.officialLegalName || uni.name || "Not provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Official Website</span>
+                            {uni.website || uni.officialWebsite ? (
+                              <a
+                                href={(uni.website || uni.officialWebsite).startsWith("http") ? (uni.website || uni.officialWebsite) : `https://${uni.website || uni.officialWebsite}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-violet-400 hover:underline flex items-center gap-1 font-mono text-[11px]"
+                              >
+                                {uni.website || uni.officialWebsite} <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">Not provided</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Email Domain</span>
+                            <span className="font-mono text-slate-200">
+                              {uni.domain || uni.officialEmailDomain ? `@${uni.domain || uni.officialEmailDomain}` : "Not provided"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Location</span>
+                            <span className="text-slate-300">
+                              {[uni.city, uni.country].filter(Boolean).join(", ") || "Not provided"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Institution Type</span>
+                            <span className="text-slate-300">{uni.type || uni.universityType || "Public"}</span>
+                          </div>
+                        </div>
+                      </div>
 
-                {/* Section B: Representative Information */}
-                <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                    <UserCheck className="w-4 h-4 text-teal-400" /> Representative Information
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-500 block">Full Name</span>
-                      <span className="text-slate-200 font-medium text-sm">{selectedApp.representativeInfo?.fullName}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Designation</span>
-                      <span className="text-slate-300">{selectedApp.representativeInfo?.designation}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Official University Email</span>
-                      <span className="text-slate-200 font-mono">{selectedApp.representativeInfo?.officialEmail}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Phone Number</span>
-                      <span className="text-slate-300">{selectedApp.representativeInfo?.phone}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Employee / Rep ID</span>
-                      <span className="text-slate-300 font-mono">{selectedApp.representativeInfo?.employeeId || "N/A"}</span>
-                    </div>
-                  </div>
-                </div>
+                      {/* Section B: Representative Information */}
+                      <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-teal-400" /> Representative Information
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-slate-500 block">Full Name</span>
+                            <span className="text-slate-200 font-medium text-sm">{rep.fullName || selectedApp.user?.name || "Not provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Designation</span>
+                            <span className="text-slate-300">{rep.designation || "Not provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Official University Email</span>
+                            <span className="text-slate-200 font-mono">{rep.officialEmail || selectedApp.user?.email || "Not provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Phone Number</span>
+                            <span className="text-slate-300">{rep.phone || selectedApp.user?.phone || "Not provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block">Employee / Rep ID</span>
+                            <span className="text-slate-300 font-mono">{rep.employeeId || "Not provided"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Section C: Authorization & Documents */}
                 <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
