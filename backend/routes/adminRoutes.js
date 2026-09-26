@@ -79,6 +79,7 @@ router.get('/users', getAdminUsers);
 router.get('/users/:id', getAdminUserById);
 router.put('/users/:id', updateAdminUser);
 router.delete('/users/:id', deleteAdminUser);
+router.delete('/students/:id', deleteAdminUser);
 
 // FIX: Agent suspend/reactivate - frontend calls PUT /api/admin/users/:id/status
 // updateAdminUser handles status + accountStatus fields, so this alias resolves the 404.

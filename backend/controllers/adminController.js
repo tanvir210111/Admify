@@ -840,10 +840,24 @@ export const updateAdminUser = async (req, res, next) => {
         }
         updates.email = email.toLowerCase().trim();
       }
-      if (status) updates.status = status;
+      if (status) {
+        updates.status = status;
+        if (status === 'suspended' && !accountStatus) {
+          updates.accountStatus = 'SUSPENDED';
+          updates.isActive = false;
+        } else if (status === 'active' && !accountStatus) {
+          updates.accountStatus = 'ACTIVE';
+          updates.isActive = true;
+        }
+      }
       if (accountStatus) {
         updates.accountStatus = accountStatus;
         updates.isActive = accountStatus === 'ACTIVE' || accountStatus === 'APPROVED';
+        if (accountStatus === 'SUSPENDED' && !status) {
+          updates.status = 'suspended';
+        } else if (accountStatus === 'ACTIVE' && !status) {
+          updates.status = 'active';
+        }
       }
       if (targetCountry !== undefined) updates.targetCountry = targetCountry;
       if (targetCourse !== undefined) updates.targetCourse = targetCourse;
@@ -869,10 +883,24 @@ export const updateAdminUser = async (req, res, next) => {
         }
         updates.email = email.toLowerCase().trim();
       }
-      if (status) updates.status = status;
+      if (status) {
+        updates.status = status;
+        if (status === 'suspended' && !accountStatus) {
+          updates.accountStatus = 'SUSPENDED';
+          updates.isActive = false;
+        } else if (status === 'active' && !accountStatus) {
+          updates.accountStatus = 'ACTIVE';
+          updates.isActive = true;
+        }
+      }
       if (accountStatus) {
         updates.accountStatus = accountStatus;
         updates.isActive = accountStatus === 'ACTIVE' || accountStatus === 'APPROVED';
+        if (accountStatus === 'SUSPENDED' && !status) {
+          updates.status = 'suspended';
+        } else if (accountStatus === 'ACTIVE' && !status) {
+          updates.status = 'active';
+        }
       }
       if (targetCountry !== undefined) updates.targetCountry = targetCountry;
       if (targetCourse !== undefined) updates.targetCourse = targetCourse;
@@ -933,6 +961,15 @@ export const deleteAdminUser = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
+    // 0. Cross-role verification for role-specific routes
+    const isStudentRoute = req.originalUrl?.includes('/api/admin/students') || req.baseUrl?.includes('students');
+    if (isStudentRoute && user.role !== 'student') {
+      return res.status(400).json({
+        success: false,
+        message: 'Target user is not a student.',
+      });
+    }
+
     // 1. Protect Admin accounts
     // Cannot delete currently logged in admin
     const currentAdminId = req.user?._id?.toString();
@@ -975,14 +1012,15 @@ export const deleteAdminUser = async (req, res, next) => {
     if (!isSuspended) {
       return res.status(409).json({
         success: false,
-        message: 'User must be suspended before deletion.',
+        message: `${user.role === 'student' ? 'Student' : 'User'} must be suspended before deletion.`,
       });
     }
 
     // 3. Record Audit Log before deletion (safe metadata only, no passwords/hashes/tokens)
+    const auditAction = user.role === 'student' ? 'ADMIN_DELETE_STUDENT' : (user.role === 'agent' ? 'ADMIN_DELETE_AGENT' : 'USER_PERMANENT_DELETE');
     await recordAuditLog({
       req,
-      action: 'USER_PERMANENT_DELETE',
+      action: auditAction,
       module: 'USERS',
       targetType: 'User',
       targetId: user._id.toString(),
@@ -996,7 +1034,7 @@ export const deleteAdminUser = async (req, res, next) => {
         status: user.status,
       },
       newValue: null,
-      reason: req.body?.reason || 'Admin permanently deleted suspended user',
+      reason: req.body?.reason || `Admin permanently deleted suspended ${user.role || 'user'}`,
     });
 
     // 4. Permanent physical deletion of User and exclusive related records
@@ -1012,6 +1050,8 @@ export const deleteAdminUser = async (req, res, next) => {
         await CreditTransaction.deleteMany({ user: user._id });
         await PaymentOrder.deleteMany({ user: user._id });
         await Notification.deleteMany({ user: user._id });
+        await Report.deleteMany({ reportedBy: user._id });
+        await ChatMessage.deleteMany({ user: user._id });
       } else if (user.role === 'agency') {
         await AgencyProfile.deleteOne({ user: user._id });
         await AgencyServiceOrder.deleteMany({ $or: [{ agency: user._id }, { user: user._id }] });
@@ -1039,6 +1079,8 @@ export const deleteAdminUser = async (req, res, next) => {
         db.creditTransactions = (db.creditTransactions || []).filter((c) => c.user?.toString() !== uid);
         db.paymentOrders = (db.paymentOrders || []).filter((p) => p.user?.toString() !== uid);
         db.notifications = (db.notifications || []).filter((n) => n.user?.toString() !== uid);
+        db.reports = (db.reports || []).filter((r) => r.reportedBy?.toString() !== uid);
+        db.chatMessages = (db.chatMessages || []).filter((m) => m.user?.toString() !== uid);
       } else if (user.role === 'agency') {
         db.agencyProfiles = (db.agencyProfiles || []).filter((p) => p.user?.toString() !== uid && p._id?.toString() !== uid);
         db.agencyServiceOrders = (db.agencyServiceOrders || []).filter((o) => o.agency?.toString() !== uid && o.user?.toString() !== uid);
@@ -1057,7 +1099,7 @@ export const deleteAdminUser = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'User permanently deleted.',
+      message: `${user.role === 'student' ? 'Student' : 'User'} permanently deleted.`,
     });
   } catch (error) {
     next(error);

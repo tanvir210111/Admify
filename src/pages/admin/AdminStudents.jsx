@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   GraduationCap, Search, Filter, Eye, Edit, Shield, CheckCircle,
   XCircle, AlertTriangle, RefreshCw, X, ChevronRight, Coins, Mail,
-  Phone, Calendar, Plus, ExternalLink, Download,
+  Phone, Calendar, Plus, ExternalLink, Download, Trash2, ShieldAlert,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
@@ -36,6 +36,11 @@ export default function AdminStudents() {
     ielts: "",
   });
   const [editLoading, setEditLoading] = useState(false);
+
+  // Permanent Delete Modal state
+  const [deleteModal, setDeleteModal] = useState(null); // student object
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -152,14 +157,16 @@ export default function AdminStudents() {
 
   // Suspend / Restore Student
   const handleToggleSuspend = async (student) => {
-    const isSuspended = student.status === "suspended";
+    const isSuspended =
+      (student.status || "").toLowerCase() === "suspended" ||
+      (student.accountStatus || "").toUpperCase() === "SUSPENDED";
     const nextStatus = isSuspended ? "active" : "suspended";
     if (!window.confirm(`Are you sure you want to ${isSuspended ? "RESTORE" : "SUSPEND"} student ${student.name}?`)) {
       return;
     }
 
     try {
-      const res = await api.put(`/api/admin/users/${student._id}`, {
+      const res = await api.put(`/api/admin/users/${student._id}/status`, {
         status: nextStatus,
         accountStatus: nextStatus === "active" ? "ACTIVE" : "SUSPENDED",
         reason: `Admin ${isSuspended ? "restored" : "suspended"} student account`,
@@ -168,11 +175,55 @@ export default function AdminStudents() {
       if (isSuccess) {
         toast.success(res?.message || res?.data?.message || `Student is now ${nextStatus}`);
         fetchStudents();
+        if (selectedStudent && selectedStudent._id === student._id) {
+          setSelectedStudent((prev) => ({
+            ...prev,
+            status: nextStatus,
+            accountStatus: nextStatus === "active" ? "ACTIVE" : "SUSPENDED",
+          }));
+        }
       } else {
         toast.error(res?.message || res?.data?.message || "Failed to update status");
       }
     } catch (err) {
       toast.error(err.response?.data?.message || err?.message || "Status update error");
+    }
+  };
+
+  // Permanently delete suspended student
+  const handleDeleteStudent = async () => {
+    if (!deleteModal) return;
+    if (deleteConfirmInput.trim().toUpperCase() !== "DELETE") {
+      toast.error('Please type "DELETE" exactly to confirm');
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/api/admin/users/${deleteModal._id}`);
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "Student permanently deleted");
+        const deletedId = deleteModal._id;
+        setDeleteModal(null);
+        setDeleteConfirmInput("");
+        setStudents((prev) => prev.filter((s) => s._id !== deletedId));
+        if (selectedStudent && selectedStudent._id === deletedId) {
+          setSelectedStudent(null);
+        }
+        fetchStudents();
+      } else {
+        toast.error(res?.message || res?.data?.message || "Failed to delete student");
+      }
+    } catch (err) {
+      console.error(err);
+      if (err.response?.status === 409) {
+        toast.error("Student must be suspended before deletion.");
+      } else {
+        toast.error(err.response?.data?.message || err?.message || "Failed to delete student");
+      }
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -321,7 +372,7 @@ export default function AdminStudents() {
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => openStudentDrawer(s)}
-                          className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
+                          className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
                           title="View Profile Drawer"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -339,22 +390,52 @@ export default function AdminStudents() {
                               ielts: s.ielts || "",
                             });
                           }}
-                          className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
+                          className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
                           title="Edit Student Info"
                         >
                           <Edit className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleToggleSuspend(s)}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            s.status === "suspended"
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            (s.status || "").toLowerCase() === "suspended" || (s.accountStatus || "").toUpperCase() === "SUSPENDED"
                               ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400"
                               : "bg-red-500/10 hover:bg-red-500/20 text-red-400"
                           }`}
-                          title={s.status === "suspended" ? "Restore Account" : "Suspend Account"}
+                          title={(s.status || "").toLowerCase() === "suspended" || (s.accountStatus || "").toUpperCase() === "SUSPENDED" ? "Restore Account" : "Suspend Account"}
                         >
-                          {s.status === "suspended" ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                          {(s.status || "").toLowerCase() === "suspended" || (s.accountStatus || "").toUpperCase() === "SUSPENDED" ? (
+                            <CheckCircle className="w-3.5 h-3.5" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5" />
+                          )}
                         </button>
+                        {(() => {
+                          const isSuspended =
+                            (s.status || "").toLowerCase() === "suspended" ||
+                            (s.accountStatus || "").toUpperCase() === "SUSPENDED";
+                          return (
+                            <button
+                              disabled={!isSuspended}
+                              onClick={() => {
+                                if (!isSuspended) return;
+                                setDeleteModal(s);
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                isSuspended
+                                  ? "bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 cursor-pointer"
+                                  : "opacity-30 text-slate-500 cursor-not-allowed"
+                              }`}
+                              title={
+                                isSuspended
+                                  ? "Permanently Delete Student"
+                                  : "Student must be suspended before deletion."
+                              }
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -501,14 +582,24 @@ export default function AdminStudents() {
                 </button>
                 <button
                   onClick={() => handleToggleSuspend(selectedStudent)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
-                    selectedStudent.status === "suspended"
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                    (selectedStudent.status || "").toLowerCase() === "suspended" || (selectedStudent.accountStatus || "").toUpperCase() === "SUSPENDED"
                       ? "bg-emerald-600 hover:bg-emerald-500 text-white"
                       : "bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30"
                   }`}
                 >
-                  {selectedStudent.status === "suspended" ? "Restore" : "Suspend"}
+                  {(selectedStudent.status || "").toLowerCase() === "suspended" || (selectedStudent.accountStatus || "").toUpperCase() === "SUSPENDED" ? "Restore" : "Suspend"}
                 </button>
+                {((selectedStudent.status || "").toLowerCase() === "suspended" || (selectedStudent.accountStatus || "").toUpperCase() === "SUSPENDED") && (
+                  <button
+                    onClick={() => {
+                      setDeleteModal(selectedStudent);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/40 flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
+                )}
               </div>
             </motion.div>
           </>
@@ -700,6 +791,86 @@ export default function AdminStudents() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Permanent Delete Confirmation Modal ────────────────────────────── */}
+      <AnimatePresence>
+        {deleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md p-6 rounded-2xl border border-rose-500/30 shadow-2xl space-y-4"
+              style={{ background: "#0B1228" }}
+            >
+              <div className="flex items-center gap-3 text-rose-400">
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <ShieldAlert className="w-6 h-6 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Delete Student</h3>
+                  <p className="text-xs text-rose-400 font-medium">Permanent Record Removal</p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/4 border border-white/8 space-y-2 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Student</span>
+                  <span className="text-white font-bold">{deleteModal.name || "Unnamed Student"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Email</span>
+                  <span className="text-slate-200 font-mono text-[11px]">{deleteModal.email}</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-300 text-xs">
+                This action permanently removes the student account and associated student-owned records from the database.
+              </div>
+
+              <div>
+                <label className="text-slate-400 block text-xs mb-1.5">
+                  Type <strong className="text-white font-mono">DELETE</strong> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmInput}
+                  onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                  placeholder="DELETE"
+                  className="w-full bg-white/4 border border-rose-500/30 rounded-xl px-3 py-2 text-white font-mono text-sm tracking-widest focus:outline-none focus:border-rose-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteModal(null);
+                    setDeleteConfirmInput("");
+                  }}
+                  className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteConfirmInput.trim().toUpperCase() !== "DELETE" || deleteLoading}
+                  onClick={handleDeleteStudent}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {deleteLoading ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  Permanently Delete
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
