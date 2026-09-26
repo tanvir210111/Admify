@@ -549,31 +549,121 @@ class DevStore {
     if (!userId) return null;
     const db = this.read();
     const idStr = userId.toString();
-    return db.agencyProfiles.find((p) => p.user?.toString() === idStr) || null;
+    let profile = (db.agencyProfiles || []).find(
+      (p) =>
+        p.user?.toString() === idStr ||
+        p.user?._id?.toString() === idStr ||
+        p.userId?.toString() === idStr
+    ) || null;
+    if (!profile) {
+      const u = (db.users || []).find((usr) => usr._id?.toString() === idStr && usr.role === 'agency');
+      if (u) {
+        profile = (db.agencyProfiles || []).find(
+          (p) => p.officialBusinessEmail && p.officialBusinessEmail.toLowerCase() === (u.email || '').toLowerCase()
+        ) || null;
+        if (profile) {
+          profile.user = u._id;
+          this.write(db);
+        }
+      }
+    }
+    return profile;
   }
 
   async findAgencyProfileById(id) {
     if (!id) return null;
     const db = this.read();
     const idStr = id.toString();
-    return db.agencyProfiles.find((p) => p._id === idStr) || null;
+    let profile = (db.agencyProfiles || []).find((p) => p._id === idStr) || null;
+    if (!profile) {
+      profile = await this.findAgencyProfileByUserId(id);
+    }
+    if (!profile) {
+      profile = await this.findAgencyProfileByApplicationId(id);
+    }
+    return profile;
   }
 
   async findAgencyProfileByApplicationId(applicationId) {
     if (!applicationId) return null;
     const db = this.read();
-    return db.agencyProfiles.find((p) => p.applicationId === applicationId) || null;
+    return (db.agencyProfiles || []).find((p) => p.applicationId === applicationId) || null;
   }
 
   async findAgencyProfiles(query = {}) {
     const db = this.read();
-    let list = db.agencyProfiles || [];
-    if (query.verificationStatus) {
-      list = list.filter((p) => p.verificationStatus === query.verificationStatus);
+    if (!Array.isArray(db.agencyProfiles)) db.agencyProfiles = [];
+    let list = db.agencyProfiles;
+    const agencyUsers = (db.users || []).filter((u) => u.role === 'agency');
+
+    // Auto-synchronize: ensure EVERY agency user has a canonical AgencyProfile
+    let dirty = false;
+    for (const u of agencyUsers) {
+      const uid = u._id?.toString();
+      let p = list.find((item) => (
+        item.user?.toString() === uid ||
+        item.user?._id?.toString() === uid ||
+        (item.officialBusinessEmail && item.officialBusinessEmail.toLowerCase() === (u.email || '').toLowerCase())
+      ));
+
+      if (!p) {
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+        const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+        const appId = u.applicationId || `ADM-AGY-2026-${timeCode}${randomSuffix}`;
+        p = {
+          _id: new mongoose.Types.ObjectId().toString(),
+          user: uid,
+          agencyName: u.name || 'Agency ' + (u.email || '').split('@')[0],
+          officialBusinessEmail: u.email,
+          applicationId: appId,
+          verificationStatus: (u.agencyVerificationStatus || (u.accountStatus === 'APPROVED' ? 'VERIFIED' : 'PENDING')).toUpperCase(),
+          isDraft: true,
+          authorizedPerson: {
+            fullName: u.name || '',
+            phone: u.phone || '',
+            email: u.email || '',
+            designation: 'Managing Director',
+          },
+          businessVerification: {},
+          createdAt: u.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        list.push(p);
+        u.agencyProfile = p._id;
+        dirty = true;
+      } else {
+        if (!p.user || p.user.toString() !== uid) {
+          p.user = uid;
+          dirty = true;
+        }
+        if (!u.agencyProfile || u.agencyProfile.toString() !== p._id.toString()) {
+          u.agencyProfile = p._id;
+          dirty = true;
+        }
+      }
     }
-    // populate user
-    return list.map((p) => {
-      const user = db.users.find((u) => u._id === p.user?.toString());
+    if (dirty) {
+      db.agencyProfiles = list;
+      this.write(db);
+    }
+
+    // Filter by verificationStatus
+    const st = (query.verificationStatus || query.status || '').toUpperCase();
+    if (st && st !== 'ALL') {
+      if (st === 'VERIFIED' || st === 'APPROVED') {
+        list = list.filter((p) => {
+          const s = (p.verificationStatus || '').toUpperCase();
+          return s === 'VERIFIED' || s === 'APPROVED';
+        });
+      } else {
+        list = list.filter((p) => (p.verificationStatus || '').toUpperCase() === st);
+      }
+    }
+
+    // Populate user
+    let populated = list.map((p) => {
+      const uId = p.user?._id || p.user;
+      const user = db.users.find((u) => u._id === uId?.toString());
       return {
         ...p,
         user: user
@@ -585,10 +675,33 @@ class DevStore {
               role: user.role,
               status: user.status,
               accountStatus: user.accountStatus,
+              agencyVerificationStatus: user.agencyVerificationStatus || p.verificationStatus,
+              createdAt: user.createdAt,
             }
           : null,
       };
     });
+
+    // Filter by search
+    const s = (query.search || '').toLowerCase().trim();
+    if (s) {
+      populated = populated.filter((p) => {
+        return (
+          p.agencyName?.toLowerCase().includes(s) ||
+          p.legalName?.toLowerCase().includes(s) ||
+          p.officialBusinessEmail?.toLowerCase().includes(s) ||
+          p.applicationId?.toLowerCase().includes(s) ||
+          p.authorizedPerson?.fullName?.toLowerCase().includes(s) ||
+          p.authorizedPerson?.phone?.toLowerCase().includes(s) ||
+          p.authorizedPerson?.email?.toLowerCase().includes(s) ||
+          p.user?.name?.toLowerCase().includes(s) ||
+          p.user?.email?.toLowerCase().includes(s) ||
+          p.user?.phone?.toLowerCase().includes(s)
+        );
+      });
+    }
+
+    return populated.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }
 
   async saveAgencyProfile(profileData) {
@@ -598,7 +711,9 @@ class DevStore {
     if (profileData._id) {
       existingIndex = db.agencyProfiles.findIndex((p) => p._id === profileData._id);
     } else if (profileData.user) {
-      existingIndex = db.agencyProfiles.findIndex((p) => p.user?.toString() === profileData.user.toString());
+      existingIndex = db.agencyProfiles.findIndex(
+        (p) => (p.user?.toString() || p.user?._id?.toString()) === (profileData.user.toString() || profileData.user._id?.toString())
+      );
     }
 
     if (existingIndex >= 0) {

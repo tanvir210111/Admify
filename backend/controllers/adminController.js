@@ -2935,15 +2935,91 @@ export const assignAgencyToOrder = async (req, res, next) => {
 // ── Agency Verification Admin Review ──────────────────────────────────────────
 export const getAllAgencyVerifications = async (req, res, next) => {
   try {
-    const { status } = req.query;
-    const query = {};
-    if (status && status !== 'all') {
-      query.verificationStatus = status.toUpperCase();
-    }
+    const { status, search } = req.query;
 
     if (mongoose.connection.readyState === 1) {
+      // 1. Auto-synchronize: Ensure every user with role 'agency' has a canonical AgencyProfile
+      const agencyUsers = await User.find({ role: 'agency' });
+      for (const u of agencyUsers) {
+        let profile = await AgencyProfile.findOne({
+          $or: [{ user: u._id }, { officialBusinessEmail: u.email }],
+        });
+
+        if (!profile) {
+          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+          const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+          const applicationId = u.applicationId || `ADM-AGY-2026-${timeCode}${randomSuffix}`;
+          profile = await AgencyProfile.create({
+            user: u._id,
+            agencyName: u.name || 'Agency ' + (u.email || '').split('@')[0],
+            officialBusinessEmail: u.email,
+            applicationId,
+            verificationStatus: (u.agencyVerificationStatus || (u.accountStatus === 'APPROVED' ? 'VERIFIED' : 'PENDING')).toUpperCase(),
+            isDraft: true,
+            authorizedPerson: {
+              fullName: u.name || '',
+              phone: u.phone || '',
+              email: u.email || '',
+              designation: 'Managing Director',
+            },
+            createdAt: u.createdAt || new Date(),
+          });
+          u.agencyProfile = profile._id;
+          await u.save();
+        } else {
+          let dirty = false;
+          if (!profile.user || profile.user.toString() !== u._id.toString()) {
+            profile.user = u._id;
+            dirty = true;
+          }
+          if (!profile.officialBusinessEmail && u.email) {
+            profile.officialBusinessEmail = u.email;
+            dirty = true;
+          }
+          if (dirty) {
+            await profile.save();
+          }
+          if (!u.agencyProfile || u.agencyProfile.toString() !== profile._id.toString()) {
+            u.agencyProfile = profile._id;
+            await u.save();
+          }
+        }
+      }
+
+      // 2. Build Query
+      const query = {};
+      if (status && status !== 'all') {
+        const st = status.toUpperCase();
+        if (st === 'VERIFIED' || st === 'APPROVED') {
+          query.verificationStatus = { $in: ['VERIFIED', 'APPROVED'] };
+        } else {
+          query.verificationStatus = st;
+        }
+      }
+
+      if (search && search.trim()) {
+        const s = search.trim();
+        const regex = new RegExp(s, 'i');
+        const matchedUsers = await User.find({
+          role: 'agency',
+          $or: [{ name: regex }, { email: regex }, { phone: regex }],
+        }).select('_id');
+        const matchedUserIds = matchedUsers.map((mu) => mu._id);
+
+        query.$or = [
+          { agencyName: regex },
+          { legalName: regex },
+          { officialBusinessEmail: regex },
+          { applicationId: regex },
+          { 'authorizedPerson.fullName': regex },
+          { 'authorizedPerson.email': regex },
+          { 'authorizedPerson.phone': regex },
+          { user: { $in: matchedUserIds } },
+        ];
+      }
+
       const verifications = await AgencyProfile.find(query)
-        .populate('user', 'name email phone role status')
+        .populate('user', 'name email phone role status accountStatus agencyVerificationStatus createdAt')
         .populate('reviewedBy', 'name email')
         .sort({ createdAt: -1 });
 
@@ -2951,13 +3027,15 @@ export const getAllAgencyVerifications = async (req, res, next) => {
         success: true,
         count: verifications.length,
         data: { verifications },
+        verifications,
       });
     } else {
-      const verifications = await devStore.findAgencyProfiles(query);
+      const verifications = await devStore.findAgencyProfiles({ verificationStatus: status, search });
       return res.status(200).json({
         success: true,
         count: verifications.length,
         data: { verifications },
+        verifications,
       });
     }
   } catch (error) {
@@ -2967,13 +3045,64 @@ export const getAllAgencyVerifications = async (req, res, next) => {
 
 export const getAgencyVerificationDetails = async (req, res, next) => {
   try {
-    let verification;
+    const { id } = req.params;
+    let verification = null;
+
     if (mongoose.connection.readyState === 1) {
-      verification = await AgencyProfile.findById(req.params.id)
-        .populate('user', 'name email phone role status')
-        .populate('reviewedBy', 'name email');
+      if (mongoose.Types.ObjectId.isValid(id)) {
+        verification = await AgencyProfile.findById(id)
+          .populate('user', 'name email phone role status accountStatus agencyVerificationStatus createdAt')
+          .populate('reviewedBy', 'name email');
+
+        if (!verification) {
+          verification = await AgencyProfile.findOne({ user: id })
+            .populate('user', 'name email phone role status accountStatus agencyVerificationStatus createdAt')
+            .populate('reviewedBy', 'name email');
+        }
+      }
+
+      if (!verification) {
+        verification = await AgencyProfile.findOne({ applicationId: id })
+          .populate('user', 'name email phone role status accountStatus agencyVerificationStatus createdAt')
+          .populate('reviewedBy', 'name email');
+      }
+
+      if (!verification && mongoose.Types.ObjectId.isValid(id)) {
+        const agencyUser = await User.findById(id);
+        if (agencyUser && agencyUser.role === 'agency') {
+          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+          const timeCode = Date.now().toString(36).toUpperCase().slice(-4);
+          const applicationId = agencyUser.applicationId || `ADM-AGY-2026-${timeCode}${randomSuffix}`;
+          verification = await AgencyProfile.create({
+            user: agencyUser._id,
+            agencyName: agencyUser.name || 'Agency ' + (agencyUser.email || '').split('@')[0],
+            officialBusinessEmail: agencyUser.email,
+            applicationId,
+            verificationStatus: agencyUser.agencyVerificationStatus || 'PENDING',
+            isDraft: true,
+            authorizedPerson: {
+              fullName: agencyUser.name || '',
+              phone: agencyUser.phone || '',
+              email: agencyUser.email || '',
+              designation: 'Managing Director',
+            },
+            createdAt: agencyUser.createdAt || new Date(),
+          });
+          agencyUser.agencyProfile = verification._id;
+          await agencyUser.save();
+          verification = await AgencyProfile.findById(verification._id)
+            .populate('user', 'name email phone role status accountStatus agencyVerificationStatus createdAt')
+            .populate('reviewedBy', 'name email');
+        }
+      }
     } else {
-      verification = await devStore.findAgencyProfileById(req.params.id);
+      verification = await devStore.findAgencyProfileById(id);
+      if (!verification) {
+        verification = await devStore.findAgencyProfileByUserId(id);
+      }
+      if (!verification) {
+        verification = await devStore.findAgencyProfileByApplicationId(id);
+      }
     }
 
     if (!verification) {
@@ -2983,6 +3112,7 @@ export const getAgencyVerificationDetails = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: { verification },
+      verification,
     });
   } catch (error) {
     next(error);
@@ -2991,18 +3121,20 @@ export const getAgencyVerificationDetails = async (req, res, next) => {
 
 export const updateAgencyVerificationStatus = async (req, res, next) => {
   try {
-    const status = (req.body.status || '').toUpperCase();
+    const rawStatus = (req.body.status || '').toUpperCase();
     const { rejectionReason = '', adminNotes = '' } = req.body;
-    const allowedStatuses = ['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED', 'SUSPENDED'];
+    const allowedStatuses = ['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'APPROVED', 'REJECTED', 'SUSPENDED'];
 
-    if (!allowedStatuses.includes(status)) {
+    if (!allowedStatuses.includes(rawStatus)) {
       return res.status(400).json({
         success: false,
         message: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}`,
       });
     }
 
-    if (status === 'REJECTED' && !rejectionReason.trim()) {
+    const canonicalStatus = rawStatus === 'APPROVED' ? 'VERIFIED' : rawStatus;
+
+    if (canonicalStatus === 'REJECTED' && !rejectionReason.trim()) {
       return res.status(400).json({
         success: false,
         message: 'A rejection reason is required when rejecting an agency verification application.',
@@ -3014,7 +3146,17 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
     let emailResult = null;
 
     if (mongoose.connection.readyState === 1) {
-      const verification = await AgencyProfile.findById(req.params.id);
+      let verification = null;
+      if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+        verification = await AgencyProfile.findById(req.params.id);
+        if (!verification) {
+          verification = await AgencyProfile.findOne({ user: req.params.id });
+        }
+      }
+      if (!verification) {
+        verification = await AgencyProfile.findOne({ applicationId: req.params.id });
+      }
+
       if (!verification) {
         return res.status(404).json({ success: false, message: 'Agency verification profile not found' });
       }
@@ -3024,15 +3166,16 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
         return res.status(404).json({ success: false, message: 'Associated agency user account not found' });
       }
 
-      verification.verificationStatus = status;
+      const prevStatus = verification.verificationStatus;
+      verification.verificationStatus = canonicalStatus;
       verification.reviewedAt = now;
       verification.reviewedBy = req.user._id;
       if (adminNotes) verification.adminNotes = adminNotes;
       if (!Array.isArray(verification.statusHistory)) verification.statusHistory = [];
 
-      let userUpdates = { agencyVerificationStatus: status };
+      let userUpdates = { agencyVerificationStatus: canonicalStatus };
 
-      if (status === 'VERIFIED') {
+      if (canonicalStatus === 'VERIFIED') {
         verification.rejectionReason = '';
         verification.statusHistory.push({
           status: 'VERIFIED',
@@ -3061,7 +3204,7 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           applicationId: verification.applicationId || 'ADM-AGY-2026',
           activationToken: rawActivationToken,
         });
-      } else if (status === 'REJECTED') {
+      } else if (canonicalStatus === 'REJECTED') {
         verification.rejectionReason = rejectionReason.trim();
         verification.statusHistory.push({
           status: 'REJECTED',
@@ -3076,36 +3219,56 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           status: 'pending',
           isActive: false,
         };
-      } else {
-        userUpdates = { ...userUpdates, accountStatus: status };
+      } else if (canonicalStatus === 'UNDER_REVIEW') {
+        verification.statusHistory.push({
+          status: 'UNDER_REVIEW',
+          changedAt: now,
+          changedBy: req.user._id,
+          note: adminNotes || 'Agency under review by Administrator.',
+        });
+        userUpdates = { ...userUpdates, accountStatus: 'UNDER_REVIEW' };
+      } else if (canonicalStatus === 'PENDING') {
+        userUpdates = { ...userUpdates, accountStatus: 'PENDING' };
+      } else if (canonicalStatus === 'SUSPENDED') {
+        userUpdates = { ...userUpdates, accountStatus: 'SUSPENDED', status: 'suspended' };
       }
 
       await verification.save();
-      await User.findByIdAndUpdate(verification.user, userUpdates);
+      Object.assign(agencyUser, userUpdates);
+      await agencyUser.save();
 
       await recordAuditLog({
         req,
-        action: status === 'VERIFIED' ? 'APPROVED_AGENCY' : status === 'REJECTED' ? 'REJECTED_AGENCY' : 'UPDATED_AGENCY',
+        action: canonicalStatus === 'VERIFIED' ? 'APPROVED_AGENCY' : canonicalStatus === 'REJECTED' ? 'REJECTED_AGENCY' : 'UPDATED_AGENCY_STATUS',
         module: 'agencies',
         targetType: 'AgencyProfile',
         targetId: verification._id,
         targetName: verification.agencyName,
-        newValue: { status },
-        reason: rejectionReason || adminNotes,
+        previousValue: { verificationStatus: prevStatus },
+        newValue: { verificationStatus: canonicalStatus, rejectionReason, adminNotes },
+        reason: rejectionReason || adminNotes || `Status updated from ${prevStatus} to ${canonicalStatus}`,
       });
 
       return res.status(200).json({
         success: true,
-        message: `Agency verification status updated to ${status}.${status === 'VERIFIED' ? ' Activation email dispatched.' : ''}`,
+        message: `Agency verification status updated to ${canonicalStatus}.${canonicalStatus === 'VERIFIED' ? ' Activation email dispatched.' : ''}`,
         data: {
           verification,
           emailDispatched: emailResult?.delivered || false,
           activationUrl: emailResult?.activationUrl || null,
           activationToken: rawActivationToken,
         },
+        verification,
       });
     } else {
       let verification = await devStore.findAgencyProfileById(req.params.id);
+      if (!verification) {
+        verification = await devStore.findAgencyProfileByUserId(req.params.id);
+      }
+      if (!verification) {
+        verification = await devStore.findAgencyProfileByApplicationId(req.params.id);
+      }
+
       if (!verification) {
         return res.status(404).json({ success: false, message: 'Agency verification profile not found' });
       }
@@ -3116,10 +3279,10 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
         return res.status(404).json({ success: false, message: 'Associated agency user account not found' });
       }
 
-      let userUpdates = { agencyVerificationStatus: status };
+      let userUpdates = { agencyVerificationStatus: canonicalStatus };
       let history = Array.isArray(verification.statusHistory) ? [...verification.statusHistory] : [];
 
-      if (status === 'VERIFIED') {
+      if (canonicalStatus === 'VERIFIED') {
         rawActivationToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = crypto.createHash('sha256').update(rawActivationToken).digest('hex');
         const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
@@ -3147,7 +3310,7 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           applicationId: verification.applicationId || 'ADM-AGY-2026',
           activationToken: rawActivationToken,
         });
-      } else if (status === 'REJECTED') {
+      } else if (canonicalStatus === 'REJECTED') {
         userUpdates = {
           ...userUpdates,
           accountStatus: 'REJECTED',
@@ -3161,15 +3324,21 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           changedBy: req.user._id,
           note: `Rejected: ${rejectionReason.trim()}`,
         });
+      } else if (canonicalStatus === 'UNDER_REVIEW') {
+        userUpdates = { ...userUpdates, accountStatus: 'UNDER_REVIEW' };
+      } else if (canonicalStatus === 'PENDING') {
+        userUpdates = { ...userUpdates, accountStatus: 'PENDING' };
+      } else if (canonicalStatus === 'SUSPENDED') {
+        userUpdates = { ...userUpdates, accountStatus: 'SUSPENDED', status: 'suspended' };
       }
 
       verification = await devStore.saveAgencyProfile({
         ...verification,
-        verificationStatus: status,
+        verificationStatus: canonicalStatus,
         reviewedAt: now.toISOString(),
         reviewedBy: req.user._id,
         adminNotes: adminNotes || verification.adminNotes || '',
-        rejectionReason: status === 'REJECTED' ? rejectionReason.trim() : '',
+        rejectionReason: canonicalStatus === 'REJECTED' ? rejectionReason.trim() : '',
         statusHistory: history,
       });
 
@@ -3177,24 +3346,25 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
 
       await recordAuditLog({
         req,
-        action: status === 'VERIFIED' ? 'APPROVED_AGENCY' : status === 'REJECTED' ? 'REJECTED_AGENCY' : 'UPDATED_AGENCY',
+        action: canonicalStatus === 'VERIFIED' ? 'APPROVED_AGENCY' : canonicalStatus === 'REJECTED' ? 'REJECTED_AGENCY' : 'UPDATED_AGENCY',
         module: 'agencies',
         targetType: 'AgencyProfile',
         targetId: verification._id,
         targetName: verification.agencyName,
-        newValue: { status },
+        newValue: { status: canonicalStatus },
         reason: rejectionReason || adminNotes,
       });
 
       return res.status(200).json({
         success: true,
-        message: `Agency verification status updated to ${status}.${status === 'VERIFIED' ? ' Activation email dispatched.' : ''}`,
+        message: `Agency verification status updated to ${canonicalStatus}.${canonicalStatus === 'VERIFIED' ? ' Activation email dispatched.' : ''}`,
         data: {
           verification,
           emailDispatched: emailResult?.delivered || false,
           activationUrl: emailResult?.activationUrl || null,
           activationToken: rawActivationToken,
         },
+        verification,
       });
     }
   } catch (error) {

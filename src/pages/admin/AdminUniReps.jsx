@@ -125,7 +125,7 @@ export default function AdminUniReps() {
   };
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
+    <div className="space-y-6 max-w-[1600px] w-full mx-auto pb-10 min-w-0">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -139,7 +139,7 @@ export default function AdminUniReps() {
         </div>
         <button
           onClick={fetchApplications}
-          className="flex items-center gap-2 px-3.5 py-2 bg-white/5 hover:bg-white/8 border border-white/10 text-slate-300 text-xs font-semibold rounded-xl transition-colors"
+          className="flex items-center gap-2 px-3.5 py-2 bg-white/5 hover:bg-white/8 border border-white/10 text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Refresh List
         </button>
@@ -147,7 +147,7 @@ export default function AdminUniReps() {
 
       {/* Toolbar: Search + Filter */}
       <div
-        className="p-4 rounded-2xl border flex flex-col sm:flex-row gap-3 items-center justify-between"
+        className="p-4 rounded-2xl border flex flex-col sm:flex-row gap-3 items-center justify-between w-full max-w-full min-w-0"
         style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
       >
         <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
@@ -160,12 +160,12 @@ export default function AdminUniReps() {
           />
         </form>
 
-        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto">
+        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto min-w-0 max-w-full">
           {["all", "PENDING", "UNDER_REVIEW", "APPROVED", "ACTIVE", "REJECTED"].map((st) => (
             <button
               key={st}
               onClick={() => setFilter(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
                 filter === st
                   ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/30"
                   : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
@@ -179,11 +179,11 @@ export default function AdminUniReps() {
 
       {/* Applications Table */}
       <div
-        className="rounded-2xl border overflow-hidden"
+        className="rounded-2xl border overflow-hidden w-full max-w-full"
         style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
       >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left" style={{ minWidth: "900px" }}>
             <thead>
               <tr className="border-b border-white/8 text-[11px] text-slate-400 uppercase tracking-widest bg-white/2">
                 <th className="px-4 py-3 font-bold">Representative & University</th>

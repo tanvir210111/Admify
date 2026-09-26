@@ -190,7 +190,7 @@ export default function AdminLayout() {
       </aside>
 
       {/* ── Main Area ── */}
-      <div className="flex-1 xl:pl-64 flex flex-col min-h-screen">
+      <div className="flex-1 xl:pl-64 flex flex-col min-h-screen min-w-0 max-w-full overflow-x-hidden">
 
         {/* ── Fixed Top Header ── */}
         <header className="sticky top-0 z-30 h-16 flex items-center justify-between px-4 md:px-6 flex-shrink-0"
@@ -377,7 +377,7 @@ export default function AdminLayout() {
         </header>
 
         {/* ── Page Content ── */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
+        <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 min-w-0 max-w-full">
           <Outlet />
         </main>
       </div>

@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Building2, Search, Filter, Eye, CheckCircle2, XCircle, AlertTriangle,
   FileText, ExternalLink, ShieldCheck, RefreshCw, X, Clock,
-  ChevronRight, Phone, Mail, Globe, MapPin, Award,
+  ChevronRight, Phone, Mail, Globe, MapPin, Award, Briefcase, Calendar,
+  Hash, Users, User,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
@@ -12,6 +13,7 @@ const STATUS_MAP = {
   PENDING: { label: "Pending", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
   UNDER_REVIEW: { label: "Under Review", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   VERIFIED: { label: "Verified / Approved", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  APPROVED: { label: "Verified / Approved", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
   REJECTED: { label: "Rejected", cls: "bg-rose-500/15 text-rose-400 border-rose-500/30" },
   SUSPENDED: { label: "Suspended", cls: "bg-red-500/15 text-red-400 border-red-500/30" },
 };
@@ -35,26 +37,36 @@ export default function AdminAgencies() {
   const fetchAgencies = async () => {
     setLoading(true);
     try {
-      const url = filter !== "all"
-        ? `/api/admin/agencies/verifications?status=${encodeURIComponent(filter)}`
-        : "/api/admin/agencies/verifications";
+      const params = new URLSearchParams();
+      if (filter && filter !== "all") params.append("status", filter);
+      if (search && search.trim()) params.append("search", search.trim());
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const url = `/api/admin/agencies/verifications${queryString}`;
       const data = await api.get(url);
       if (data?.success) {
-        setVerifications(data.data?.verifications || []);
+        setVerifications(data.data?.verifications || data?.verifications || []);
       } else {
         toast.error(data?.message || "Failed to load agency verifications");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load agency verifications");
+      toast.error(err.response?.data?.message || err?.message || "Failed to load agency verifications");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchAgencies();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [filter, search]);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
     fetchAgencies();
-  }, [filter]);
+  };
 
   const handleUpdateStatus = async (e) => {
     e.preventDefault();
@@ -80,31 +92,46 @@ export default function AdminAgencies() {
         setAdminNotes("");
         fetchAgencies();
         if (selectedAgency && selectedAgency._id === actionModal.agency._id) {
-          setSelectedAgency({ ...selectedAgency, verificationStatus: actionModal.targetStatus });
+          setSelectedAgency({
+            ...selectedAgency,
+            verificationStatus: actionModal.targetStatus,
+            adminNotes: adminNotes.trim() || selectedAgency.adminNotes,
+            rejectionReason: actionModal.targetStatus === "REJECTED" ? rejectionReason.trim() : "",
+          });
         }
       } else {
-        toast.error(data.message || "Failed to update status");
+        toast.error(data?.message || "Failed to update status");
       }
     } catch (err) {
-      toast.error("Network error while updating agency status");
+      console.error(err);
+      toast.error(err.response?.data?.message || err?.message || "Network error while updating agency status");
     } finally {
       setActionLoading(false);
     }
   };
 
+  // Robust client-side fallback filtering
   const filtered = verifications.filter((v) => {
     const s = search.toLowerCase().trim();
     if (!s) return true;
     return (
       v.agencyName?.toLowerCase().includes(s) ||
+      v.legalName?.toLowerCase().includes(s) ||
       v.officialBusinessEmail?.toLowerCase().includes(s) ||
       v.applicationId?.toLowerCase().includes(s) ||
-      v.user?.name?.toLowerCase().includes(s)
+      v.user?.name?.toLowerCase().includes(s) ||
+      v.user?.email?.toLowerCase().includes(s) ||
+      v.user?.phone?.toLowerCase().includes(s) ||
+      v.authorizedPerson?.fullName?.toLowerCase().includes(s) ||
+      v.authorizedPerson?.email?.toLowerCase().includes(s) ||
+      v.authorizedPerson?.phone?.toLowerCase().includes(s) ||
+      v.authorizedPersonName?.toLowerCase().includes(s) ||
+      v.officialPhone?.toLowerCase().includes(s)
     );
   });
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
+    <div className="space-y-6 max-w-[1600px] w-full mx-auto pb-10 min-w-0">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -118,7 +145,7 @@ export default function AdminAgencies() {
         </div>
         <button
           onClick={fetchAgencies}
-          className="flex items-center gap-2 px-3.5 py-2 bg-white/5 hover:bg-white/8 border border-white/10 text-slate-300 text-xs font-semibold rounded-xl transition-colors"
+          className="flex items-center gap-2 px-3.5 py-2 bg-white/5 hover:bg-white/8 border border-white/10 text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Refresh List
         </button>
@@ -126,31 +153,37 @@ export default function AdminAgencies() {
 
       {/* Filter / Search Bar */}
       <div
-        className="p-4 rounded-2xl border flex flex-col sm:flex-row gap-3 items-center justify-between"
+        className="p-4 rounded-2xl border flex flex-col sm:flex-row gap-3 items-center justify-between w-full max-w-full min-w-0"
         style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
       >
-        <div className="relative w-full sm:w-80">
+        <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search agencies by name, email, App ID..."
+            placeholder="Search agencies by name, email, App ID, phone..."
             className="w-full bg-white/4 border border-white/8 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50"
           />
-        </div>
+        </form>
 
-        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto">
-          {["all", "PENDING", "UNDER_REVIEW", "VERIFIED", "REJECTED"].map((st) => (
+        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto min-w-0 max-w-full">
+          {[
+            { id: "all", label: "All Agencies" },
+            { id: "PENDING", label: "Pending" },
+            { id: "UNDER_REVIEW", label: "Under Review" },
+            { id: "VERIFIED", label: "Verified / Approved" },
+            { id: "REJECTED", label: "Rejected" },
+          ].map((st) => (
             <button
-              key={st}
-              onClick={() => setFilter(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
-                filter === st
+              key={st.id}
+              onClick={() => setFilter(st.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
+                filter === st.id
                   ? "bg-violet-600/30 text-violet-300 border border-violet-500/30"
                   : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
               }`}
             >
-              {st === "all" ? "All Agencies" : STATUS_MAP[st]?.label || st}
+              {st.label}
             </button>
           ))}
         </div>
@@ -158,11 +191,11 @@ export default function AdminAgencies() {
 
       {/* Agencies Table */}
       <div
-        className="rounded-2xl border overflow-hidden"
+        className="rounded-2xl border overflow-hidden w-full max-w-full"
         style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
       >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left" style={{ minWidth: "900px" }}>
             <thead>
               <tr className="border-b border-white/8 text-[11px] text-slate-400 uppercase tracking-widest bg-white/2">
                 <th className="px-4 py-3 font-bold">Agency Name & App ID</th>
@@ -183,12 +216,19 @@ export default function AdminAgencies() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-slate-500 text-xs">
-                    No agency records found.
+                    No agency records found matching current query.
                   </td>
                 </tr>
               ) : (
                 filtered.map((agency) => {
-                  const statusInfo = STATUS_MAP[agency.verificationStatus] || STATUS_MAP.PENDING;
+                  const statusKey = (agency.verificationStatus || agency.user?.agencyVerificationStatus || "PENDING").toUpperCase();
+                  const statusInfo = STATUS_MAP[statusKey] || STATUS_MAP.PENDING;
+                  const agencyName = agency.agencyName || agency.user?.name || "Agency Profile";
+                  const contactName = agency.authorizedPerson?.fullName || agency.authorizedPersonName || agency.user?.name || "—";
+                  const contactEmail = agency.officialBusinessEmail || agency.authorizedPerson?.email || agency.user?.email || "—";
+                  const contactPhone = agency.authorizedPerson?.phone || agency.officialPhone || agency.user?.phone || "";
+                  const location = [agency.city || agency.user?.city, agency.country || agency.user?.country].filter(Boolean).join(", ") || "—";
+
                   return (
                     <tr
                       key={agency._id}
@@ -200,23 +240,27 @@ export default function AdminAgencies() {
                             {agency.logo ? (
                               <img src={agency.logo} alt="Logo" className="w-full h-full object-cover rounded-xl" />
                             ) : (
-                              agency.agencyName?.charAt(0) || "A"
+                              agencyName.charAt(0) || "A"
                             )}
                           </div>
                           <div>
-                            <p className="font-bold text-white text-xs">{agency.agencyName}</p>
+                            <p className="font-bold text-white text-xs">{agencyName}</p>
                             <span className="font-mono text-[10px] text-violet-400">
-                              {agency.applicationId || "N/A"}
+                              {agency.applicationId || "ADM-AGY-PENDING"}
                             </span>
+                            {agency.legalName && agency.legalName !== agencyName && (
+                              <p className="text-[10px] text-slate-500 truncate max-w-[200px]">{agency.legalName}</p>
+                            )}
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        <p className="text-slate-200 font-semibold">{agency.authorizedPersonName || agency.user?.name || "—"}</p>
-                        <p className="text-slate-400 text-[11px]">{agency.officialBusinessEmail || agency.user?.email}</p>
+                        <p className="text-slate-200 font-semibold">{contactName}</p>
+                        <p className="text-slate-400 text-[11px]">{contactEmail}</p>
+                        {contactPhone && <p className="text-slate-500 text-[10px]">{contactPhone}</p>}
                       </td>
                       <td className="px-4 py-3.5 text-slate-400">
-                        {agency.country ? `${agency.city ? agency.city + ", " : ""}${agency.country}` : "—"}
+                        {location}
                       </td>
                       <td className="px-4 py-3.5">
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${statusInfo.cls}`}>
@@ -230,23 +274,23 @@ export default function AdminAgencies() {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => setSelectedAgency(agency)}
-                            className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
+                            className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
                             title="Inspect Details"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
-                          {agency.verificationStatus !== "VERIFIED" && (
+                          {statusKey !== "VERIFIED" && statusKey !== "APPROVED" && (
                             <button
                               onClick={() => setActionModal({ agency, targetStatus: "VERIFIED" })}
-                              className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold transition-colors"
+                              className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold transition-colors cursor-pointer"
                             >
                               Approve
                             </button>
                           )}
-                          {agency.verificationStatus !== "REJECTED" && (
+                          {statusKey !== "REJECTED" && (
                             <button
                               onClick={() => setActionModal({ agency, targetStatus: "REJECTED" })}
-                              className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-[10px] font-bold transition-colors"
+                              className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-[10px] font-bold transition-colors cursor-pointer"
                             >
                               Reject
                             </button>
@@ -278,19 +322,25 @@ export default function AdminAgencies() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed right-0 top-0 bottom-0 w-full max-w-lg z-50 p-6 overflow-y-auto custom-scrollbar border-l border-white/10 flex flex-col justify-between"
+              className="fixed right-0 top-0 bottom-0 w-full max-w-xl z-50 p-6 overflow-y-auto custom-scrollbar border-l border-white/10 flex flex-col justify-between"
               style={{ background: "#070B1E" }}
             >
               <div className="space-y-5">
-                <div className="flex justify-between items-center pb-4 border-b border-white/8">
+                {/* Header */}
+                <div className="flex justify-between items-start pb-4 border-b border-white/8">
                   <div>
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-600/20 text-violet-300 border border-violet-500/30">
-                      Agency Profile
+                      Agency Profile & Verification Dossier
                     </span>
-                    <h3 className="text-lg font-bold text-white mt-1">{selectedAgency.agencyName}</h3>
-                    <p className="font-mono text-xs text-violet-400">{selectedAgency.applicationId}</p>
+                    <h3 className="text-lg font-bold text-white mt-1.5">
+                      {selectedAgency.agencyName || selectedAgency.user?.name}
+                    </h3>
+                    <p className="font-mono text-xs text-violet-400">{selectedAgency.applicationId || "ADM-AGY-PENDING"}</p>
+                    {selectedAgency.legalName && (
+                      <p className="text-slate-400 text-xs mt-0.5">Legal: {selectedAgency.legalName}</p>
+                    )}
                   </div>
-                  <button onClick={() => setSelectedAgency(null)} className="p-1 text-slate-400 hover:text-white rounded-lg">
+                  <button onClick={() => setSelectedAgency(null)} className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -298,14 +348,16 @@ export default function AdminAgencies() {
                 {/* Status card */}
                 <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 flex justify-between items-center text-xs">
                   <div>
-                    <span className="text-slate-500 text-[10px] block">Current Verification Status</span>
-                    <span className="font-bold text-white">{selectedAgency.verificationStatus}</span>
+                    <span className="text-slate-500 text-[10px] block font-semibold uppercase">Current Verification Status</span>
+                    <span className="font-bold text-white text-sm">
+                      {STATUS_MAP[selectedAgency.verificationStatus]?.label || selectedAgency.verificationStatus || "PENDING"}
+                    </span>
                   </div>
                   <div className="flex gap-2">
-                    {selectedAgency.verificationStatus !== "VERIFIED" && (
+                    {selectedAgency.verificationStatus !== "VERIFIED" && selectedAgency.verificationStatus !== "APPROVED" && (
                       <button
                         onClick={() => setActionModal({ agency: selectedAgency, targetStatus: "VERIFIED" })}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer"
                       >
                         Approve
                       </button>
@@ -313,7 +365,7 @@ export default function AdminAgencies() {
                     {selectedAgency.verificationStatus !== "REJECTED" && (
                       <button
                         onClick={() => setActionModal({ agency: selectedAgency, targetStatus: "REJECTED" })}
-                        className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs"
+                        className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs cursor-pointer"
                       >
                         Reject
                       </button>
@@ -321,71 +373,208 @@ export default function AdminAgencies() {
                   </div>
                 </div>
 
+                {/* Basic Corporate Information */}
+                <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2.5 text-xs">
+                  <p className="text-[11px] font-bold uppercase text-slate-400 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-violet-400" /> Agency Identity & Location
+                  </p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Agency Type</span>
+                      <span className="text-white font-semibold">{selectedAgency.agencyType || "Study Abroad Consultancy"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Year Established</span>
+                      <span className="text-white font-semibold">{selectedAgency.yearEstablished || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Country / City</span>
+                      <span className="text-white font-semibold">
+                        {[selectedAgency.city || selectedAgency.user?.city, selectedAgency.country || selectedAgency.user?.country].filter(Boolean).join(", ") || "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Office Address</span>
+                      <span className="text-white font-semibold">{selectedAgency.officeAddress || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Website</span>
+                      {selectedAgency.website ? (
+                        <a
+                          href={selectedAgency.website.startsWith("http") ? selectedAgency.website : `https://${selectedAgency.website}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-violet-400 hover:underline flex items-center gap-1"
+                        >
+                          <Globe className="w-3 h-3" /> {selectedAgency.website}
+                        </a>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Official Business Email</span>
+                      <span className="text-white font-semibold truncate block">
+                        {selectedAgency.officialBusinessEmail || selectedAgency.user?.email || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Authorized Contact */}
                 <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2 text-xs">
-                  <p className="text-[11px] font-bold uppercase text-slate-400">Authorized Representative</p>
+                  <p className="text-[11px] font-bold uppercase text-slate-400 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-blue-400" /> Authorized Representative
+                  </p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <span className="text-slate-500 text-[10px] block">Name</span>
-                      <span className="text-white font-semibold">{selectedAgency.authorizedPersonName || selectedAgency.user?.name || "—"}</span>
+                      <span className="text-slate-500 text-[10px] block">Full Name</span>
+                      <span className="text-white font-semibold">
+                        {selectedAgency.authorizedPerson?.fullName || selectedAgency.authorizedPersonName || selectedAgency.user?.name || "—"}
+                      </span>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Designation</span>
-                      <span className="text-white font-semibold">{selectedAgency.authorizedPersonDesignation || "Director"}</span>
+                      <span className="text-white font-semibold">
+                        {selectedAgency.authorizedPerson?.designation || selectedAgency.authorizedPersonDesignation || "Managing Director"}
+                      </span>
                     </div>
                     <div>
-                      <span className="text-slate-500 text-[10px] block">Official Email</span>
-                      <span className="text-white font-semibold">{selectedAgency.officialBusinessEmail || selectedAgency.user?.email}</span>
+                      <span className="text-slate-500 text-[10px] block">Authorized Email</span>
+                      <span className="text-white font-semibold truncate block">
+                        {selectedAgency.authorizedPerson?.email || selectedAgency.officialBusinessEmail || selectedAgency.user?.email || "—"}
+                      </span>
                     </div>
                     <div>
                       <span className="text-slate-500 text-[10px] block">Contact Phone</span>
-                      <span className="text-white font-semibold">{selectedAgency.officialPhone || selectedAgency.user?.phone || "—"}</span>
+                      <span className="text-white font-semibold">
+                        {selectedAgency.authorizedPerson?.phone || selectedAgency.officialPhone || selectedAgency.user?.phone || "—"}
+                      </span>
                     </div>
+                    {selectedAgency.authorizedPerson?.identityNumber && (
+                      <div className="col-span-2">
+                        <span className="text-slate-500 text-[10px] block">National ID / Passport #</span>
+                        <span className="text-white font-semibold">{selectedAgency.authorizedPerson.identityNumber}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Uploaded Verification Documents */}
                 <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2.5 text-xs">
-                  <p className="text-[11px] font-bold uppercase text-slate-400">Compliance & Business Documents</p>
+                  <p className="text-[11px] font-bold uppercase text-slate-400 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Compliance & Business Documents
+                  </p>
                   {[
-                    { label: "Trade License", doc: selectedAgency.tradeLicenseDoc, num: selectedAgency.tradeLicenseNumber },
-                    { label: "Business Registration / Certificate", doc: selectedAgency.businessRegDoc, num: selectedAgency.businessRegNumber },
-                    { label: "TIN Certificate", doc: selectedAgency.tinDoc, num: selectedAgency.tinNumber },
-                    { label: "BIN / VAT Registration", doc: selectedAgency.binDoc, num: selectedAgency.binNumber },
+                    {
+                      label: "Trade License",
+                      doc: selectedAgency.businessVerification?.tradeLicenseDocument || selectedAgency.tradeLicenseDoc,
+                      num: selectedAgency.businessVerification?.tradeLicenseNumber || selectedAgency.tradeLicenseNumber,
+                    },
+                    {
+                      label: "Business Registration / Incorporation",
+                      doc: selectedAgency.businessVerification?.businessRegistrationDocument || selectedAgency.businessRegDoc,
+                      num: selectedAgency.businessVerification?.businessRegistrationNumber || selectedAgency.businessRegNumber,
+                    },
+                    {
+                      label: "Tax Identification Number (TIN)",
+                      doc: selectedAgency.businessVerification?.tinDocument || selectedAgency.tinDoc,
+                      num: selectedAgency.businessVerification?.tinNumber || selectedAgency.tinNumber,
+                    },
+                    {
+                      label: "BIN / VAT Certificate",
+                      doc: selectedAgency.businessVerification?.binDocument || selectedAgency.binDoc,
+                      num: selectedAgency.businessVerification?.binVatNumber || selectedAgency.binNumber,
+                    },
                   ].map((item, idx) => (
                     <div key={idx} className="p-2.5 rounded-lg bg-white/3 flex items-center justify-between">
                       <div>
                         <p className="text-white font-semibold">{item.label}</p>
-                        {item.num && <p className="text-slate-400 text-[10px]">Doc #: {item.num}</p>}
+                        {item.num ? (
+                          <p className="text-slate-400 text-[10px] font-mono">Doc #: {item.num}</p>
+                        ) : (
+                          <p className="text-slate-500 text-[10px] italic">No document number provided</p>
+                        )}
                       </div>
                       {item.doc?.fileData ? (
                         <button
                           onClick={() => setPreviewDoc(item.doc)}
-                          className="px-2.5 py-1 rounded bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-[10px] font-bold flex items-center gap-1"
+                          className="px-2.5 py-1 rounded bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                         >
                           <FileText className="w-3 h-3" /> View Doc
                         </button>
                       ) : (
-                        <span className="text-slate-600 text-[10px] italic">Not Provided</span>
+                        <span className="text-slate-600 text-[10px] italic">Not Uploaded</span>
                       )}
                     </div>
                   ))}
                 </div>
 
-                {/* Destinations & Specialization */}
-                <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2 text-xs">
-                  <p className="text-[11px] font-bold uppercase text-slate-400">Market Coverage</p>
+                {/* Scope, Services & Experience */}
+                <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2.5 text-xs">
+                  <p className="text-[11px] font-bold uppercase text-slate-400 flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-amber-400" /> Market Scope & Experience
+                  </p>
                   <div>
-                    <span className="text-slate-500 text-[10px] block mb-1">Countries Served</span>
+                    <span className="text-slate-500 text-[10px] block mb-1">Services Offered</span>
                     <div className="flex flex-wrap gap-1.5">
-                      {(selectedAgency.countriesServed || ["United Kingdom", "Canada", "Australia"]).map((c, i) => (
+                      {(selectedAgency.servicesOffered || ["University Application", "Visa Assistance"]).map((s, i) => (
+                        <span key={i} className="px-2 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/20 text-[10px]">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] block mb-1">Destinations Served</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(selectedAgency.countriesServed || ["United Kingdom", "Canada", "Australia", "United States"]).map((c, i) => (
                         <span key={i} className="px-2 py-0.5 rounded bg-white/4 text-slate-300 text-[10px]">
                           {c}
                         </span>
                       ))}
                     </div>
                   </div>
+                  <div className="grid grid-cols-3 gap-2 pt-1 border-t border-white/4">
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Years Exp.</span>
+                      <span className="text-white font-semibold">
+                        {selectedAgency.experience?.yearsOfExperience ?? (selectedAgency.yearsOfExperience ?? 1)} yrs
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Counselors</span>
+                      <span className="text-white font-semibold">
+                        {selectedAgency.experience?.numberOfCounselors ?? (selectedAgency.numberOfCounselors ?? 1)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] block">Students Placed</span>
+                      <span className="text-white font-semibold">
+                        {selectedAgency.experience?.approximateStudentsServed ?? (selectedAgency.studentsServed ?? 0)}+
+                      </span>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Audit & Notes */}
+                {(selectedAgency.adminNotes || selectedAgency.rejectionReason) && (
+                  <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-1.5 text-xs">
+                    <p className="text-[11px] font-bold uppercase text-slate-400">Admin Audit Record</p>
+                    {selectedAgency.rejectionReason && (
+                      <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300">
+                        <strong className="block text-[11px]">Rejection Reason:</strong>
+                        {selectedAgency.rejectionReason}
+                      </div>
+                    )}
+                    {selectedAgency.adminNotes && (
+                      <div className="p-2.5 rounded bg-white/4 text-slate-300">
+                        <strong className="block text-[11px] text-slate-400">Internal Admin Notes:</strong>
+                        {selectedAgency.adminNotes}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
           </>
@@ -407,21 +596,20 @@ export default function AdminAgencies() {
                 <h3 className="text-base font-bold text-white">
                   {actionModal.targetStatus === "VERIFIED" ? "Approve Agency Application" : "Reject Agency Application"}
                 </h3>
-                <button onClick={() => setActionModal(null)} className="text-slate-400 hover:text-white">
+                <button onClick={() => setActionModal(null)} className="text-slate-400 hover:text-white cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <form onSubmit={handleUpdateStatus} className="space-y-3.5 text-xs">
                 <p className="text-slate-300">
-                  Target Agency: <strong className="text-white">{actionModal.agency.agencyName}</strong> (
-                  {actionModal.agency.applicationId})
+                  Target Agency: <strong className="text-white">{actionModal.agency.agencyName || actionModal.agency.user?.name}</strong> (
+                  {actionModal.agency.applicationId || "ADM-AGY-PENDING"})
                 </p>
 
                 {actionModal.targetStatus === "VERIFIED" ? (
                   <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-300 text-[11px]">
-                    Approving this agency will generate a cryptographically secure, single-use 48-hour activation link and
-                    dispatch an activation email to <strong className="text-white">{actionModal.agency.officialBusinessEmail || actionModal.agency.user?.email}</strong>.
+                    Approving this agency will update its canonical status to <strong>VERIFIED</strong>, generate a cryptographically secure 48-hour activation token, and dispatch an activation link to <strong className="text-white">{actionModal.agency.officialBusinessEmail || actionModal.agency.user?.email}</strong>.
                   </div>
                 ) : (
                   <div>
@@ -454,14 +642,14 @@ export default function AdminAgencies() {
                   <button
                     type="button"
                     onClick={() => setActionModal(null)}
-                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold"
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className={`px-4 py-2 rounded-xl font-bold text-white transition-all disabled:opacity-50 ${
+                    className={`px-4 py-2 rounded-xl font-bold text-white transition-all disabled:opacity-50 cursor-pointer ${
                       actionModal.targetStatus === "VERIFIED" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-rose-600 hover:bg-rose-500"
                     }`}
                   >
@@ -487,7 +675,7 @@ export default function AdminAgencies() {
             >
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-base font-bold text-white">{previewDoc.fileName || "Compliance Document Scan"}</h3>
-                <button onClick={() => setPreviewDoc(null)} className="text-slate-400 hover:text-white">
+                <button onClick={() => setPreviewDoc(null)} className="text-slate-400 hover:text-white cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
