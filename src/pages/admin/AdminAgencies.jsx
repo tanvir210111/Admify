@@ -212,11 +212,10 @@ export default function AdminAgencies() {
             <button
               key={st.id}
               onClick={() => setFilter(st.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
-                filter === st.id
-                  ? "bg-violet-600/30 text-violet-300 border border-violet-500/30"
-                  : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${filter === st.id
+                ? "bg-violet-600/30 text-violet-300 border border-violet-500/30"
+                : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
+                }`}
             >
               {st.label}
             </button>
@@ -342,11 +341,10 @@ export default function AdminAgencies() {
                             }}
                             disabled={statusKey !== "REJECTED"}
                             title={statusKey === "REJECTED" ? "Permanently delete rejected agency" : "Agency must be rejected before deletion"}
-                            className={`p-1.5 rounded-lg border transition-all ${
-                              statusKey === "REJECTED"
-                                ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border-rose-500/30 cursor-pointer"
-                                : "bg-white/2 text-slate-600 border-white/5 cursor-not-allowed opacity-40"
-                            }`}
+                            className={`p-1.5 rounded-lg border transition-all ${statusKey === "REJECTED"
+                              ? "bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border-rose-500/30 cursor-pointer"
+                              : "bg-white/2 text-slate-600 border-white/5 cursor-not-allowed opacity-40"
+                              }`}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -737,9 +735,8 @@ export default function AdminAgencies() {
                   <button
                     type="submit"
                     disabled={actionLoading}
-                    className={`px-4 py-2 rounded-xl font-bold text-white transition-all disabled:opacity-50 cursor-pointer ${
-                      actionModal.targetStatus === "VERIFIED" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-rose-600 hover:bg-rose-500"
-                    }`}
+                    className={`px-4 py-2 rounded-xl font-bold text-white transition-all disabled:opacity-50 cursor-pointer ${actionModal.targetStatus === "VERIFIED" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-rose-600 hover:bg-rose-500"
+                      }`}
                   >
                     {actionLoading ? "Processing..." : `Confirm ${actionModal.targetStatus === "VERIFIED" ? "Approval" : "Rejection"}`}
                   </button>
