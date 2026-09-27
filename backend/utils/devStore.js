@@ -249,10 +249,15 @@ const getInitialData = () => {
 
 class DevStore {
   constructor() {
-    this.ensureDbFile();
+    if (process.env.NODE_ENV !== 'production') {
+      this.ensureDbFile();
+    }
   }
 
   ensureDbFile() {
+    if (process.env.NODE_ENV === 'production') {
+      return;
+    }
     if (!fs.existsSync(DB_FILE)) {
       const initial = getInitialData();
       const salt = bcrypt.genSaltSync(10);
@@ -362,6 +367,9 @@ class DevStore {
   }
 
   read() {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[DevStore Fatal] devStore fallback is strictly prohibited in production environment. Ensure MongoDB is connected.');
+    }
     try {
       this.ensureDbFile();
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
@@ -372,6 +380,9 @@ class DevStore {
   }
 
   write(data) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[DevStore Fatal] devStore fallback is strictly prohibited in production environment. Ensure MongoDB is connected.');
+    }
     try {
       fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {

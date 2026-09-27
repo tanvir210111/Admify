@@ -108,6 +108,24 @@ app.get('/', (req, res) => {
   });
 });
 
+// ── Production Database Availability Middleware ──────────────────────────────
+// In production, ensure all /api/* routes (excluding /api/health) require an active
+// MongoDB connection (readyState === 1) and never fall back to devStore/local_dev_db.json.
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') {
+    return next();
+  }
+
+  if (process.env.NODE_ENV === 'production' && mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database connection is temporarily unavailable. Please retry shortly.',
+    });
+  }
+
+  next();
+});
+
 // ── Mount Application API Routes ─────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
