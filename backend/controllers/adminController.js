@@ -3523,10 +3523,14 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
 
         userUpdates = {
           ...userUpdates,
+          role: 'agency',
           accountStatus: 'ACTIVE',
           status: 'active',
           isActive: true,
           emailVerified: true,
+          agencyVerificationStatus: 'VERIFIED',
+          agencyProfile: verification._id,
+          agencyId: agencyUser._id,
           activationTokenHash: null,
           activationTokenExpires: null,
           activationTokenUsed: true,
@@ -3534,6 +3538,10 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           approvedAt: now,
           approvedBy: req.user._id,
         };
+
+        if (!verification.user || verification.user.toString() !== agencyUser._id.toString()) {
+          verification.user = agencyUser._id;
+        }
 
         emailResult = await emailService.sendAgencyApprovalEmail({
           to: verification.officialBusinessEmail || agencyUser.email,
@@ -3619,10 +3627,14 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
       if (canonicalStatus === 'VERIFIED') {
         userUpdates = {
           ...userUpdates,
+          role: 'agency',
           accountStatus: 'ACTIVE',
           status: 'active',
           isActive: true,
           emailVerified: true,
+          agencyVerificationStatus: 'VERIFIED',
+          agencyProfile: verification._id?.toString(),
+          agencyId: userId?.toString(),
           activationTokenHash: null,
           activationTokenExpires: null,
           activationTokenUsed: true,
@@ -3630,6 +3642,10 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           approvedAt: now.toISOString(),
           approvedBy: req.user._id,
         };
+
+        if (verification.user?.toString() !== userId?.toString()) {
+          verification.user = userId?.toString();
+        }
 
         history.push({
           status: 'VERIFIED',

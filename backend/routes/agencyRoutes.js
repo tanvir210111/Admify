@@ -33,33 +33,69 @@ import {
   updateAgencySettings,
 } from '../controllers/agencyController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import { resolveAuthenticatedAgency } from '../utils/agencyResolver.js';
 
 const router = express.Router();
 
-// Middleware to ensure user has agency role
-const requireAgency = (req, res, next) => {
-  if (req.user && req.user.role === 'agency') {
+// Middleware to ensure user has agency role and resolve agency context
+const requireAgency = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required.',
+      });
+    }
+
+    const agencyContext = await resolveAuthenticatedAgency(req.user);
+    if (!agencyContext) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access restricted to registered Agency accounts.',
+      });
+    }
+
+    req.agencyContext = agencyContext;
     return next();
+  } catch (error) {
+    console.error('[Agency Auth Error]', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to authorize agency account.',
+      error: error.message,
+    });
   }
-  return res.status(403).json({
-    success: false,
-    message: 'Access restricted to registered Agency accounts.',
-  });
 };
 
 // Middleware to ensure agency is verified/active for operational features
-const requireVerifiedAgency = (req, res, next) => {
-  if (
-    req.user &&
-    req.user.role === 'agency' &&
-    (req.user.accountStatus === 'ACTIVE' || req.user.agencyVerificationStatus === 'VERIFIED')
-  ) {
+const requireVerifiedAgency = async (req, res, next) => {
+  try {
+    const agencyContext = req.agencyContext || (await resolveAuthenticatedAgency(req.user));
+    if (!agencyContext) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access restricted to registered Agency accounts.',
+      });
+    }
+
+    req.agencyContext = agencyContext;
+
+    if (!agencyContext.isVerified || !agencyContext.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your agency account is pending verification or inactive. Operational access is restricted until approved by Admin.',
+      });
+    }
+
     return next();
+  } catch (error) {
+    console.error('[Agency Verification Gate Error]', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify operational agency status.',
+      error: error.message,
+    });
   }
-  return res.status(403).json({
-    success: false,
-    message: 'Your agency account is pending verification or inactive. Operational access is restricted until approved by Admin.',
-  });
 };
 
 router.use(protect);

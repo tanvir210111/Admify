@@ -13,6 +13,15 @@ import ChatMessage from '../models/ChatMessage.js';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import devStore from '../utils/devStore.js';
+import { resolveAuthenticatedAgency } from '../utils/agencyResolver.js';
+
+// Helper to reliably obtain the resolved Agency context from the request
+const getResolvedAgencyContext = async (req) => {
+  if (req.agencyContext) return req.agencyContext;
+  const ctx = await resolveAuthenticatedAgency(req.user);
+  if (ctx) req.agencyContext = ctx;
+  return ctx;
+};
 
 // Sanitize payload to prevent any client-side privilege escalation
 const sanitizeAgencyInput = (body) => {
@@ -103,11 +112,14 @@ const notifyAdminsOfVerification = async ({ profile, agencyName, applicationId }
 // @access  Private (Agency role or Agency Registration Token)
 export const getAgencyVerification = async (req, res) => {
   try {
-    let profile = null;
-    if (mongoose.connection.readyState === 1) {
-      profile = await AgencyProfile.findOne({ user: req.user._id });
-    } else {
-      profile = await devStore.findAgencyProfileByUserId(req.user._id);
+    const agencyCtx = await getResolvedAgencyContext(req);
+    let profile = agencyCtx?.agencyProfile || null;
+    if (!profile) {
+      if (mongoose.connection.readyState === 1) {
+        profile = await AgencyProfile.findOne({ user: req.user._id });
+      } else {
+        profile = await devStore.findAgencyProfileByUserId(req.user._id);
+      }
     }
 
     if (!profile) {
@@ -853,16 +865,23 @@ export const createAgencyUniversityConnection = async (req, res) => {
 // @desc    Get all university connections for this Agency
 // @route   GET /api/agency/university-connections
 // @access  Private (Agency only)
-export const getAgencyUniversityConnections = async (req, res) => {
+export const getAgencyUniversityConnections = async (req, res, next) => {
   try {
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
+
     let connections = [];
     if (mongoose.connection.readyState === 1) {
-      connections = await UniversityAgencyConnection.find({ agencyId: req.user._id })
+      connections = await UniversityAgencyConnection.find({ agencyId: { $in: agencyIds } })
         .populate('universityRepresentativeId', 'name email phone designation avatar')
         .populate('universityId', 'name location country logo website type')
         .sort({ createdAt: -1 });
     } else {
       connections = await devStore.findAgencyConnections({ agencyId: req.user._id });
+      if (connections.length === 0 && agencyCtx?.agencyProfileId) {
+        connections = await devStore.findAgencyConnections({ agencyId: agencyCtx.agencyProfileId });
+      }
       for (const conn of connections) {
         if (!conn.universityRepresentative && conn.universityRepresentativeId) {
           conn.universityRepresentative = await devStore.findUserById(conn.universityRepresentativeId);
@@ -927,7 +946,10 @@ const recordAgencyAuditLog = async ({ req, action, module, targetType, targetId,
 // @access  Private (Verified Agency)
 export const getAgencyDashboard = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
+    const primaryUserId = req.user._id;
 
     let agents = [];
     let agentApplications = [];
@@ -938,12 +960,12 @@ export const getAgencyDashboard = async (req, res, next) => {
     let notifications = [];
 
     if (mongoose.connection.readyState === 1) {
-      agents = await User.find({ role: 'agent', agencyId: req.user._id });
-      agentApplications = await AgentApplication.find({ agency: req.user._id });
-      applications = await Application.find({ assignedAgency: req.user._id });
-      serviceOrders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': agencyIdStr });
-      connections = await UniversityAgencyConnection.find({ agencyId: req.user._id });
-      notifications = await Notification.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(10);
+      agents = await User.find({ role: 'agent', agencyId: { $in: agencyIds } });
+      agentApplications = await AgentApplication.find({ agency: { $in: agencyIds } });
+      applications = await Application.find({ assignedAgency: { $in: agencyIds } });
+      serviceOrders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': { $in: agencyIdStrs } });
+      connections = await UniversityAgencyConnection.find({ agencyId: { $in: agencyIds } });
+      notifications = await Notification.find({ user: primaryUserId }).sort({ createdAt: -1 }).limit(10);
 
       // Unique students linked via applications or service orders
       const studentIds = new Set([
@@ -955,12 +977,12 @@ export const getAgencyDashboard = async (req, res, next) => {
       }
     } else {
       const db = devStore.read();
-      agents = (db.users || []).filter((u) => u.role === 'agent' && u.agencyId?.toString() === agencyIdStr);
-      agentApplications = (db.agentApplications || []).filter((a) => a.agency?.toString() === agencyIdStr);
-      applications = (db.applications || []).filter((a) => a.assignedAgency?.toString() === agencyIdStr);
-      serviceOrders = (db.agencyServiceOrders || []).filter((o) => o.assignedAgency?.agencyId?.toString() === agencyIdStr);
-      connections = (db.universityAgencyConnections || []).filter((c) => c.agencyId?.toString() === agencyIdStr);
-      notifications = (db.notifications || []).filter((n) => n.user?.toString() === agencyIdStr).slice(0, 10);
+      agents = (db.users || []).filter((u) => u.role === 'agent' && agencyIdStrs.includes(u.agencyId?.toString()));
+      agentApplications = (db.agentApplications || []).filter((a) => agencyIdStrs.includes(a.agency?.toString()));
+      applications = (db.applications || []).filter((a) => agencyIdStrs.includes(a.assignedAgency?.toString()));
+      serviceOrders = (db.agencyServiceOrders || []).filter((o) => agencyIdStrs.includes(o.assignedAgency?.agencyId?.toString()));
+      connections = (db.universityAgencyConnections || []).filter((c) => agencyIdStrs.includes(c.agencyId?.toString()));
+      notifications = (db.notifications || []).filter((n) => agencyIdStrs.includes(n.user?.toString())).slice(0, 10);
 
       const studentIds = new Set([
         ...applications.map((a) => a.user?.toString()).filter(Boolean),
@@ -1045,19 +1067,21 @@ export const getAgencyDashboard = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyAgents = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
     let registeredAgents = [];
     let applications = [];
 
     if (mongoose.connection.readyState === 1) {
-      registeredAgents = await User.find({ role: 'agent', agencyId: req.user._id }).select(
+      registeredAgents = await User.find({ role: 'agent', agencyId: { $in: agencyIds } }).select(
         'name email phone status accountStatus designation countrySpecialization avatar createdAt'
       );
-      applications = await AgentApplication.find({ agency: req.user._id }).sort({ createdAt: -1 });
+      applications = await AgentApplication.find({ agency: { $in: agencyIds } }).sort({ createdAt: -1 });
     } else {
       const db = devStore.read();
-      registeredAgents = (db.users || []).filter((u) => u.role === 'agent' && u.agencyId?.toString() === agencyIdStr);
-      applications = (db.agentApplications || []).filter((a) => a.agency?.toString() === agencyIdStr);
+      registeredAgents = (db.users || []).filter((u) => u.role === 'agent' && agencyIdStrs.includes(u.agencyId?.toString()));
+      applications = (db.agentApplications || []).filter((a) => agencyIdStrs.includes(a.agency?.toString()));
     }
 
     return res.status(200).json({
@@ -1089,11 +1113,13 @@ export const updateAgencyAgentStatus = async (req, res, next) => {
       });
     }
 
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
     let updatedAgent = null;
 
     if (mongoose.connection.readyState === 1) {
-      const agent = await User.findOne({ _id: id, role: 'agent', agencyId: req.user._id });
+      const agent = await User.findOne({ _id: id, role: 'agent', agencyId: { $in: agencyIds } });
       if (!agent) {
         return res.status(404).json({ success: false, message: 'Agent not found in your agency roster.' });
       }
@@ -1105,7 +1131,7 @@ export const updateAgencyAgentStatus = async (req, res, next) => {
       updatedAgent = agent;
     } else {
       const db = devStore.read();
-      const agent = (db.users || []).find((u) => u._id === id && u.role === 'agent' && u.agencyId?.toString() === agencyIdStr);
+      const agent = (db.users || []).find((u) => u._id === id && u.role === 'agent' && agencyIdStrs.includes(u.agencyId?.toString()));
       if (!agent) {
         return res.status(404).json({ success: false, message: 'Agent not found in your agency roster.' });
       }
@@ -1144,7 +1170,9 @@ export const updateAgencyAgentStatus = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyStudents = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
     const { search = '' } = req.query;
 
     let students = [];
@@ -1152,8 +1180,8 @@ export const getAgencyStudents = async (req, res, next) => {
     let serviceOrders = [];
 
     if (mongoose.connection.readyState === 1) {
-      applications = await Application.find({ assignedAgency: req.user._id }).populate('assignedAgent', 'name email');
-      serviceOrders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': agencyIdStr });
+      applications = await Application.find({ assignedAgency: { $in: agencyIds } }).populate('assignedAgent', 'name email');
+      serviceOrders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': { $in: agencyIdStrs } });
 
       const studentIds = Array.from(new Set([
         ...applications.map((a) => a.user?.toString()).filter(Boolean),
@@ -1175,8 +1203,8 @@ export const getAgencyStudents = async (req, res, next) => {
       );
     } else {
       const db = devStore.read();
-      applications = (db.applications || []).filter((a) => a.assignedAgency?.toString() === agencyIdStr);
-      serviceOrders = (db.agencyServiceOrders || []).filter((o) => o.assignedAgency?.agencyId?.toString() === agencyIdStr);
+      applications = (db.applications || []).filter((a) => agencyIdStrs.includes(a.assignedAgency?.toString()));
+      serviceOrders = (db.agencyServiceOrders || []).filter((o) => agencyIdStrs.includes(o.assignedAgency?.agencyId?.toString()));
 
       const studentIds = new Set([
         ...applications.map((a) => a.user?.toString()).filter(Boolean),
@@ -1236,13 +1264,15 @@ export const getAgencyStudents = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyApplications = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
     const { stage, search } = req.query;
 
     let applications = [];
 
     if (mongoose.connection.readyState === 1) {
-      const query = { assignedAgency: req.user._id };
+      const query = { assignedAgency: { $in: agencyIds } };
       if (stage && stage !== 'all') query.stage = stage;
 
       applications = await Application.find(query)
@@ -1262,7 +1292,7 @@ export const getAgencyApplications = async (req, res, next) => {
       }
     } else {
       const db = devStore.read();
-      applications = (db.applications || []).filter((a) => a.assignedAgency?.toString() === agencyIdStr);
+      applications = (db.applications || []).filter((a) => agencyIdStrs.includes(a.assignedAgency?.toString()));
       if (stage && stage !== 'all') {
         applications = applications.filter((a) => a.stage?.toLowerCase() === stage.toLowerCase());
       }
@@ -1302,12 +1332,14 @@ export const updateAgencyApplication = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { stage, progress, assignedAgent, notes, stepLabel } = req.body;
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
 
     let application = null;
 
     if (mongoose.connection.readyState === 1) {
-      application = await Application.findOne({ _id: id, assignedAgency: req.user._id });
+      application = await Application.findOne({ _id: id, assignedAgency: { $in: agencyIds } });
       if (!application) {
         return res.status(404).json({ success: false, message: 'Application not found or unauthorized.' });
       }
@@ -1316,7 +1348,7 @@ export const updateAgencyApplication = async (req, res, next) => {
       if (progress !== undefined) application.progress = Number(progress);
       if (assignedAgent) {
         // Verify agent belongs to this agency
-        const agent = await User.findOne({ _id: assignedAgent, role: 'agent', agencyId: req.user._id });
+        const agent = await User.findOne({ _id: assignedAgent, role: 'agent', agencyId: { $in: agencyIds } });
         if (!agent) {
           return res.status(400).json({ success: false, message: 'Assigned agent must be a registered member of your agency.' });
         }
@@ -1336,7 +1368,7 @@ export const updateAgencyApplication = async (req, res, next) => {
       await application.save();
     } else {
       application = await devStore.findApplicationById(id);
-      if (!application || application.assignedAgency?.toString() !== agencyIdStr) {
+      if (!application || !agencyIdStrs.includes(application.assignedAgency?.toString())) {
         return res.status(404).json({ success: false, message: 'Application not found or unauthorized.' });
       }
 
@@ -1381,7 +1413,8 @@ export const updateAgencyApplication = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyServiceRequests = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
     const { status } = req.query;
 
     let orders = [];
@@ -1389,7 +1422,7 @@ export const getAgencyServiceRequests = async (req, res, next) => {
     if (mongoose.connection.readyState === 1) {
       const query = {
         $or: [
-          { 'assignedAgency.agencyId': agencyIdStr },
+          { 'assignedAgency.agencyId': { $in: agencyIdStrs } },
           { status: 'ACTIVE', 'assignedAgency.agencyId': { $exists: false } },
         ],
       };
@@ -1401,7 +1434,7 @@ export const getAgencyServiceRequests = async (req, res, next) => {
     } else {
       const db = devStore.read();
       orders = (db.agencyServiceOrders || []).filter(
-        (o) => o.assignedAgency?.agencyId?.toString() === agencyIdStr || (o.status === 'ACTIVE' && !o.assignedAgency?.agencyId)
+        (o) => agencyIdStrs.includes(o.assignedAgency?.agencyId?.toString()) || (o.status === 'ACTIVE' && !o.assignedAgency?.agencyId)
       );
       if (status && status !== 'all') {
         orders = orders.filter((o) => o.status === status);
@@ -1430,7 +1463,10 @@ export const updateAgencyServiceRequest = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { action, status, agentId, notes } = req.body;
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
+    const primaryIdStr = req.user._id.toString();
 
     let order = null;
 
@@ -1439,7 +1475,7 @@ export const updateAgencyServiceRequest = async (req, res, next) => {
       if (!order) return res.status(404).json({ success: false, message: 'Service order not found.' });
 
       // Check authorization
-      const isAssignedToThis = order.assignedAgency?.agencyId === agencyIdStr;
+      const isAssignedToThis = agencyIdStrs.includes(order.assignedAgency?.agencyId?.toString());
       const isOpenToAccept = order.status === 'ACTIVE' && !order.assignedAgency?.agencyId;
 
       if (!isAssignedToThis && !isOpenToAccept) {
@@ -1448,7 +1484,7 @@ export const updateAgencyServiceRequest = async (req, res, next) => {
 
       if (action === 'ACCEPT' || isOpenToAccept) {
         order.assignedAgency = {
-          agencyId: agencyIdStr,
+          agencyId: primaryIdStr,
           agencyName: req.user.name,
           assignedAt: new Date(),
         };
@@ -1464,7 +1500,7 @@ export const updateAgencyServiceRequest = async (req, res, next) => {
       if (notes) order.notes = notes;
 
       if (agentId) {
-        const agent = await User.findOne({ _id: agentId, role: 'agent', agencyId: req.user._id });
+        const agent = await User.findOne({ _id: agentId, role: 'agent', agencyId: { $in: agencyIds } });
         if (agent) {
           order.assignedAgency.agentName = agent.name;
           order.assignedAgency.agentRole = agent.designation || 'Counselor';
@@ -1476,7 +1512,7 @@ export const updateAgencyServiceRequest = async (req, res, next) => {
       order = await devStore.findAgencyServiceOrderById(id);
       if (!order) return res.status(404).json({ success: false, message: 'Service order not found.' });
 
-      const isAssignedToThis = order.assignedAgency?.agencyId?.toString() === agencyIdStr;
+      const isAssignedToThis = agencyIdStrs.includes(order.assignedAgency?.agencyId?.toString());
       const isOpenToAccept = order.status === 'ACTIVE' && !order.assignedAgency?.agencyId;
 
       if (!isAssignedToThis && !isOpenToAccept) {
@@ -1486,7 +1522,7 @@ export const updateAgencyServiceRequest = async (req, res, next) => {
       const updates = {};
       if (action === 'ACCEPT' || isOpenToAccept) {
         updates.assignedAgency = {
-          agencyId: agencyIdStr,
+          agencyId: primaryIdStr,
           agencyName: req.user.name,
           assignedAt: new Date().toISOString(),
         };
@@ -1622,11 +1658,14 @@ export const sendAgencyMessage = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyDocuments = async (req, res, next) => {
   try {
-    let profile = null;
-    if (mongoose.connection.readyState === 1) {
-      profile = await AgencyProfile.findOne({ user: req.user._id });
-    } else {
-      profile = await devStore.findAgencyProfileByUserId(req.user._id);
+    const agencyCtx = await getResolvedAgencyContext(req);
+    let profile = agencyCtx?.agencyProfile || null;
+    if (!profile) {
+      if (mongoose.connection.readyState === 1) {
+        profile = await AgencyProfile.findOne({ user: req.user._id });
+      } else {
+        profile = await devStore.findAgencyProfileByUserId(req.user._id);
+      }
     }
 
     const docs = [];
@@ -1668,14 +1707,26 @@ export const uploadAgencyDocument = async (req, res, next) => {
       uploadedAt: new Date(),
     };
 
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const profileId = agencyCtx?.agencyProfile?._id;
+
     if (mongoose.connection.readyState === 1) {
-      let profile = await AgencyProfile.findOne({ user: req.user._id });
+      let profile = null;
+      if (profileId) {
+        profile = await AgencyProfile.findById(profileId);
+      }
+      if (!profile) {
+        profile = await AgencyProfile.findOne({ user: req.user._id });
+      }
       if (!profile) profile = new AgencyProfile({ user: req.user._id, agencyName: req.user.name });
       if (!profile.documents) profile.documents = {};
       profile.documents[docType] = docObj;
       await profile.save();
     } else {
       let profile = await devStore.findAgencyProfileByUserId(req.user._id);
+      if (!profile && profileId) {
+        profile = await devStore.findAgencyProfileById(profileId);
+      }
       if (!profile) {
         profile = { _id: new mongoose.Types.ObjectId().toString(), user: req.user._id, agencyName: req.user.name, documents: {} };
       }
@@ -1700,21 +1751,23 @@ export const uploadAgencyDocument = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyPerformance = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIds = agencyCtx?.agencyIds || [req.user._id];
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
 
     let applications = [];
     let agents = [];
     let serviceOrders = [];
 
     if (mongoose.connection.readyState === 1) {
-      applications = await Application.find({ assignedAgency: req.user._id });
-      agents = await User.find({ role: 'agent', agencyId: req.user._id });
-      serviceOrders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': agencyIdStr });
+      applications = await Application.find({ assignedAgency: { $in: agencyIds } });
+      agents = await User.find({ role: 'agent', agencyId: { $in: agencyIds } });
+      serviceOrders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': { $in: agencyIdStrs } });
     } else {
       const db = devStore.read();
-      applications = (db.applications || []).filter((a) => a.assignedAgency?.toString() === agencyIdStr);
-      agents = (db.users || []).filter((u) => u.role === 'agent' && u.agencyId?.toString() === agencyIdStr);
-      serviceOrders = (db.agencyServiceOrders || []).filter((o) => o.assignedAgency?.agencyId?.toString() === agencyIdStr);
+      applications = (db.applications || []).filter((a) => agencyIdStrs.includes(a.assignedAgency?.toString()));
+      agents = (db.users || []).filter((u) => u.role === 'agent' && agencyIdStrs.includes(u.agencyId?.toString()));
+      serviceOrders = (db.agencyServiceOrders || []).filter((o) => agencyIdStrs.includes(o.assignedAgency?.agencyId?.toString()));
     }
 
     const countryBreakdown = {};
@@ -1822,17 +1875,18 @@ export const markAgencyNotificationRead = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyReports = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
 
     let reports = [];
     if (mongoose.connection.readyState === 1) {
       reports = await Report.find({
-        $or: [{ targetId: agencyIdStr }, { targetType: 'agency' }],
+        $or: [{ targetId: { $in: agencyIdStrs } }, { targetType: 'agency' }],
       }).sort({ createdAt: -1 });
     } else {
       const db = devStore.read();
       reports = (db.reports || []).filter(
-        (r) => r.targetId?.toString() === agencyIdStr || r.targetType === 'agency'
+        (r) => agencyIdStrs.includes(r.targetId?.toString()) || r.targetType === 'agency'
       );
     }
 
@@ -1857,7 +1911,6 @@ export const submitAgencyReportResponse = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Response explanation is required.' });
     }
 
-    const agencyIdStr = req.user._id.toString();
     let report = null;
 
     if (mongoose.connection.readyState === 1) {
@@ -1897,17 +1950,18 @@ export const submitAgencyReportResponse = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyServiceHistory = async (req, res, next) => {
   try {
-    const agencyIdStr = req.user._id.toString();
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const agencyIdStrs = agencyCtx?.agencyIdStrs || [req.user._id.toString()];
 
     let orders = [];
     if (mongoose.connection.readyState === 1) {
-      orders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': agencyIdStr })
+      orders = await AgencyServiceOrder.find({ 'assignedAgency.agencyId': { $in: agencyIdStrs } })
         .populate('user', 'name email phone')
         .sort({ createdAt: -1 });
     } else {
       const db = devStore.read();
       orders = (db.agencyServiceOrders || []).filter(
-        (o) => o.assignedAgency?.agencyId?.toString() === agencyIdStr
+        (o) => agencyIdStrs.includes(o.assignedAgency?.agencyId?.toString())
       );
       for (const ord of orders) {
         if (!ord.user?.name && ord.user) {
@@ -1932,11 +1986,14 @@ export const getAgencyServiceHistory = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const getAgencyProfile = async (req, res, next) => {
   try {
-    let profile = null;
-    if (mongoose.connection.readyState === 1) {
-      profile = await AgencyProfile.findOne({ user: req.user._id });
-    } else {
-      profile = await devStore.findAgencyProfileByUserId(req.user._id);
+    const agencyCtx = await getResolvedAgencyContext(req);
+    let profile = agencyCtx?.agencyProfile || null;
+    if (!profile) {
+      if (mongoose.connection.readyState === 1) {
+        profile = await AgencyProfile.findOne({ user: req.user._id });
+      } else {
+        profile = await devStore.findAgencyProfileByUserId(req.user._id);
+      }
     }
 
     return res.status(200).json({
@@ -1965,16 +2022,29 @@ export const getAgencyProfile = async (req, res, next) => {
 export const updateAgencyProfile = async (req, res, next) => {
   try {
     const allowed = sanitizeAgencyInput(req.body);
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const profileId = agencyCtx?.agencyProfile?._id;
 
     let updatedProfile = null;
     if (mongoose.connection.readyState === 1) {
-      updatedProfile = await AgencyProfile.findOneAndUpdate(
-        { user: req.user._id },
-        { $set: allowed },
-        { new: true, upsert: true }
-      );
+      if (profileId) {
+        updatedProfile = await AgencyProfile.findByIdAndUpdate(
+          profileId,
+          { $set: allowed },
+          { new: true }
+        );
+      } else {
+        updatedProfile = await AgencyProfile.findOneAndUpdate(
+          { user: req.user._id },
+          { $set: allowed },
+          { new: true, upsert: true }
+        );
+      }
     } else {
       let existing = await devStore.findAgencyProfileByUserId(req.user._id);
+      if (!existing && profileId) {
+        existing = await devStore.findAgencyProfileById(profileId);
+      }
       if (!existing) {
         existing = { _id: new mongoose.Types.ObjectId().toString(), user: req.user._id, agencyName: req.user.name };
       }

@@ -1,11 +1,17 @@
-import User from '../models/User.js';
+import devStore from '../utils/devStore.js';
+import mongoose from 'mongoose';
 
 // @desc    Get user profile
 // @route   GET /api/users/profile
 // @access  Private
 export const getUserProfile = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user._id);
+    let user = null;
+    if (mongoose.connection.readyState === 1) {
+      user = await User.findById(req.user._id);
+    } else {
+      user = await devStore.findUserById(req.user._id);
+    }
     return res.status(200).json({
       success: true,
       data: { user },

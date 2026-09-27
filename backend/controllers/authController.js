@@ -730,7 +730,8 @@ export const login = async (req, res, next) => {
     // ──────────────────────────────────────────────────────────────────────────
     // AGENCY LOGIN GATE: Allow immediate login if approved, otherwise show clear status message
     // ──────────────────────────────────────────────────────────────────────────
-    if (user.role === 'agency') {
+    const cleanUserRole = (user.role || '').toString().toLowerCase().trim();
+    if (cleanUserRole === 'agency') {
       const vStatus = (user.agencyVerificationStatus || '').toUpperCase();
       const aStatus = (user.accountStatus || '').toUpperCase();
 
@@ -756,20 +757,31 @@ export const login = async (req, res, next) => {
         });
       }
 
-      // Self-heal / activate approved agency records (including legacy records)
-      if (!user.isActive || user.accountStatus !== 'ACTIVE' || user.status !== 'active') {
+      // Self-heal / activate approved agency records (including legacy records & role normalization)
+      const needsRoleFix = user.role !== 'agency';
+      const needsStatusFix = !user.isActive || user.accountStatus !== 'ACTIVE' || user.status !== 'active';
+      const needsAgencyId = !user.agencyId;
+
+      if (needsRoleFix || needsStatusFix || needsAgencyId) {
+        user.role = 'agency';
         user.isActive = true;
         user.accountStatus = 'ACTIVE';
         user.status = 'active';
+        user.agencyVerificationStatus = 'VERIFIED';
         user.activationTokenUsed = true;
+        if (!user.agencyId) user.agencyId = user._id;
+
         if (typeof user.save === 'function') {
           await user.save();
         } else if (devStore && typeof devStore.updateUser === 'function') {
           await devStore.updateUser(user._id, {
+            role: 'agency',
             isActive: true,
             accountStatus: 'ACTIVE',
             status: 'active',
+            agencyVerificationStatus: 'VERIFIED',
             activationTokenUsed: true,
+            agencyId: user._id?.toString(),
           });
         }
       }

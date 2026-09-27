@@ -1186,6 +1186,7 @@ class DevStore {
       }
       if (filter.agency && app.agency?.toString() !== filter.agency.toString()) return false;
       if (filter.agencyId && app.agency?.toString() !== filter.agencyId.toString()) return false;
+      if (filter.email && app.email?.toLowerCase().trim() !== filter.email.toLowerCase().trim()) return false;
       if (filter.search && filter.search.trim()) {
         const s = filter.search.toLowerCase().trim();
         const match =
