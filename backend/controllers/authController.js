@@ -527,7 +527,7 @@ export const register = async (req, res, next) => {
         });
       }
 
-      const token = generateToken(agentUser._id);
+      const token = generateToken(agentUser._id, agentUser.role);
 
       return res.status(201).json({
         success: true,
@@ -641,7 +641,7 @@ export const register = async (req, res, next) => {
       }
     }
 
-    const token = generateToken(user._id);
+    const token = generateToken(user._id, user.role);
 
     return res.status(201).json({
       success: true,
@@ -680,7 +680,7 @@ export const login = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password credentials',
+        message: 'Invalid email or password.',
       });
     }
 
@@ -688,7 +688,7 @@ export const login = async (req, res, next) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password credentials',
+        message: 'Invalid email or password.',
       });
     }
 
@@ -713,7 +713,8 @@ export const login = async (req, res, next) => {
     // ──────────────────────────────────────────────────────────────────────────
     const isSuspended =
       user.status === 'suspended' ||
-      user.accountStatus === 'SUSPENDED';
+      user.accountStatus === 'SUSPENDED' ||
+      (user.role === 'agent' && (user.status === 'inactive' || user.accountStatus === 'INACTIVE' || user.isActive === false));
 
     if (isSuspended) {
       const msg =
@@ -725,6 +726,23 @@ export const login = async (req, res, next) => {
         accountStatus: 'SUSPENDED',
         message: msg,
       });
+    }
+
+    // If agent, also verify parent agency is not suspended
+    if (user.role === 'agent' && user.agencyId) {
+      let parentAgency = null;
+      if (mongoose.connection.readyState === 1) {
+        parentAgency = await User.findById(user.agencyId);
+      } else if (devStore && typeof devStore.findUserById === 'function') {
+        parentAgency = await devStore.findUserById(user.agencyId);
+      }
+      if (parentAgency && (parentAgency.status === 'suspended' || parentAgency.accountStatus === 'SUSPENDED')) {
+        return res.status(403).json({
+          success: false,
+          accountStatus: 'SUSPENDED',
+          message: 'Your agent account has been suspended because your parent Agency is currently suspended. Please contact your Agency or Admin.',
+        });
+      }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -819,7 +837,7 @@ export const login = async (req, res, next) => {
       }
     }
 
-    const token = generateToken(user._id);
+    const token = generateToken(user._id, user.role);
 
     return res.status(200).json({
       success: true,
@@ -877,7 +895,7 @@ export const adminLogin = async (req, res, next) => {
       });
     }
 
-    const token = generateToken(user._id);
+    const token = generateToken(user._id, user.role || 'admin');
 
     return res.status(200).json({
       success: true,

@@ -18,13 +18,26 @@ function AdminLogin() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await adminLogin(email, password);
+      const res = await adminLogin(email, password);
+      const token = res?.data?.token || res?.token;
+      const canonicalUser = res?.user || res?.data?.user;
+      const canonicalRole = (canonicalUser?.role || canonicalUser?.user_metadata?.role || '').toLowerCase().trim();
+
+      if (!token || canonicalRole !== 'admin') {
+        throw new Error(res?.message || "Access denied: account does not have administrative clearance");
+      }
       toast.success("Administrator clearance granted");
       const from = location.state?.from?.pathname;
       const destination = from && from.startsWith("/admin") && from !== "/admin/login" ? from : "/admin/dashboard";
       navigate(destination, { replace: true });
     } catch (err) {
-      toast.error(err.message || "Invalid administrator credentials");
+      if (err?.status === 401 || err?.data?.status === 401) {
+        toast.error("Invalid email or password.");
+      } else if (err?.status === 403 || err?.data?.status === 403) {
+        toast.error(err?.data?.message || err?.message || "Access denied: account does not have administrative clearance");
+      } else {
+        toast.error(err?.data?.message || err?.message || "Invalid administrator credentials");
+      }
     } finally {
       setIsLoading(false);
     }

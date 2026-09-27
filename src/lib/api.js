@@ -73,6 +73,8 @@ export async function apiRequest(endpoint, options = {}) {
       let errorMsg = data?.message;
       if (res.status === 413) {
         errorMsg = data?.message || 'One or more uploaded documents are too large. Please reduce the file size and try again.';
+      } else if (res.status === 401 && !errorMsg) {
+        errorMsg = 'Invalid email or password.';
       } else if (!errorMsg) {
         errorMsg = `Request failed with status ${res.status}`;
       }

@@ -4,10 +4,11 @@ import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import AuthLayout from "../components/layout/AuthLayout";
 import { useAuth } from "../context/AuthContext";
+import { getRoleDashboard, isPathAllowedForRole } from "../components/auth/ProtectedRoute";
 import toast from "react-hot-toast";
 
 function Login() {
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("student");
   const [isLoading, setIsLoading] = useState(false);
@@ -18,30 +19,52 @@ function Login() {
   
   const navigate = useNavigate();
   const location = useLocation();
-  
-  const from = location.state?.from?.pathname || "/student/dashboard";
+
+  // If already authenticated with a valid role, redirect to appropriate role dashboard
+  React.useEffect(() => {
+    if (user) {
+      const canonicalRole = (user.role || user.user_metadata?.role || '').toLowerCase().trim();
+      if (canonicalRole) {
+        navigate(getRoleDashboard(canonicalRole), { replace: true });
+      }
+    }
+  }, [user, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      await login(email, password, role);
-      
+      const res = await login(email, password, role);
+
+      const token = res?.data?.token || res?.token;
+      const canonicalUser = res?.user || res?.data?.user;
+      const canonicalRole = (canonicalUser?.role || canonicalUser?.user_metadata?.role || '').toLowerCase().trim();
+
+      if (!token || !canonicalRole) {
+        throw new Error(res?.message || "Invalid email or password.");
+      }
+
       toast.success("Welcome back!");
-      
-      // If we got redirected here by ProtectedRoute, send them back to where they wanted to go
-      if (location.state?.from) {
-        navigate(from);
+
+      // Authoritative destination derived purely from the authenticated backend role
+      const defaultDashboard = getRoleDashboard(canonicalRole);
+
+      // Only redirect to 'from' if it is an authorized route for this authenticated role
+      const requestedPath = location.state?.from?.pathname;
+      if (requestedPath && isPathAllowedForRole(requestedPath, canonicalRole)) {
+        navigate(requestedPath, { replace: true });
       } else {
-        // Otherwise route based on their selected role
-        if (role === "student") navigate("/student/dashboard");
-        else if (role === "agent") navigate("/agent/dashboard");
-        else if (role === "agency") navigate("/agency/dashboard");
-        else if (role === "university") navigate("/university/dashboard");
+        navigate(defaultDashboard, { replace: true });
       }
     } catch (error) {
-      toast.error(error.message || "Invalid login credentials.");
+      if (error?.status === 401 || error?.data?.status === 401) {
+        toast.error("Invalid email or password.");
+      } else if (error?.status === 403 || error?.data?.status === 403) {
+        toast.error(error?.data?.message || error?.message || "Account access restricted.");
+      } else {
+        toast.error(error?.data?.message || error?.message || "An unexpected error occurred during login.");
+      }
     } finally {
       setIsLoading(false);
     }

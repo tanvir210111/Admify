@@ -170,8 +170,8 @@ function App() {
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/student/admin/login" element={<AdminLogin />} />
 
-        {/* Dashboard Routes wrapped in ProtectedRoute and DashboardLayout */}
-        <Route element={<ProtectedRoute />}>
+        {/* Dashboard Routes wrapped in ProtectedRoute (Role-protected: student only) */}
+        <Route element={<ProtectedRoute allowedRoles={['student']} />}>
           <Route path="/student" element={<DashboardLayout />}>
             <Route index element={<Navigate to="/student/dashboard" replace />} />
             <Route path="dashboard" element={<StudentDashboard />} />

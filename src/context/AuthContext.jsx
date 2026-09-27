@@ -33,10 +33,10 @@ export const clearAuthStorage = () => {
  * Checks if a JWT string is well-formed and unexpired.
  * Safely parses the token payload without external dependencies.
  */
-export const isTokenValid = (token) => {
-  if (!token || typeof token !== 'string') return false;
+export const decodeTokenPayload = (token) => {
+  if (!token || typeof token !== 'string') return null;
   const parts = token.trim().split('.');
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) return null;
   try {
     const base64Url = parts[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -47,28 +47,42 @@ export const isTokenValid = (token) => {
         .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
         .join('')
     );
-    const decoded = JSON.parse(jsonPayload);
-    if (!decoded) return false;
-
-    if (decoded.exp && typeof decoded.exp === 'number') {
-      const nowInSeconds = Math.floor(Date.now() / 1000);
-      if (decoded.exp <= nowInSeconds) {
-        return false;
-      }
-    }
-    return true;
+    return JSON.parse(jsonPayload);
   } catch {
-    return false;
+    return null;
   }
 };
 
+export const isTokenValid = (token) => {
+  const decoded = decodeTokenPayload(token);
+  if (!decoded) return false;
+  if (decoded.exp && typeof decoded.exp === 'number') {
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    if (decoded.exp <= nowInSeconds) {
+      return false;
+    }
+  }
+  return true;
+};
+
 // Format user object with backwards-compatible user_metadata for existing views
-const formatUser = (rawUser) => {
+export const formatUser = (rawUser, token = null) => {
   if (!rawUser) return null;
-  const role = rawUser.role || rawUser.user_metadata?.role || 'student';
+  const decoded = token ? decodeTokenPayload(token) : null;
+  // Canonical role: Backend user role takes highest precedence, then JWT token payload role, then metadata
+  const role = (
+    rawUser.role ||
+    decoded?.role ||
+    rawUser.user_metadata?.role ||
+    'student'
+  )
+    .toString()
+    .toLowerCase()
+    .trim();
+
   return {
     ...rawUser,
-    id: rawUser._id || rawUser.id,
+    id: rawUser._id || rawUser.id || decoded?.id,
     role,
     user_metadata: {
       full_name: rawUser.name || rawUser.user_metadata?.full_name || 'User',
@@ -88,7 +102,7 @@ export const AuthProvider = ({ children }) => {
         return null;
       }
       const cached = localStorage.getItem('admify_user');
-      return cached ? formatUser(JSON.parse(cached)) : null;
+      return cached ? formatUser(JSON.parse(cached), token) : null;
     } catch {
       clearAuthStorage();
       return null;
@@ -109,7 +123,7 @@ export const AuthProvider = ({ children }) => {
       try {
         const res = await api.get('/api/auth/me');
         if (res?.data?.user) {
-          const formatted = formatUser(res.data.user);
+          const formatted = formatUser(res.data.user, token);
           setUser(formatted);
           localStorage.setItem('admify_user', JSON.stringify(formatted));
         } else {
@@ -143,6 +157,9 @@ export const AuthProvider = ({ children }) => {
 
   // Register method
   const register = async ({ name, email, password, phone, role, ...extra }) => {
+    clearAuthStorage();
+    setUser(null);
+
     const res = await api.post('/api/auth/register', {
       name,
       email,
@@ -152,11 +169,14 @@ export const AuthProvider = ({ children }) => {
       ...extra,
     });
 
-    if (res?.data?.token) {
+    const token = res?.data?.token || res?.token;
+    const rawUser = res?.data?.user || res?.user;
+
+    if (token && rawUser) {
       clearAuthStorage();
-      localStorage.setItem('admify_token', res.data.token);
-      localStorage.setItem('token', res.data.token);
-      const formatted = formatUser(res.data.user);
+      localStorage.setItem('admify_token', token);
+      localStorage.setItem('token', token);
+      const formatted = formatUser(rawUser, token);
       if (formatted) {
         localStorage.setItem('admify_user', JSON.stringify(formatted));
       }
@@ -168,41 +188,64 @@ export const AuthProvider = ({ children }) => {
 
   // Standard login method
   const login = async (email, password, role) => {
+    // Purge any stale tokens, cached user objects, and session data before authenticating
+    clearAuthStorage();
+    setUser(null);
+
     const res = await api.post('/api/auth/login', {
       email,
       password,
       role,
     });
 
-    if (res?.data?.token) {
-      clearAuthStorage();
-      localStorage.setItem('admify_token', res.data.token);
-      localStorage.setItem('token', res.data.token);
-      const formatted = formatUser(res.data.user);
-      localStorage.setItem('admify_user', JSON.stringify(formatted));
-      setUser(formatted);
+    const token = res?.data?.token || res?.token;
+    const rawUser = res?.data?.user || res?.user;
+
+    if (!res || res.success === false || !token || !rawUser) {
+      const err = new Error(res?.message || 'Invalid email or password.');
+      err.status = res?.status || (res?.success === false ? 401 : 500);
+      err.data = res;
+      throw err;
     }
 
-    return res;
+    clearAuthStorage();
+    localStorage.setItem('admify_token', token);
+    localStorage.setItem('token', token);
+    const formatted = formatUser(rawUser, token);
+    localStorage.setItem('admify_user', JSON.stringify(formatted));
+    setUser(formatted);
+
+    return { ...res, user: formatted, role: formatted.role };
   };
 
   // Administrator login method
   const adminLogin = async (email, password) => {
+    clearAuthStorage();
+    setUser(null);
+
     const res = await api.post('/api/auth/admin/login', {
       email,
       password,
     });
 
-    if (res?.data?.token) {
-      clearAuthStorage();
-      localStorage.setItem('admify_token', res.data.token);
-      localStorage.setItem('token', res.data.token);
-      const formatted = formatUser(res.data.user);
-      localStorage.setItem('admify_user', JSON.stringify(formatted));
-      setUser(formatted);
+    const token = res?.data?.token || res?.token;
+    const rawUser = res?.data?.user || res?.user;
+
+    if (!res || res.success === false || !token || !rawUser) {
+      const err = new Error(res?.message || 'Invalid administrator credentials');
+      err.status = res?.status || (res?.success === false ? 401 : 500);
+      err.data = res;
+      throw err;
     }
 
-    return res;
+    clearAuthStorage();
+    localStorage.setItem('admify_token', token);
+    localStorage.setItem('token', token);
+    const formatted = formatUser(rawUser, token);
+    localStorage.setItem('admify_user', JSON.stringify(formatted));
+    setUser(formatted);
+
+    return { ...res, user: formatted, role: formatted.role };
   };
 
   // Sign out method
