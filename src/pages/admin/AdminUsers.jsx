@@ -249,7 +249,7 @@ export default function AdminUsers() {
       return (
         <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-amber-300">
           <Coins className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-          <span>{u.walletCredits ?? 0} CR</span>
+          <span>{(u.availableCredits !== undefined ? u.availableCredits : (Number(u.paidCredits || 0) + Number(u.freeCredits || 0)))} CR</span>
         </div>
       );
     }
@@ -648,8 +648,8 @@ export default function AdminUsers() {
                               <span className="text-slate-200 font-semibold">{selectedUser.targetCountry || "—"}</span>
                             </div>
                             <div>
-                              <span className="text-slate-500 text-[10px] block">Total Wallet Balance</span>
-                              <span className="text-amber-400 font-bold font-mono text-sm">{selectedUser.walletCredits ?? 0} CR</span>
+                              <span className="text-slate-500 text-[10px] block">Available Balance</span>
+                              <span className="text-amber-400 font-bold font-mono text-sm">{(selectedUser.availableCredits !== undefined ? selectedUser.availableCredits : (Number(selectedUser.paidCredits || 0) + Number(selectedUser.freeCredits || 0)))} CR</span>
                             </div>
                             <div>
                               <span className="text-slate-500 text-[10px] block">Free Welcome Credits</span>
@@ -1106,8 +1106,8 @@ export default function AdminUsers() {
                       />
                     </div>
                     <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
-                      <span>Wallet / Credit Balance:</span>
-                      <span className="font-mono font-bold">{editUser.walletCredits ?? 0} CR</span>
+                      <span>Available Credit Balance:</span>
+                      <span className="font-mono font-bold">{(editUser.availableCredits !== undefined ? editUser.availableCredits : (Number(editUser.paidCredits || 0) + Number(editUser.freeCredits || 0)))} CR</span>
                     </div>
                   </div>
                 )}

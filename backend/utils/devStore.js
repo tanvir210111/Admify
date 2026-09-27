@@ -536,8 +536,8 @@ class DevStore {
       if (!user.password) return false;
       return bcrypt.compare(enteredPassword, user.password);
     };
-    user.toJSON = () => {
-      const copy = { ...user };
+    user.toJSON = function () {
+      const copy = { ...this };
       delete copy.password;
       delete copy.activationTokenHash;
       const isPendingRole =
@@ -550,6 +550,25 @@ class DevStore {
         copy.availableCredits = 'N/A';
         copy.freeCredits = 'N/A';
         copy.paidCredits = 'N/A';
+      } else {
+        const now = new Date();
+        const isFreeExpired = copy.freeCreditExpiresAt && new Date(copy.freeCreditExpiresAt) < now;
+        const isFreeForfeited = Boolean(copy.freeCreditsForfeited);
+        const activeFree = (!isFreeExpired && !isFreeForfeited) ? (Number(copy.freeCredits) || 0) : 0;
+        const activePaid = Number(copy.paidCredits) || 0;
+        copy.availableCredits = activeFree + activePaid;
+        copy.walletCredits = copy.availableCredits;
+        copy.activeFreeCredits = activeFree;
+        copy.isFreeExpired = Boolean(isFreeExpired);
+        copy.freeCredits = activeFree;
+        copy.paidCredits = activePaid;
+        copy.creditsBreakdown = {
+          availableCredits: copy.availableCredits,
+          freeCredits: activeFree,
+          paidCredits: activePaid,
+          isFreeExpired: Boolean(isFreeExpired),
+          freeCreditsForfeited: isFreeForfeited,
+        };
       }
       copy.user_metadata = {
         full_name: copy.name,

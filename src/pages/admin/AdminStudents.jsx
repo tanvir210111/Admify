@@ -359,7 +359,7 @@ export default function AdminStudents() {
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-amber-300">{s.walletCredits || 0} CR</span>
+                        <span className="font-mono font-bold text-amber-300">{(s.availableCredits !== undefined ? s.availableCredits : (Number(s.paidCredits || 0) + Number(s.freeCredits || 0)))} CR</span>
                         <button
                           onClick={() => setAdjustModalStudent(s)}
                           className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-[10px] font-semibold transition-colors"
@@ -530,8 +530,8 @@ export default function AdminStudents() {
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <div className="p-2 rounded bg-white/3 text-center">
-                          <span className="text-slate-500 text-[9px] block">Total</span>
-                          <span className="text-amber-400 font-bold font-mono text-sm">{selectedStudent.walletCredits || 0} CR</span>
+                          <span className="text-slate-500 text-[9px] block">Available</span>
+                          <span className="text-amber-400 font-bold font-mono text-sm">{(selectedStudent.availableCredits !== undefined ? selectedStudent.availableCredits : (Number(selectedStudent.paidCredits || 0) + Number(selectedStudent.freeCredits || 0)))} CR</span>
                         </div>
                         <div className="p-2 rounded bg-white/3 text-center">
                           <span className="text-slate-500 text-[9px] block">Free</span>
@@ -666,96 +666,7 @@ export default function AdminStudents() {
         )}
       </AnimatePresence>
 
-      {/* ── Controlled Credit Adjustment Modal ── */}
-      <AnimatePresence>
-        {adjustModalStudent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl"
-              style={{ background: "#0B1228" }}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Coins className="w-4 h-4 text-amber-400" /> Credit Adjustment
-                  </h3>
-                  <p className="text-slate-400 text-xs mt-0.5">Target: {adjustModalStudent.name}</p>
-                </div>
-                <button onClick={() => setAdjustModalStudent(null)} className="text-slate-400 hover:text-white">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
 
-              <form onSubmit={handleCreditAdjustment} className="space-y-3.5 text-xs">
-                <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-300">
-                  <p className="font-semibold text-xs">Current Balance: {adjustModalStudent.walletCredits || 0} CR</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Enter positive numbers to grant credits (e.g. +50) or negative numbers to deduct (e.g. -20).
-                  </p>
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1 font-semibold">Credit Amount (+ / -)</label>
-                  <input
-                    type="number"
-                    value={adjustAmount}
-                    onChange={(e) => setAdjustAmount(e.target.value)}
-                    placeholder="e.g. 50 or -20"
-                    className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white font-mono font-bold focus:outline-none focus:border-amber-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1 font-semibold">Wallet Sub-Balance</label>
-                  <select
-                    value={adjustType}
-                    onChange={(e) => setAdjustType(e.target.value)}
-                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-violet-500"
-                  >
-                    <option value="paid">Paid Credits (Non-expiring)</option>
-                    <option value="free">Free Welcome Credits</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1 font-semibold">
-                    Mandatory Reason <span className="text-red-400">*</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={adjustReason}
-                    onChange={(e) => setAdjustReason(e.target.value)}
-                    placeholder="Provide a compliant reason (e.g., Customer support compensation, test waiver, bank reversal)..."
-                    className="w-full bg-white/4 border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-violet-500"
-                    required
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-white/8">
-                  <button
-                    type="button"
-                    onClick={() => setAdjustModalStudent(null)}
-                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={adjustLoading}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors disabled:opacity-50"
-                  >
-                    {adjustLoading ? "Applying..." : "Confirm Ledger Adjustment"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* ── Edit Student Modal ── */}
       <AnimatePresence>

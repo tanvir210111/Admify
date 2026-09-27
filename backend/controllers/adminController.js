@@ -653,6 +653,14 @@ export const getAdminUsers = async (req, res, next) => {
               if (app.university) u.universityDetails = app.university;
             }
           }
+          if (u.role === 'student') {
+            const breakdown = getActiveCreditsBreakdown(u);
+            u.availableCredits = breakdown.availableCredits;
+            u.walletCredits = breakdown.availableCredits;
+            u.freeCredits = breakdown.freeCredits;
+            u.paidCredits = breakdown.paidCredits;
+            u.creditsBreakdown = breakdown;
+          }
           return u;
         })
       );
@@ -699,6 +707,14 @@ export const getAdminUsers = async (req, res, next) => {
             item.uniRepApplication = app;
             if (app.university) item.universityDetails = app.university;
           }
+        }
+        if (item.role === 'student') {
+          const breakdown = getActiveCreditsBreakdown(item);
+          item.availableCredits = breakdown.availableCredits;
+          item.walletCredits = breakdown.availableCredits;
+          item.freeCredits = breakdown.freeCredits;
+          item.paidCredits = breakdown.paidCredits;
+          item.creditsBreakdown = breakdown;
         }
         return item;
       });
@@ -747,6 +763,13 @@ export const getAdminUserById = async (req, res, next) => {
           related.creditTransactions = await CreditTransaction.find({ user: user._id })
             .populate('admin', 'name email')
             .sort({ createdAt: -1 });
+          const breakdown = getActiveCreditsBreakdown(user);
+          user = user.toObject ? user.toObject() : { ...user };
+          user.availableCredits = breakdown.availableCredits;
+          user.walletCredits = breakdown.availableCredits;
+          user.freeCredits = breakdown.freeCredits;
+          user.paidCredits = breakdown.paidCredits;
+          user.creditsBreakdown = breakdown;
         } else if (user.role === 'agency') {
           related.agencyProfile = user.agencyProfile || await AgencyProfile.findOne({ user: user._id });
           related.agentApplications = await AgentApplication.find({ agency: user._id });
@@ -791,6 +814,13 @@ export const getAdminUserById = async (req, res, next) => {
               };
             })
             .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          const breakdown = getActiveCreditsBreakdown(user);
+          user = { ...user };
+          user.availableCredits = breakdown.availableCredits;
+          user.walletCredits = breakdown.availableCredits;
+          user.freeCredits = breakdown.freeCredits;
+          user.paidCredits = breakdown.paidCredits;
+          user.creditsBreakdown = breakdown;
         } else if (user.role === 'agency') {
           related.agencyProfile = await devStore.findAgencyProfileByUserId(uid);
           related.agentApplications = await devStore.findAgentApplications({ agency: uid });
@@ -1216,47 +1246,49 @@ export const adjustUserCredits = async (req, res, next) => {
         });
       }
 
-      balanceBefore = (Number(user.paidCredits) || 0) + (Number(user.freeCredits) || 0);
+      const breakdownBefore = getActiveCreditsBreakdown(user);
+      balanceBefore = breakdownBefore.availableCredits;
+      const prevPaid = breakdownBefore.paidCredits;
+      const prevFree = breakdownBefore.freeCredits;
 
-      // 5. REMOVE cannot make student's balance negative
-      if (isDebit && absAmount > balanceBefore) {
-        return res.status(400).json({
-          success: false,
-          message: `Cannot remove ${absAmount} CR. Student only has ${balanceBefore} CR available.`,
-        });
-      }
-
-      const prevPaid = user.paidCredits || 0;
-      const prevFree = user.freeCredits || 0;
-
+      // 5. REMOVE cannot make student's balance or sub-balance negative
       if (isDebit) {
+        if (absAmount > balanceBefore) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot remove ${absAmount} CR. Student only has ${balanceBefore} CR available.`,
+          });
+        }
+
         if (creditType === 'free') {
-          if ((user.freeCredits || 0) >= absAmount) {
-            user.freeCredits -= absAmount;
-          } else {
-            const rem = absAmount - (user.freeCredits || 0);
-            user.freeCredits = 0;
-            user.paidCredits = Math.max(0, (user.paidCredits || 0) - rem);
+          if (absAmount > prevFree) {
+            return res.status(400).json({
+              success: false,
+              message: `Cannot remove ${absAmount} Free Credits. Student only has ${prevFree} Free Credits available.`,
+            });
           }
+          user.freeCredits = prevFree - absAmount;
         } else {
-          if ((user.paidCredits || 0) >= absAmount) {
-            user.paidCredits -= absAmount;
-          } else {
-            const rem = absAmount - (user.paidCredits || 0);
-            user.paidCredits = 0;
-            user.freeCredits = Math.max(0, (user.freeCredits || 0) - rem);
+          // creditType === 'paid'
+          if (absAmount > prevPaid) {
+            return res.status(400).json({
+              success: false,
+              message: `Cannot remove ${absAmount} Paid Credits. Student only has ${prevPaid} Paid Credits available.`,
+            });
           }
+          user.paidCredits = prevPaid - absAmount;
         }
       } else {
         if (creditType === 'free') {
-          user.freeCredits = (user.freeCredits || 0) + absAmount;
+          user.freeCredits = prevFree + absAmount;
         } else {
-          user.paidCredits = (user.paidCredits || 0) + absAmount;
+          user.paidCredits = prevPaid + absAmount;
         }
       }
 
       user.walletCredits = (user.paidCredits || 0) + (user.freeCredits || 0);
-      balanceAfter = user.walletCredits;
+      const breakdownAfter = getActiveCreditsBreakdown(user);
+      balanceAfter = breakdownAfter.availableCredits;
       await user.save();
 
       const delta = isDebit ? -absAmount : absAmount;
@@ -1311,55 +1343,55 @@ export const adjustUserCredits = async (req, res, next) => {
         });
       }
 
-      balanceBefore = (Number(user.paidCredits) || 0) + (Number(user.freeCredits) || 0);
-
-      // 5. REMOVE cannot make student's balance negative
-      if (isDebit && absAmount > balanceBefore) {
-        return res.status(400).json({
-          success: false,
-          message: `Cannot remove ${absAmount} CR. Student only has ${balanceBefore} CR available.`,
-        });
-      }
-
-      const prevPaid = user.paidCredits || 0;
-      const prevFree = user.freeCredits || 0;
+      const breakdownBefore = getActiveCreditsBreakdown(user);
+      balanceBefore = breakdownBefore.availableCredits;
+      const prevPaid = breakdownBefore.paidCredits;
+      const prevFree = breakdownBefore.freeCredits;
       let newPaid = prevPaid;
       let newFree = prevFree;
 
       if (isDebit) {
+        if (absAmount > balanceBefore) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot remove ${absAmount} CR. Student only has ${balanceBefore} CR available.`,
+          });
+        }
+
         if (creditType === 'free') {
-          if (newFree >= absAmount) {
-            newFree -= absAmount;
-          } else {
-            const rem = absAmount - newFree;
-            newFree = 0;
-            newPaid = Math.max(0, newPaid - rem);
+          if (absAmount > prevFree) {
+            return res.status(400).json({
+              success: false,
+              message: `Cannot remove ${absAmount} Free Credits. Student only has ${prevFree} Free Credits available.`,
+            });
           }
+          newFree = prevFree - absAmount;
         } else {
-          if (newPaid >= absAmount) {
-            newPaid -= absAmount;
-          } else {
-            const rem = absAmount - newPaid;
-            newPaid = 0;
-            newFree = Math.max(0, newFree - rem);
+          if (absAmount > prevPaid) {
+            return res.status(400).json({
+              success: false,
+              message: `Cannot remove ${absAmount} Paid Credits. Student only has ${prevPaid} Paid Credits available.`,
+            });
           }
+          newPaid = prevPaid - absAmount;
         }
       } else {
         if (creditType === 'free') {
-          newFree += absAmount;
+          newFree = prevFree + absAmount;
         } else {
-          newPaid += absAmount;
+          newPaid = prevPaid + absAmount;
         }
       }
 
       const newWallet = newPaid + newFree;
-      balanceAfter = newWallet;
-
       user = await devStore.updateUser(userId, {
         paidCredits: newPaid,
         freeCredits: newFree,
         walletCredits: newWallet,
       });
+
+      const breakdownAfter = getActiveCreditsBreakdown(user);
+      balanceAfter = breakdownAfter.availableCredits;
 
       const delta = isDebit ? -absAmount : absAmount;
       const transactionId = `CTX-ADJ-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -1405,11 +1437,16 @@ export const adjustUserCredits = async (req, res, next) => {
     }
 
     const delta = isDebit ? -absAmount : absAmount;
+    const returnUser = user.toObject ? user.toObject() : { ...user };
+    returnUser.availableCredits = balanceAfter;
+    returnUser.walletCredits = balanceAfter;
+    returnUser.creditsBreakdown = getActiveCreditsBreakdown(user);
+
     return res.status(200).json({
       success: true,
       message: `Adjusted ${delta > 0 ? '+' : ''}${delta} credits for ${user.name}. New balance: ${balanceAfter} CR.`,
       data: {
-        user,
+        user: returnUser,
         balanceBefore,
         balanceAfter,
         transaction: ledgerTx,
