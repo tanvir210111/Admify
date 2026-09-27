@@ -293,8 +293,128 @@ export const sendUniversityRepActivationEmail = async ({
   };
 };
 
+export const sendAgencyApprovalEmail = async ({
+  to,
+  agencyName,
+  applicationId,
+}) => {
+  const subject = 'Admify Agency Registration Approved';
+  const loginUrl = 'https://admify.world/login';
+
+  const textContent = `Your agency registration has been approved by Admify.
+
+You can now log in to your Admify Agency account using your registered email address and password.
+
+Login here:
+${loginUrl}
+
+Thank you,
+Admify Team`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #050b1f; color: #f1f5f9; margin: 0; padding: 24px; }
+    .container { max-width: 580px; margin: 0 auto; background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; }
+    .header { background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 32px 24px; text-align: center; }
+    .header h1 { margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; }
+    .content { padding: 32px 24px; font-size: 14px; line-height: 1.6; color: #cbd5e1; }
+    .btn-container { text-align: center; margin: 28px 0; }
+    .btn { display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-weight: 700; font-size: 15px; }
+    .footer { padding: 20px 24px; background: #090d1a; font-size: 12px; color: #64748b; text-align: center; border-top: 1px solid #1e293b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Admify Official Verification</h1>
+      <p style="margin: 6px 0 0 0; color: #e0e7ff; font-size: 14px;">Study Abroad Agency Partnership</p>
+    </div>
+    <div class="content">
+      <h2 style="color: #ffffff; font-size: 18px; margin-top: 0;">Congratulations, ${agencyName || 'Partner'}!</h2>
+      <p>Your agency registration has been approved by Admify.</p>
+      <p>You can now log in to your Admify Agency account using your registered email address and password.</p>
+      <div class="btn-container">
+        <a href="${loginUrl}" class="btn" target="_blank">Login to Agency Portal</a>
+      </div>
+      <p style="font-size: 12px; color: #94a3b8;">
+        Login here:<br>
+        <a href="${loginUrl}" style="color: #818cf8;">${loginUrl}</a>
+      </p>
+      <p style="margin-top: 24px;">Thank you,<br><strong>Admify Team</strong></p>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} Admify AI Technologies. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  // Production SMTP check
+  const smtpConfigured = Boolean(
+    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+  );
+
+  if (smtpConfigured) {
+    try {
+      const nodemailer = await import('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: process.env.EMAIL_FROM || '"Admify Partner Network" <no-reply@admify.world>',
+        to,
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+
+      console.log(`[Email Service (Production)] Approval notification sent to ${to}: ${info.messageId}`);
+      return {
+        success: true,
+        delivered: true,
+        mode: 'PRODUCTION_SMTP',
+        messageId: info.messageId,
+      };
+    } catch (err) {
+      console.error(`[Email Service (SMTP Error)] Failed to deliver email to ${to}:`, err.message);
+    }
+  }
+
+  // Development Fallback Logging (clearly marked, not pretending delivery)
+  console.log('\n' + '='.repeat(70));
+  console.log(' [EMAIL SERVICE - AGENCY APPROVAL NOTIFICATION]');
+  console.log(' Mode: DEVELOPMENT_FALLBACK (No SMTP credentials configured)');
+  console.log(` To: ${to}`);
+  console.log(` Subject: ${subject}`);
+  console.log(` Agency: ${agencyName} (${applicationId || 'N/A'})`);
+  console.log(` Message: Your agency registration has been approved. You can now log in at ${loginUrl}`);
+  console.log('='.repeat(70) + '\n');
+
+  return {
+    success: true,
+    delivered: false,
+    mode: 'DEV_FALLBACK',
+    note: 'Email was logged to server console in development mode. Real SMTP delivery requires SMTP_HOST credentials.',
+  };
+};
+
 export default {
+  sendAgencyApprovalEmail,
   sendAgencyActivationEmail,
   sendUniversityRepActivationEmail,
 };
+
 

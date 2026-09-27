@@ -407,6 +407,12 @@ export default function AdminAgencies() {
                     <span className="font-bold text-white text-sm">
                       {STATUS_MAP[selectedAgency.verificationStatus]?.label || selectedAgency.verificationStatus || "PENDING"}
                     </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      Login Status:{" "}
+                      <strong className={selectedAgency.verificationStatus === "VERIFIED" || selectedAgency.verificationStatus === "APPROVED" ? "text-emerald-400" : "text-amber-400"}>
+                        {selectedAgency.verificationStatus === "VERIFIED" || selectedAgency.verificationStatus === "APPROVED" ? "ACTIVE" : "INACTIVE (Pending Approval)"}
+                      </strong>
+                    </span>
                   </div>
                   <div className="flex gap-2">
                     {selectedAgency.verificationStatus !== "VERIFIED" && selectedAgency.verificationStatus !== "APPROVED" && (
@@ -691,7 +697,7 @@ export default function AdminAgencies() {
 
                 {actionModal.targetStatus === "VERIFIED" ? (
                   <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-300 text-[11px]">
-                    Approving this agency will update its canonical status to <strong>VERIFIED</strong>, generate a cryptographically secure 48-hour activation token, and dispatch an activation link to <strong className="text-white">{actionModal.agency.officialBusinessEmail || actionModal.agency.user?.email}</strong>.
+                    Approving this agency will update its canonical status to <strong>VERIFIED</strong>, immediately enable <strong>ACTIVE</strong> portal login, and dispatch an approval notification email to <strong className="text-white">{actionModal.agency.officialBusinessEmail || actionModal.agency.user?.email}</strong>.
                   </div>
                 ) : (
                   <div>

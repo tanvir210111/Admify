@@ -3521,25 +3521,24 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           note: adminNotes || 'Agency application approved by Administrator.',
         });
 
-        rawActivationToken = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(rawActivationToken).digest('hex');
-        const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000);
-
         userUpdates = {
           ...userUpdates,
-          accountStatus: 'APPROVED',
-          status: 'pending',
-          isActive: false,
-          activationTokenHash: tokenHash,
-          activationTokenExpires: tokenExpires,
-          activationTokenUsed: false,
+          accountStatus: 'ACTIVE',
+          status: 'active',
+          isActive: true,
+          emailVerified: true,
+          activationTokenHash: null,
+          activationTokenExpires: null,
+          activationTokenUsed: true,
+          activatedAt: now,
+          approvedAt: now,
+          approvedBy: req.user._id,
         };
 
-        emailResult = await emailService.sendAgencyActivationEmail({
+        emailResult = await emailService.sendAgencyApprovalEmail({
           to: verification.officialBusinessEmail || agencyUser.email,
           agencyName: verification.agencyName,
           applicationId: verification.applicationId || 'ADM-AGY-2026',
-          activationToken: rawActivationToken,
         });
       } else if (canonicalStatus === 'REJECTED') {
         verification.rejectionReason = rejectionReason.trim();
@@ -3588,12 +3587,10 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
 
       return res.status(200).json({
         success: true,
-        message: `Agency verification status updated to ${canonicalStatus}.${canonicalStatus === 'VERIFIED' ? ' Activation email dispatched.' : ''}`,
+        message: `Agency verification status updated to ${canonicalStatus}.${canonicalStatus === 'VERIFIED' ? ' Approval notification email dispatched.' : ''}`,
         data: {
           verification,
           emailDispatched: emailResult?.delivered || false,
-          activationUrl: emailResult?.activationUrl || null,
-          activationToken: rawActivationToken,
         },
         verification,
       });
@@ -3620,18 +3617,18 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
       let history = Array.isArray(verification.statusHistory) ? [...verification.statusHistory] : [];
 
       if (canonicalStatus === 'VERIFIED') {
-        rawActivationToken = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(rawActivationToken).digest('hex');
-        const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-
         userUpdates = {
           ...userUpdates,
-          accountStatus: 'APPROVED',
-          status: 'pending',
-          isActive: false,
-          activationTokenHash: tokenHash,
-          activationTokenExpires: tokenExpires,
-          activationTokenUsed: false,
+          accountStatus: 'ACTIVE',
+          status: 'active',
+          isActive: true,
+          emailVerified: true,
+          activationTokenHash: null,
+          activationTokenExpires: null,
+          activationTokenUsed: true,
+          activatedAt: now.toISOString(),
+          approvedAt: now.toISOString(),
+          approvedBy: req.user._id,
         };
 
         history.push({
@@ -3641,11 +3638,10 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           note: adminNotes || 'Agency application approved by Administrator.',
         });
 
-        emailResult = await emailService.sendAgencyActivationEmail({
+        emailResult = await emailService.sendAgencyApprovalEmail({
           to: verification.officialBusinessEmail || agencyUser.email,
           agencyName: verification.agencyName,
           applicationId: verification.applicationId || 'ADM-AGY-2026',
-          activationToken: rawActivationToken,
         });
       } else if (canonicalStatus === 'REJECTED') {
         userUpdates = {
@@ -3694,12 +3690,10 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
 
       return res.status(200).json({
         success: true,
-        message: `Agency verification status updated to ${canonicalStatus}.${canonicalStatus === 'VERIFIED' ? ' Activation email dispatched.' : ''}`,
+        message: `Agency verification status updated to ${canonicalStatus}.${canonicalStatus === 'VERIFIED' ? ' Approval notification email dispatched.' : ''}`,
         data: {
           verification,
           emailDispatched: emailResult?.delivered || false,
-          activationUrl: emailResult?.activationUrl || null,
-          activationToken: rawActivationToken,
         },
         verification,
       });

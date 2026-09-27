@@ -728,30 +728,50 @@ export const login = async (req, res, next) => {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // AGENCY LOGIN GATE: Block login if agency account is not fully active
+    // AGENCY LOGIN GATE: Allow immediate login if approved, otherwise show clear status message
     // ──────────────────────────────────────────────────────────────────────────
     if (user.role === 'agency') {
-      const isAgencyActive =
-        user.accountStatus === 'ACTIVE' &&
-        user.isActive === true;
+      const vStatus = (user.agencyVerificationStatus || '').toUpperCase();
+      const aStatus = (user.accountStatus || '').toUpperCase();
 
-      if (!isAgencyActive) {
-        let msg = 'Your agency account has not been activated yet. Please check your email after Admin approval.';
-        if (user.accountStatus === 'PENDING') {
-          msg = 'Your agency registration is pending verification. Please complete verification submission.';
-        } else if (user.accountStatus === 'UNDER_REVIEW') {
-          msg = 'Your agency verification is currently under review by Admify Admin. You will receive an activation email once approved.';
-        } else if (user.accountStatus === 'APPROVED') {
-          msg = 'Your agency registration has been approved! Please check your official business email and click the activation link before logging in.';
-        } else if (user.accountStatus === 'REJECTED') {
-          msg = 'Your agency application was not approved. Please contact compliance@admify.world for further assistance.';
-        }
+      if (vStatus === 'REJECTED' || aStatus === 'REJECTED') {
+        return res.status(403).json({
+          success: false,
+          accountStatus: 'REJECTED',
+          message: 'Your agency registration has been rejected. Please contact Admin for details.',
+        });
+      }
 
+      const isApproved =
+        vStatus === 'VERIFIED' ||
+        vStatus === 'APPROVED' ||
+        aStatus === 'ACTIVE' ||
+        aStatus === 'APPROVED';
+
+      if (!isApproved) {
         return res.status(403).json({
           success: false,
           accountStatus: user.accountStatus || 'PENDING',
-          message: msg,
+          message: 'Your agency registration is still under review.',
         });
+      }
+
+      // Self-heal / activate approved agency records (including legacy records)
+      if (!user.isActive || user.accountStatus !== 'ACTIVE' || user.status !== 'active') {
+        user.isActive = true;
+        user.accountStatus = 'ACTIVE';
+        user.status = 'active';
+        user.activationTokenUsed = true;
+        if (typeof user.save === 'function') {
+          await user.save();
+        } else if (devStore && typeof devStore.updateUser === 'function') {
+          await devStore.updateUser(user._id, {
+            isActive: true,
+            accountStatus: 'ACTIVE',
+            status: 'active',
+            activationTokenUsed: true,
+          });
+        }
       }
     }
 

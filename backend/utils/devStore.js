@@ -661,7 +661,7 @@ class DevStore {
           agencyName: u.name || 'Agency ' + (u.email || '').split('@')[0],
           officialBusinessEmail: u.email,
           applicationId: appId,
-          verificationStatus: (u.agencyVerificationStatus || (u.accountStatus === 'APPROVED' ? 'VERIFIED' : 'PENDING')).toUpperCase(),
+          verificationStatus: (u.agencyVerificationStatus || (u.accountStatus === 'APPROVED' || u.accountStatus === 'ACTIVE' ? 'VERIFIED' : 'PENDING')).toUpperCase(),
           isDraft: true,
           authorizedPerson: {
             fullName: u.name || '',
