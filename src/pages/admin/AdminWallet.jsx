@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Coins, TrendingUp, CreditCard, Search, Landmark, RefreshCw,
-  Plus, X, Filter, ArrowUpRight, ArrowDownRight, User, ShieldCheck,
+  Plus, X, Filter, ArrowUpRight, ArrowDownRight, User, ShieldCheck, Sparkles,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
@@ -24,6 +24,25 @@ export default function AdminWallet() {
   const [creditType, setCreditType] = useState("paid");
   const [reason, setReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [syncingWelcome, setSyncingWelcome] = useState(false);
+
+  const handleSyncWelcome = async () => {
+    setSyncingWelcome(true);
+    try {
+      const res = await api.post("/api/admin/credits/sync-welcome-ledger");
+      const isSuccess = res?.success || res?.data?.success;
+      if (isSuccess) {
+        toast.success(res?.message || res?.data?.message || "Welcome credit ledger synchronized!");
+        fetchTransactions();
+      } else {
+        toast.error(res?.message || res?.data?.message || "Failed to sync welcome credits");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || err?.message || "Failed to sync welcome credits");
+    } finally {
+      setSyncingWelcome(false);
+    }
+  };
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -129,6 +148,14 @@ export default function AdminWallet() {
     .filter((tx) => tx.type === "ADMIN_ADJUSTMENT")
     .reduce((acc, curr) => acc + (curr.credits || 0), 0);
 
+  const totalWelcome = transactions
+    .filter((tx) => tx.type === "WELCOME_CREDIT")
+    .reduce((acc, curr) => acc + (curr.credits || 0), 0);
+
+  const totalRefunds = transactions
+    .filter((tx) => tx.type === "REFUND")
+    .reduce((acc, curr) => acc + (curr.credits || 0), 0);
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
 
@@ -142,7 +169,15 @@ export default function AdminWallet() {
             Double-entry credit audit trail, manual controlled adjustments, and usage analytics (1 Credit = ৳100)
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleSyncWelcome}
+            disabled={syncingWelcome}
+            className="flex items-center gap-2 px-3.5 py-2 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold rounded-xl transition-colors disabled:opacity-50"
+            title="Safely sync missing welcome credit ledger records for registered students"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-sky-400" /> {syncingWelcome ? "Syncing..." : "Sync Welcome Credits"}
+          </button>
           <button
             onClick={() => setAdjustModal(true)}
             className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 text-slate-950 text-xs font-bold rounded-xl shadow-lg transition-all"
@@ -158,21 +193,23 @@ export default function AdminWallet() {
         </div>
       </div>
 
-      {/* Real Ledger KPI Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Real Ledger KPI Summary (6 KPI Cards) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3.5">
         {[
           { label: "Total Ledger Entries", val: transactions.length, color: "text-violet-400" },
           { label: "Purchased Credits", val: `+${totalPurchased.toLocaleString()} CR`, color: "text-emerald-400" },
           { label: "Consumed on Services", val: `-${totalUsed.toLocaleString()} CR`, color: "text-rose-400" },
           { label: "Admin Adjustments", val: `${totalAdjusted >= 0 ? "+" : ""}${totalAdjusted.toLocaleString()} CR`, color: "text-amber-400" },
+          { label: "Welcome Credits", val: `+${totalWelcome.toLocaleString()} CR`, color: "text-sky-400" },
+          { label: "Refunds", val: `+${totalRefunds.toLocaleString()} CR`, color: "text-purple-400" },
         ].map((k, i) => (
           <div
             key={i}
             className="p-4 rounded-2xl border"
             style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
           >
-            <p className="text-slate-400 text-xs font-medium">{k.label}</p>
-            <p className={`text-2xl font-black ${k.color} mt-1 font-mono`}>{k.val}</p>
+            <p className="text-slate-400 text-xs font-medium truncate">{k.label}</p>
+            <p className={`text-xl xl:text-2xl font-black ${k.color} mt-1 font-mono truncate`}>{k.val}</p>
           </div>
         ))}
       </div>
@@ -256,8 +293,20 @@ export default function AdminWallet() {
                         <p className="text-[10px] text-slate-500">{tx.user?.email || "—"}</p>
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white/4 text-slate-300 border border-white/8">
-                          {tx.type}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                          tx.type === 'WELCOME_CREDIT'
+                            ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                            : tx.type === 'PURCHASE'
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : tx.type === 'USAGE'
+                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                            : tx.type === 'ADMIN_ADJUSTMENT'
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                            : tx.type === 'REFUND'
+                            ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                            : 'bg-white/4 text-slate-300 border-white/8'
+                        }`}>
+                          {tx.type?.replace(/_/g, ' ')}
                         </span>
                       </td>
                       <td className="px-4 py-3.5">

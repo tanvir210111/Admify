@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import PaymentOrder from '../models/PaymentOrder.js';
 import CreditTransaction from '../models/CreditTransaction.js';
@@ -5,6 +6,7 @@ import Coupon from '../models/Coupon.js';
 import AgencyServiceOrder from '../models/AgencyServiceOrder.js';
 import Notification from '../models/Notification.js';
 import { CREDIT_PACKAGES, CREDIT_COSTS } from '../utils/creditConstants.js';
+import devStore from '../utils/devStore.js';
 
 // Helper: Calculate authentic usable credits respecting 1-month expiry and purchase forfeiture
 export const getActiveCreditsBreakdown = (user) => {
@@ -41,41 +43,79 @@ const generateDynamicId = (prefix) => {
 // @access  Private
 export const getWallet = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    let user;
+    let creditTransactions = [];
+    let paymentOrders = [];
+    let agencyOrders = [];
+
+    if (mongoose.connection.readyState === 1) {
+      user = await User.findById(req.user._id);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      const breakdown = getActiveCreditsBreakdown(user);
+
+      // Synchronize user.walletCredits if it drifted
+      if (user.walletCredits !== breakdown.availableCredits) {
+        user.walletCredits = breakdown.availableCredits;
+        await user.save();
+      }
+
+      creditTransactions = await CreditTransaction.find({ user: user._id })
+        .sort({ createdAt: -1 })
+        .limit(50);
+
+      paymentOrders = await PaymentOrder.find({ user: user._id })
+        .sort({ createdAt: -1 })
+        .limit(50);
+
+      agencyOrders = await AgencyServiceOrder.find({ user: user._id })
+        .sort({ createdAt: -1 });
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...breakdown,
+          creditTransactions,
+          paymentOrders,
+          agencyOrders,
+          packages: CREDIT_PACKAGES,
+          serviceCosts: CREDIT_COSTS,
+        },
+      });
+    } else {
+      user = await devStore.findUserById(req.user._id);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      const breakdown = getActiveCreditsBreakdown(user);
+
+      if (user.walletCredits !== breakdown.availableCredits) {
+        await devStore.updateUser(user._id, { walletCredits: breakdown.availableCredits });
+      }
+
+      creditTransactions = await devStore.findCreditTransactions({ user: user._id });
+      paymentOrders = await devStore.findPaymentOrders({ user: user._id });
+
+      const db = devStore.read();
+      agencyOrders = (db.agencyServiceOrders || []).filter(
+        (o) => (o.user?._id || o.user)?.toString() === user._id.toString()
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...breakdown,
+          creditTransactions,
+          paymentOrders,
+          agencyOrders,
+          packages: CREDIT_PACKAGES,
+          serviceCosts: CREDIT_COSTS,
+        },
+      });
     }
-
-    const breakdown = getActiveCreditsBreakdown(user);
-
-    // Synchronize user.walletCredits if it drifted
-    if (user.walletCredits !== breakdown.availableCredits) {
-      user.walletCredits = breakdown.availableCredits;
-      await user.save();
-    }
-
-    const creditTransactions = await CreditTransaction.find({ user: user._id })
-      .sort({ createdAt: -1 })
-      .limit(50);
-
-    const paymentOrders = await PaymentOrder.find({ user: user._id })
-      .sort({ createdAt: -1 })
-      .limit(50);
-
-    const agencyOrders = await AgencyServiceOrder.find({ user: user._id })
-      .sort({ createdAt: -1 });
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        ...breakdown,
-        creditTransactions,
-        paymentOrders,
-        agencyOrders,
-        packages: CREDIT_PACKAGES,
-        serviceCosts: CREDIT_COSTS,
-      },
-    });
   } catch (error) {
     next(error);
   }
@@ -211,99 +251,191 @@ export const submitPaymentOrder = async (req, res, next) => {
 
     const cleanTxnId = transactionId.trim();
 
-    // ── DUPLICATE TRANSACTION ID PROTECTION (Server-Side) ─────────────────────
-    const duplicateTxn = await PaymentOrder.findOne({
-      transactionId: cleanTxnId,
-      status: { $in: ['APPROVED', 'PENDING_VERIFICATION'] },
-    });
-
-    if (duplicateTxn) {
-      return res.status(400).json({
-        success: false,
-        message: 'This Transaction ID has already been submitted or processed. Duplicate transaction IDs are strictly blocked.',
+    if (mongoose.connection.readyState === 1) {
+      // ── DUPLICATE TRANSACTION ID PROTECTION (Server-Side) ─────────────────────
+      const duplicateTxn = await PaymentOrder.findOne({
+        transactionId: cleanTxnId,
+        status: { $in: ['APPROVED', 'PENDING_VERIFICATION'] },
       });
-    }
 
-    let discountPercent = 0;
-    let discountAmount = 0;
-    let finalAmount = pkg.priceBdt;
+      if (duplicateTxn) {
+        return res.status(400).json({
+          success: false,
+          message: 'This Transaction ID has already been submitted or processed. Duplicate transaction IDs are strictly blocked.',
+        });
+      }
 
-    // Validate Coupon if provided
-    if (couponCode && couponCode.trim()) {
-      const cleanCoupon = couponCode.trim().toUpperCase();
-      const coupon = await Coupon.findOne({ code: cleanCoupon, isActive: true });
-      if (coupon) {
-        const isNotExpired = !coupon.expiryDate || new Date(coupon.expiryDate) >= new Date();
-        const isUnderLimit = !coupon.usageLimit || coupon.usedCount < coupon.usageLimit;
-        const userUsage = (coupon.usedBy || []).filter(
-          (u) => u.userId?.toString() === req.user._id.toString()
-        ).length;
-        const isUnderUserLimit = userUsage < (coupon.perUserLimit || 1);
-        const isApplicable =
-          coupon.applicablePackages.includes('all') || coupon.applicablePackages.includes(packageId);
+      let discountPercent = 0;
+      let discountAmount = 0;
+      let finalAmount = pkg.priceBdt;
 
-        if (isNotExpired && isUnderLimit && isUnderUserLimit && isApplicable) {
-          discountPercent = coupon.discountPercent;
-          discountAmount = Math.round((pkg.priceBdt * discountPercent) / 100);
-          finalAmount = Math.max(0, pkg.priceBdt - discountAmount);
+      // Validate Coupon if provided
+      if (couponCode && couponCode.trim()) {
+        const cleanCoupon = couponCode.trim().toUpperCase();
+        const coupon = await Coupon.findOne({ code: cleanCoupon, isActive: true });
+        if (coupon) {
+          const isNotExpired = !coupon.expiryDate || new Date(coupon.expiryDate) >= new Date();
+          const isUnderLimit = !coupon.usageLimit || coupon.usedCount < coupon.usageLimit;
+          const userUsage = (coupon.usedBy || []).filter(
+            (u) => u.userId?.toString() === req.user._id.toString()
+          ).length;
+          const isUnderUserLimit = userUsage < (coupon.perUserLimit || 1);
+          const isApplicable =
+            coupon.applicablePackages.includes('all') || coupon.applicablePackages.includes(packageId);
 
-          // Update coupon usage
-          coupon.usedCount += 1;
-          coupon.usedBy.push({ userId: req.user._id, usedAt: new Date() });
-          await coupon.save();
+          if (isNotExpired && isUnderLimit && isUnderUserLimit && isApplicable) {
+            discountPercent = coupon.discountPercent;
+            discountAmount = Math.round((pkg.priceBdt * discountPercent) / 100);
+            finalAmount = Math.max(0, pkg.priceBdt - discountAmount);
+
+            // Update coupon usage
+            coupon.usedCount += 1;
+            coupon.usedBy.push({ userId: req.user._id, usedAt: new Date() });
+            await coupon.save();
+          }
         }
       }
-    }
 
-    // Verify paid amount matches final amount if provided
-    if (paidAmount && Math.abs(Number(paidAmount) - finalAmount) > 10) {
-      return res.status(400).json({
-        success: false,
-        message: `Submitted paid amount (৳${paidAmount}) does not match expected final amount (৳${finalAmount})`,
+      // Verify paid amount matches final amount if provided
+      if (paidAmount && Math.abs(Number(paidAmount) - finalAmount) > 10) {
+        return res.status(400).json({
+          success: false,
+          message: `Submitted paid amount (৳${paidAmount}) does not match expected final amount (৳${finalAmount})`,
+        });
+      }
+
+      let orderId = generateDynamicId('ADM-PAY');
+      // Ensure uniqueness of orderId
+      while (await PaymentOrder.findOne({ orderId })) {
+        orderId = generateDynamicId('ADM-PAY');
+      }
+
+      const paymentOrder = await PaymentOrder.create({
+        orderId,
+        user: req.user._id,
+        packageId: pkg.id,
+        packageName: pkg.name,
+        credits: pkg.credits,
+        originalAmount: pkg.priceBdt,
+        couponCode: couponCode ? couponCode.trim().toUpperCase() : '',
+        discountPercent,
+        discountAmount,
+        finalAmount,
+        paymentMethod,
+        transactionId: cleanTxnId,
+        screenshotUrl,
+        accountNumber: accountNumber.trim(),
+        status: 'PENDING_VERIFICATION',
+        submittedDate: new Date(),
+      });
+
+      // Notify user of submission
+      await Notification.create({
+        user: req.user._id,
+        title: 'Payment Order Submitted',
+        message: `Your payment order ${orderId} for ${pkg.credits} CR (৳${finalAmount.toLocaleString('en-BD')}) is pending admin review. Verification typically takes 1–2 hours.`,
+        type: 'info',
+        link: '/student/wallet',
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Payment details submitted successfully! Your order is pending verification (approx. 1–2 hours).',
+        data: {
+          paymentOrder,
+        },
+      });
+    } else {
+      const allOrders = await devStore.findPaymentOrders({});
+      const duplicateTxn = allOrders.find(
+        (p) => p.transactionId === cleanTxnId && ['APPROVED', 'PENDING_VERIFICATION'].includes(p.status)
+      );
+
+      if (duplicateTxn) {
+        return res.status(400).json({
+          success: false,
+          message: 'This Transaction ID has already been submitted or processed. Duplicate transaction IDs are strictly blocked.',
+        });
+      }
+
+      let discountPercent = 0;
+      let discountAmount = 0;
+      let finalAmount = pkg.priceBdt;
+
+      if (couponCode && couponCode.trim()) {
+        const cleanCoupon = couponCode.trim().toUpperCase();
+        const coupons = await devStore.findCoupons({ search: cleanCoupon });
+        const coupon = coupons.find((c) => c.code === cleanCoupon && c.isActive);
+        if (coupon) {
+          const isNotExpired = !coupon.expiryDate || new Date(coupon.expiryDate) >= new Date();
+          const isUnderLimit = !coupon.usageLimit || coupon.usedCount < coupon.usageLimit;
+          const userUsage = (coupon.usedBy || []).filter(
+            (u) => (u.userId || u.user)?.toString() === req.user._id.toString()
+          ).length;
+          const isUnderUserLimit = userUsage < (coupon.perUserLimit || 1);
+          const isApplicable =
+            coupon.applicablePackages.includes('all') || coupon.applicablePackages.includes(packageId);
+
+          if (isNotExpired && isUnderLimit && isUnderUserLimit && isApplicable) {
+            discountPercent = coupon.discountPercent;
+            discountAmount = Math.round((pkg.priceBdt * discountPercent) / 100);
+            finalAmount = Math.max(0, pkg.priceBdt - discountAmount);
+
+            await devStore.updateCoupon(coupon._id, {
+              usedCount: (coupon.usedCount || 0) + 1,
+              usedBy: [...(coupon.usedBy || []), { userId: req.user._id, usedAt: new Date().toISOString() }],
+            });
+          }
+        }
+      }
+
+      if (paidAmount && Math.abs(Number(paidAmount) - finalAmount) > 10) {
+        return res.status(400).json({
+          success: false,
+          message: `Submitted paid amount (৳${paidAmount}) does not match expected final amount (৳${finalAmount})`,
+        });
+      }
+
+      let orderId = generateDynamicId('ADM-PAY');
+      while (allOrders.some((p) => p.orderId === orderId)) {
+        orderId = generateDynamicId('ADM-PAY');
+      }
+
+      const paymentOrder = await devStore.createPaymentOrder({
+        orderId,
+        user: req.user._id,
+        packageId: pkg.id,
+        packageName: pkg.name,
+        credits: pkg.credits,
+        originalAmount: pkg.priceBdt,
+        couponCode: couponCode ? couponCode.trim().toUpperCase() : '',
+        discountPercent,
+        discountAmount,
+        finalAmount,
+        paymentMethod,
+        transactionId: cleanTxnId,
+        screenshotUrl,
+        accountNumber: accountNumber.trim(),
+        status: 'PENDING_VERIFICATION',
+        submittedDate: new Date().toISOString(),
+      });
+
+      await devStore.createNotification({
+        user: req.user._id,
+        title: 'Payment Order Submitted',
+        message: `Your payment order ${orderId} for ${pkg.credits} CR (৳${finalAmount.toLocaleString('en-BD')}) is pending admin review. Verification typically takes 1–2 hours.`,
+        type: 'info',
+        link: '/student/wallet',
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Payment details submitted successfully! Your order is pending verification (approx. 1–2 hours).',
+        data: {
+          paymentOrder,
+        },
       });
     }
-
-    let orderId = generateDynamicId('ADM-PAY');
-    // Ensure uniqueness of orderId
-    while (await PaymentOrder.findOne({ orderId })) {
-      orderId = generateDynamicId('ADM-PAY');
-    }
-
-    const paymentOrder = await PaymentOrder.create({
-      orderId,
-      user: req.user._id,
-      packageId: pkg.id,
-      packageName: pkg.name,
-      credits: pkg.credits,
-      originalAmount: pkg.priceBdt,
-      couponCode: couponCode ? couponCode.trim().toUpperCase() : '',
-      discountPercent,
-      discountAmount,
-      finalAmount,
-      paymentMethod,
-      transactionId: cleanTxnId,
-      screenshotUrl,
-      accountNumber: accountNumber.trim(),
-      status: 'PENDING_VERIFICATION',
-      submittedDate: new Date(),
-    });
-
-    // Notify user of submission
-    await Notification.create({
-      user: req.user._id,
-      title: 'Payment Order Submitted',
-      message: `Your payment order ${orderId} for ${pkg.credits} CR (৳${finalAmount.toLocaleString('en-BD')}) is pending admin review. Verification typically takes 1–2 hours.`,
-      type: 'info',
-      link: '/student/wallet',
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Payment details submitted successfully! Your order is pending verification (approx. 1–2 hours).',
-      data: {
-        paymentOrder,
-      },
-    });
   } catch (error) {
     next(error);
   }
@@ -316,78 +448,155 @@ export const deductServiceCredits = async (req, res, next) => {
   try {
     const { serviceCode, referenceId = '', metadata = {} } = req.body;
 
-    if (!serviceCode || !CREDIT_COSTS[serviceCode]) {
+    const normalizedCode = Object.keys(CREDIT_COSTS).find(
+      (k) => k.toLowerCase() === (serviceCode || '').toLowerCase() ||
+             k.toLowerCase().replace(/_/g, '') === (serviceCode || '').toLowerCase().replace(/_/g, '')
+    ) || serviceCode;
+
+    if (!normalizedCode || !CREDIT_COSTS[normalizedCode]) {
       return res.status(400).json({
         success: false,
         message: 'Invalid or missing service code',
       });
     }
 
-    const service = CREDIT_COSTS[serviceCode];
+    const service = CREDIT_COSTS[normalizedCode];
     const cost = service.credits;
 
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
+    if (mongoose.connection.readyState === 1) {
+      const user = await User.findById(req.user._id);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
 
-    const breakdown = getActiveCreditsBreakdown(user);
+      const breakdown = getActiveCreditsBreakdown(user);
 
-    if (breakdown.availableCredits < cost) {
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient Credits',
-        requiredCredits: cost,
-        availableCredits: breakdown.availableCredits,
-      });
-    }
+      if (breakdown.availableCredits < cost) {
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient Credits',
+          requiredCredits: cost,
+          availableCredits: breakdown.availableCredits,
+        });
+      }
 
-    const balanceBefore = breakdown.availableCredits;
+      const balanceBefore = breakdown.availableCredits;
 
-    // Deduct from free credits first if available and valid, then remainder from paid credits
-    let remainingToDeduct = cost;
-    if (breakdown.freeCredits > 0) {
-      const deductFromFree = Math.min(breakdown.freeCredits, remainingToDeduct);
-      user.freeCredits = Math.max(0, (user.freeCredits ?? 0) - deductFromFree);
-      remainingToDeduct -= deductFromFree;
-    }
+      // Deduct from free credits first if available and valid, then remainder from paid credits
+      let remainingToDeduct = cost;
+      if (breakdown.freeCredits > 0) {
+        const deductFromFree = Math.min(breakdown.freeCredits, remainingToDeduct);
+        user.freeCredits = Math.max(0, (user.freeCredits ?? 0) - deductFromFree);
+        remainingToDeduct -= deductFromFree;
+      }
 
-    if (remainingToDeduct > 0) {
-      user.paidCredits = Math.max(0, (user.paidCredits ?? 0) - remainingToDeduct);
-    }
+      if (remainingToDeduct > 0) {
+        user.paidCredits = Math.max(0, (user.paidCredits ?? 0) - remainingToDeduct);
+      }
 
-    user.totalUsedCredits = (user.totalUsedCredits ?? 0) + cost;
+      user.totalUsedCredits = (user.totalUsedCredits ?? 0) + cost;
 
-    // Recompute total active
-    const newBreakdown = getActiveCreditsBreakdown(user);
-    user.walletCredits = newBreakdown.availableCredits;
-    await user.save();
+      // Recompute total active
+      const newBreakdown = getActiveCreditsBreakdown(user);
+      user.walletCredits = newBreakdown.availableCredits;
+      await user.save();
 
-    const transactionId = `CTX-USE-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const transactionId = `CTX-USE-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const transaction = await CreditTransaction.create({
-      transactionId,
-      user: user._id,
-      type: 'USAGE',
-      credits: -cost,
-      balanceBefore,
-      balanceAfter: newBreakdown.availableCredits,
-      referenceType: serviceCode,
-      referenceId: referenceId || service.name,
-      desc: `${service.name} (${cost} CR)`,
-      status: 'COMPLETED',
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: `Successfully deducted ${cost} credits for ${service.name}`,
-      data: {
-        cost,
+      const transaction = await CreditTransaction.create({
+        transactionId,
+        user: user._id,
+        type: 'USAGE',
+        credits: -cost,
         balanceBefore,
         balanceAfter: newBreakdown.availableCredits,
-        transaction,
-      },
-    });
+        referenceType: serviceCode,
+        referenceId: referenceId || service.name,
+        desc: `${service.name} (${cost} CR)`,
+        status: 'COMPLETED',
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Successfully deducted ${cost} credits for ${service.name}`,
+        data: {
+          cost,
+          balanceBefore,
+          balanceAfter: newBreakdown.availableCredits,
+          transaction,
+        },
+      });
+    } else {
+      const user = await devStore.findUserById(req.user._id);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      const breakdown = getActiveCreditsBreakdown(user);
+
+      if (breakdown.availableCredits < cost) {
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient Credits',
+          requiredCredits: cost,
+          availableCredits: breakdown.availableCredits,
+        });
+      }
+
+      const balanceBefore = breakdown.availableCredits;
+
+      let remainingToDeduct = cost;
+      let freeCredits = user.freeCredits ?? 0;
+      let paidCredits = user.paidCredits ?? 0;
+
+      if (breakdown.freeCredits > 0) {
+        const deductFromFree = Math.min(breakdown.freeCredits, remainingToDeduct);
+        freeCredits = Math.max(0, freeCredits - deductFromFree);
+        remainingToDeduct -= deductFromFree;
+      }
+
+      if (remainingToDeduct > 0) {
+        paidCredits = Math.max(0, paidCredits - remainingToDeduct);
+      }
+
+      const totalUsedCredits = (user.totalUsedCredits ?? 0) + cost;
+
+      await devStore.updateUser(user._id, {
+        freeCredits,
+        paidCredits,
+        totalUsedCredits,
+        walletCredits: freeCredits + paidCredits,
+      });
+
+      const updatedUser = await devStore.findUserById(user._id);
+      const newBreakdown = getActiveCreditsBreakdown(updatedUser);
+
+      const transactionId = `CTX-USE-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const transaction = await devStore.createCreditTransaction({
+        transactionId,
+        user: user._id,
+        type: 'USAGE',
+        credits: -cost,
+        balanceBefore,
+        balanceAfter: newBreakdown.availableCredits,
+        referenceType: serviceCode,
+        referenceId: referenceId || service.name,
+        desc: `${service.name} (${cost} CR)`,
+        status: 'COMPLETED',
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Successfully deducted ${cost} credits for ${service.name}`,
+        data: {
+          cost,
+          balanceBefore,
+          balanceAfter: newBreakdown.availableCredits,
+          transaction,
+        },
+      });
+    }
   } catch (error) {
     next(error);
   }

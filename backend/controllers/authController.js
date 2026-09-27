@@ -570,21 +570,31 @@ export const register = async (req, res, next) => {
       });
 
       if (assignedRole === 'student') {
-        try {
-          await CreditTransaction.create({
-            transactionId: `CTX-WLC-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
-            user: user._id,
-            type: 'WELCOME_CREDIT',
-            credits: 20,
-            balanceBefore: 0,
-            balanceAfter: 20,
-            referenceType: 'WELCOME',
-            referenceId: 'WELCOME_BONUS_20CR',
-            desc: 'Free Welcome Credits (Valid for 1 month)',
-            status: 'COMPLETED',
-          });
-        } catch (err) {
-          console.warn('Failed to log welcome credit transaction:', err.message);
+        const existingTx = await CreditTransaction.findOne({
+          user: user._id,
+          type: 'WELCOME_CREDIT',
+        });
+        if (!existingTx) {
+          const randSuffix = Math.floor(1000 + Math.random() * 9000);
+          const transactionId = `ADM-WELCOME-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
+          try {
+            await CreditTransaction.create({
+              transactionId,
+              user: user._id,
+              type: 'WELCOME_CREDIT',
+              credits: 20,
+              balanceBefore: 0,
+              balanceAfter: 20,
+              referenceType: 'WELCOME',
+              referenceId: 'WELCOME_STARTER_20CR',
+              desc: 'Welcome Starter Credits',
+              status: 'COMPLETED',
+              expiresAt: user.freeCreditExpiresAt,
+            });
+          } catch (txErr) {
+            await User.findByIdAndDelete(user._id);
+            throw new Error(`Failed to initialize welcome credit ledger: ${txErr.message}`);
+          }
         }
       }
     } else {
@@ -606,6 +616,29 @@ export const register = async (req, res, next) => {
         accountStatus: 'ACTIVE',
         isActive: true,
       });
+
+      if (assignedRole === 'student') {
+        const randSuffix = Math.floor(1000 + Math.random() * 9000);
+        const transactionId = `ADM-WELCOME-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
+        try {
+          await devStore.createCreditTransaction({
+            transactionId,
+            user: user._id,
+            type: 'WELCOME_CREDIT',
+            credits: 20,
+            balanceBefore: 0,
+            balanceAfter: 20,
+            referenceType: 'WELCOME',
+            referenceId: 'WELCOME_STARTER_20CR',
+            desc: 'Welcome Starter Credits',
+            status: 'COMPLETED',
+            expiresAt: user.freeCreditExpiresAt,
+          });
+        } catch (txErr) {
+          await devStore.deleteUser(user._id);
+          throw new Error(`Failed to initialize welcome credit ledger: ${txErr.message}`);
+        }
+      }
     }
 
     const token = generateToken(user._id);

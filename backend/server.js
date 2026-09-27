@@ -133,6 +133,40 @@ const startServer = async () => {
   // Connect to MongoDB
   await connectDB();
 
+  // Safe one-time backfill check for welcome credits if MongoDB is connected
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const User = (await import('./models/User.js')).default;
+      const CreditTransaction = (await import('./models/CreditTransaction.js')).default;
+      const students = await User.find({ role: 'student' });
+      for (const st of students) {
+        const hasTx = await CreditTransaction.findOne({ user: st._id, type: 'WELCOME_CREDIT' });
+        if (!hasTx) {
+          const createdAt = st.createdAt || new Date();
+          const expiresAt = st.freeCreditExpiresAt || new Date(new Date(createdAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+          const randSuffix = st._id.toString().slice(-6).toUpperCase();
+          await CreditTransaction.create({
+            transactionId: `ADM-WELCOME-BF-${randSuffix}`,
+            user: st._id,
+            type: 'WELCOME_CREDIT',
+            credits: 20,
+            balanceBefore: 0,
+            balanceAfter: 20,
+            referenceType: 'WELCOME',
+            referenceId: 'WELCOME_STARTER_20CR',
+            desc: 'Welcome Starter Credits',
+            status: 'COMPLETED',
+            expiresAt,
+            createdAt,
+            updatedAt: createdAt,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[Welcome Credit Sync on Boot]', e.message);
+    }
+  }
+
   if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, () => {
       console.log(`[Admify API] Server running in ${process.env.NODE_ENV || 'production'} mode on port ${PORT}`);

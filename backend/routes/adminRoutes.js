@@ -8,6 +8,7 @@ import {
   deleteAdminUser,
   adjustUserCredits,
   getAdminCreditTransactions,
+  syncWelcomeCreditLedger,
   getAdminApplications,
   updateAdminApplication,
   getAdminPartnerships,
@@ -88,6 +89,7 @@ router.put('/users/:id/status', updateAdminUser);
 // Credit & Wallet Management
 router.post('/credits/adjust', adjustUserCredits);
 router.get('/credits/transactions', getAdminCreditTransactions);
+router.post('/credits/sync-welcome-ledger', syncWelcomeCreditLedger);
 
 // Applications Management
 router.get('/applications', getAdminApplications);

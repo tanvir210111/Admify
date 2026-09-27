@@ -67,6 +67,10 @@ const creditTransactionSchema = new mongoose.Schema(
       enum: ['COMPLETED', 'PENDING', 'FAILED'],
       default: 'COMPLETED',
     },
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -74,6 +78,11 @@ const creditTransactionSchema = new mongoose.Schema(
 );
 
 creditTransactionSchema.index({ user: 1, createdAt: -1 });
+// Enforce database-level idempotency: only one WELCOME_CREDIT per user
+creditTransactionSchema.index(
+  { user: 1, type: 1 },
+  { unique: true, partialFilterExpression: { type: 'WELCOME_CREDIT' } }
+);
 
 const CreditTransaction = mongoose.model('CreditTransaction', creditTransactionSchema);
 export default CreditTransaction;

@@ -347,6 +347,11 @@ class DevStore {
           } catch {}
         }
 
+        const syncRes = this.syncWelcomeCreditLedger(db);
+        if (syncRes.backfilledCount > 0) {
+          modified = true;
+        }
+
         if (modified) {
           fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
         }
@@ -462,9 +467,13 @@ class DevStore {
       accountStatus: userData.accountStatus || (isPendingRole ? 'PENDING' : 'ACTIVE'),
       isActive: userData.isActive !== undefined ? userData.isActive : !isPendingRole,
       emailVerified: userData.emailVerified !== undefined ? userData.emailVerified : !isPendingRole,
-      walletCredits: userData.walletCredits || 20,
-      freeCredits: userData.freeCredits || 20,
-      paidCredits: 0,
+      walletCredits: userData.walletCredits !== undefined ? userData.walletCredits : (userData.role === 'student' ? 20 : 0),
+      freeCredits: userData.freeCredits !== undefined ? userData.freeCredits : (userData.role === 'student' ? 20 : 0),
+      paidCredits: userData.paidCredits || 0,
+      freeCreditExpiresAt: userData.freeCreditExpiresAt || (userData.role === 'student' ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null),
+      freeCreditsForfeited: false,
+      totalPurchasedCredits: 0,
+      totalUsedCredits: 0,
       agencyVerificationStatus: userData.agencyVerificationStatus || 'PENDING',
       uniRepVerificationStatus: userData.uniRepVerificationStatus || 'PENDING',
       universityId: userData.universityId || null,
@@ -1539,50 +1548,123 @@ class DevStore {
     let list = db.creditTransactions;
 
     if (query.user) {
-      list = list.filter((tx) => tx.user?.toString() === query.user.toString());
+      const uid = query.user.toString();
+      list = list.filter((tx) => (tx.user?._id || tx.user)?.toString() === uid);
     }
 
     if (query.type && query.type !== 'all') {
       list = list.filter((tx) => tx.type === query.type);
     }
 
+    // populate user first so search can match user fields
+    const populated = list.map((tx) => {
+      const uid = (tx.user?._id || tx.user)?.toString();
+      const u = typeof tx.user === 'object' && tx.user.name ? tx.user : db.users.find((usr) => usr._id === uid);
+      return {
+        ...tx,
+        user: u ? { _id: u._id, name: u.name, email: u.email, phone: u.phone, role: u.role } : null,
+      };
+    });
+
+    let results = populated;
     if (query.search) {
       const s = query.search.toLowerCase().trim();
-      list = list.filter(
+      results = results.filter(
         (tx) =>
           tx.transactionId?.toLowerCase().includes(s) ||
           tx.desc?.toLowerCase().includes(s) ||
-          tx.referenceId?.toLowerCase().includes(s)
+          tx.referenceId?.toLowerCase().includes(s) ||
+          tx.type?.toLowerCase().includes(s) ||
+          tx.user?.name?.toLowerCase().includes(s) ||
+          tx.user?.email?.toLowerCase().includes(s)
       );
     }
 
-    list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-
-    // populate user
-    return list.map((tx) => {
-      const u = typeof tx.user === 'object' ? tx.user : db.users.find((usr) => usr._id === tx.user?.toString());
-      return {
-        ...tx,
-        user: u ? { _id: u._id, name: u.name, email: u.email } : null,
-      };
-    });
+    results.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return results;
   }
 
   async createCreditTransaction(data) {
     const db = this.read();
     if (!Array.isArray(db.creditTransactions)) db.creditTransactions = [];
+
+    const userIdStr = (data.user?._id || data.user)?.toString();
+
+    // Idempotency check for WELCOME_CREDIT
+    if (data.type === 'WELCOME_CREDIT') {
+      const existing = db.creditTransactions.find(
+        (tx) => (tx.user?.toString() === userIdStr || tx.user?._id?.toString() === userIdStr) && tx.type === 'WELCOME_CREDIT'
+      );
+      if (existing) {
+        return existing;
+      }
+    }
+
     const newTx = {
       _id: new mongoose.Types.ObjectId().toString(),
       transactionId: data.transactionId || `CTX-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
       ...data,
-      user: data.user?.toString(),
+      user: userIdStr,
       status: data.status || 'COMPLETED',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      expiresAt: data.expiresAt || null,
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: data.updatedAt || new Date().toISOString(),
     };
     db.creditTransactions.unshift(newTx);
     this.write(db);
     return newTx;
+  }
+
+  syncWelcomeCreditLedger(externalDb = null) {
+    const isInternal = !externalDb;
+    const db = externalDb || this.read();
+    if (!Array.isArray(db.users) || !Array.isArray(db.creditTransactions)) {
+      return { backfilledCount: 0, totalStudents: 0 };
+    }
+
+    let backfilledCount = 0;
+    const students = db.users.filter((u) => u.role === 'student');
+
+    for (const student of students) {
+      // Check if student already has a WELCOME_CREDIT transaction
+      const hasWelcome = db.creditTransactions.some(
+        (tx) => (tx.user?.toString() === student._id.toString() || tx.user?._id?.toString() === student._id.toString()) && tx.type === 'WELCOME_CREDIT'
+      );
+
+      if (!hasWelcome) {
+        // Safe one-time backfill: student was created under previous implementation without ledger record
+        const createdAt = student.createdAt || new Date().toISOString();
+        const expiresAt = student.freeCreditExpiresAt || new Date(new Date(createdAt).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const randId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const transactionId = `ADM-WELCOME-BF-${randId}`;
+
+        const backfillTx = {
+          _id: new mongoose.Types.ObjectId().toString(),
+          transactionId,
+          user: student._id.toString(),
+          type: 'WELCOME_CREDIT',
+          credits: 20,
+          balanceBefore: 0,
+          balanceAfter: 20,
+          referenceType: 'WELCOME',
+          referenceId: 'WELCOME_STARTER_20CR',
+          desc: 'Welcome Starter Credits',
+          status: 'COMPLETED',
+          expiresAt,
+          createdAt,
+          updatedAt: createdAt,
+        };
+
+        db.creditTransactions.push(backfillTx);
+        backfilledCount++;
+      }
+    }
+
+    if (backfilledCount > 0 && isInternal) {
+      this.write(db);
+    }
+
+    return { backfilledCount, totalStudents: students.length };
   }
 
   // ── Applications ──────────────────────────────────────────────────────────

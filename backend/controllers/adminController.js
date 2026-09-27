@@ -1275,6 +1275,81 @@ export const getAdminCreditTransactions = async (req, res, next) => {
   }
 };
 
+// @desc    Controlled safe one-time backfill/sync of missing welcome credit ledger entries for existing students
+// @route   POST /api/admin/credits/sync-welcome-ledger
+// @access  Private (Admin)
+export const syncWelcomeCreditLedger = async (req, res, next) => {
+  try {
+    let backfilledCount = 0;
+    let totalStudents = 0;
+
+    if (mongoose.connection.readyState === 1) {
+      const students = await User.find({ role: 'student' });
+      totalStudents = students.length;
+
+      for (const student of students) {
+        // Check if student already has a WELCOME_CREDIT transaction
+        const existingTx = await CreditTransaction.findOne({
+          user: student._id,
+          type: 'WELCOME_CREDIT',
+        });
+
+        if (!existingTx) {
+          const createdAt = student.createdAt || new Date();
+          const expiresAt = student.freeCreditExpiresAt || new Date(new Date(createdAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+          const randSuffix = student._id.toString().slice(-6).toUpperCase();
+          const transactionId = `ADM-WELCOME-BF-${randSuffix}`;
+
+          await CreditTransaction.create({
+            transactionId,
+            user: student._id,
+            type: 'WELCOME_CREDIT',
+            credits: 20,
+            balanceBefore: 0,
+            balanceAfter: 20,
+            referenceType: 'WELCOME',
+            referenceId: 'WELCOME_STARTER_20CR',
+            desc: 'Welcome Starter Credits',
+            status: 'COMPLETED',
+            expiresAt,
+            createdAt,
+            updatedAt: createdAt,
+          });
+          backfilledCount++;
+        }
+      }
+    } else {
+      const result = devStore.syncWelcomeCreditLedger();
+      backfilledCount = result.backfilledCount;
+      totalStudents = result.totalStudents;
+    }
+
+    if (backfilledCount > 0) {
+      await recordAuditLog({
+        req,
+        action: 'SYNC_WELCOME_CREDITS',
+        module: 'credits',
+        targetType: 'CreditTransaction',
+        targetId: 'BULK_SYNC',
+        targetName: 'Welcome Credit Ledger Sync',
+        newValue: { backfilledCount, totalStudents },
+        reason: 'Safe one-time backfill of missing welcome credit transactions for registered students.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Synchronized welcome credit ledger. ${backfilledCount} missing transactions backfilled out of ${totalStudents} students.`,
+      data: {
+        backfilledCount,
+        totalStudents,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ── 5. Applications Management ────────────────────────────────────────────────
 // @desc    Get all applications for admin review
 // @route   GET /api/admin/applications
