@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
+import AdminCreditAdjustmentModal from "../../components/admin/AdminCreditAdjustmentModal";
 
 // Helper to determine if role is student
 const isStudent = (role) => (role || "").toLowerCase() === "student";
@@ -55,6 +56,9 @@ export default function AdminUsers() {
   const [userToDelete, setUserToDelete] = useState(null);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Credit Adjustment Modal state
+  const [creditModalUser, setCreditModalUser] = useState(null);
 
   // Edit form state (Strictly single Account Status, no redundant Operational Status)
   const [editForm, setEditForm] = useState({
@@ -502,6 +506,15 @@ export default function AdminUsers() {
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
+                          {isStudent(u.role) && (
+                            <button
+                              onClick={() => setCreditModalUser(u)}
+                              className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg transition-colors cursor-pointer"
+                              title="Manual Credit Adjustment (Add / Remove)"
+                            >
+                              <Coins className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={() => openEditModal(u)}
                             className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
@@ -618,16 +631,33 @@ export default function AdminUsers() {
                     {isStudent(selectedUser.role) && (
                       <>
                         {/* Target & Wallet */}
-                        <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2">
-                          <p className="text-[11px] font-bold uppercase text-slate-400">Student Profile & Wallet</p>
+                        <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] font-bold uppercase text-slate-400">Student Profile & Wallet</p>
+                            <button
+                              onClick={() => setCreditModalUser(selectedUser)}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Coins className="w-3 h-3 text-amber-400" />
+                              <span>± Adjust Credits</span>
+                            </button>
+                          </div>
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>
                               <span className="text-slate-500 text-[10px] block">Target Destination</span>
                               <span className="text-slate-200 font-semibold">{selectedUser.targetCountry || "—"}</span>
                             </div>
                             <div>
-                              <span className="text-slate-500 text-[10px] block">Wallet Balance</span>
+                              <span className="text-slate-500 text-[10px] block">Total Wallet Balance</span>
                               <span className="text-amber-400 font-bold font-mono text-sm">{selectedUser.walletCredits ?? 0} CR</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 text-[10px] block">Free Welcome Credits</span>
+                              <span className="text-sky-300 font-mono font-semibold">{selectedUser.freeCredits ?? 0} CR</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 text-[10px] block">Paid Credits</span>
+                              <span className="text-emerald-400 font-mono font-semibold">{selectedUser.paidCredits ?? 0} CR</span>
                             </div>
                             {selectedUser.gpa && (
                               <div>
@@ -670,26 +700,83 @@ export default function AdminUsers() {
                           </div>
                         )}
 
-                        {/* Recent Credit Activity */}
-                        {drawerData?.related?.creditTransactions && (
-                          <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2">
-                            <p className="text-[11px] font-bold uppercase text-slate-400">Recent Credit Activity</p>
-                            {drawerData.related.creditTransactions.length === 0 ? (
-                              <p className="text-slate-500 text-xs">No credit ledger records found.</p>
-                            ) : (
-                              <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar">
-                                {drawerData.related.creditTransactions.slice(0, 5).map((tx, idx) => (
-                                  <div key={idx} className="p-2 rounded-lg bg-white/3 flex justify-between items-center text-xs">
-                                    <span className="text-slate-300 text-[11px]">{tx.desc}</span>
-                                    <span className={`font-mono font-bold ${tx.credits > 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                                      {tx.credits > 0 ? `+${tx.credits}` : tx.credits} CR
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                        {/* Complete Credit History & Ledger */}
+                        <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] font-bold uppercase text-slate-400 flex items-center gap-1.5">
+                              <span>Credit Ledger & Activity</span>
+                              <span className="px-1.5 py-0.5 rounded-full bg-white/6 text-slate-300 text-[10px] font-mono">
+                                {drawerData?.related?.creditTransactions?.length || 0}
+                              </span>
+                            </p>
+                            <button
+                              onClick={() => setCreditModalUser(selectedUser)}
+                              className="text-amber-400 hover:text-amber-300 font-bold text-[11px] transition-colors cursor-pointer"
+                            >
+                              + New Adjustment
+                            </button>
                           </div>
-                        )}
+                          {!drawerData?.related?.creditTransactions || drawerData.related.creditTransactions.length === 0 ? (
+                            <p className="text-slate-500 text-xs py-2 text-center">No credit ledger records found for this student.</p>
+                          ) : (
+                            <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-0.5">
+                              {drawerData.related.creditTransactions.map((tx, idx) => {
+                                const isPos = (tx.credits || 0) > 0;
+                                return (
+                                  <div
+                                    key={tx._id || tx.transactionId || idx}
+                                    className="p-2.5 rounded-xl bg-white/3 border border-white/6 space-y-1.5 text-xs"
+                                  >
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+                                          tx.type === "WELCOME_CREDIT"
+                                            ? "bg-sky-500/15 text-sky-300 border-sky-500/30"
+                                            : tx.type === "PURCHASE"
+                                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                            : tx.type === "USAGE"
+                                            ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                            : tx.type === "ADMIN_ADJUSTMENT"
+                                            ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                            : "bg-purple-500/15 text-purple-300 border-purple-500/30"
+                                        }`}>
+                                          {tx.type?.replace(/_/g, " ")}
+                                        </span>
+                                        <span className="text-[10px] font-mono text-slate-500">
+                                          {tx.transactionId || tx.referenceId || "—"}
+                                        </span>
+                                      </div>
+                                      <span className={`font-mono font-bold text-xs flex items-center gap-0.5 ${
+                                        isPos ? "text-emerald-400" : "text-rose-400"
+                                      }`}>
+                                        {isPos ? `+${tx.credits}` : tx.credits} CR
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-300 text-[11px] leading-snug">
+                                      {tx.desc || tx.reason || "No description provided"}
+                                    </p>
+                                    <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1 border-t border-white/4 font-mono">
+                                      <span>
+                                        {tx.balanceBefore !== undefined ? `${tx.balanceBefore} CR` : "—"} →{" "}
+                                        <strong className="text-slate-200">{tx.balanceAfter !== undefined ? `${tx.balanceAfter} CR` : "—"}</strong>
+                                      </span>
+                                      <span>
+                                        {tx.createdAt ? new Date(tx.createdAt).toLocaleString(undefined, {
+                                          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+                                        }) : "—"}
+                                      </span>
+                                    </div>
+                                    {(tx.adminName || tx.adminEmail) && (
+                                      <div className="text-[10px] text-slate-500">
+                                        Admin: <span className="text-slate-300">{tx.adminName || tx.adminEmail}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       </>
                     )}
 
@@ -1307,6 +1394,19 @@ export default function AdminUsers() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── Controlled Manual Credit Adjustment Modal ── */}
+      <AdminCreditAdjustmentModal
+        isOpen={Boolean(creditModalUser)}
+        onClose={() => setCreditModalUser(null)}
+        targetStudent={creditModalUser}
+        onSuccess={(data) => {
+          fetchUsers();
+          if (selectedUser && selectedUser._id === creditModalUser?._id) {
+            openDetailDrawer(data?.user || selectedUser);
+          }
+        }}
+      />
 
     </div>
   );

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
+import AdminCreditAdjustmentModal from "../../components/admin/AdminCreditAdjustmentModal";
 
 const TX_TYPES = ["all", "PURCHASE", "USAGE", "ADMIN_ADJUSTMENT", "WELCOME_CREDIT", "REFUND"];
 
@@ -17,13 +18,6 @@ export default function AdminWallet() {
 
   // Adjustment modal
   const [adjustModal, setAdjustModal] = useState(false);
-  const [userQuery, setUserQuery] = useState("");
-  const [searchedUsers, setSearchedUsers] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [amount, setAmount] = useState("");
-  const [creditType, setCreditType] = useState("paid");
-  const [reason, setReason] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
   const [syncingWelcome, setSyncingWelcome] = useState(false);
 
   const handleSyncWelcome = async () => {
@@ -67,73 +61,6 @@ export default function AdminWallet() {
   useEffect(() => {
     fetchTransactions();
   }, [typeFilter]);
-
-  // Search users for credit adjustment
-  useEffect(() => {
-    if (!userQuery.trim() || userQuery.trim().length < 2) {
-      setSearchedUsers([]);
-      return;
-    }
-
-    const t = setTimeout(async () => {
-      try {
-        const res = await api.get(`/api/admin/users?role=student&search=${encodeURIComponent(userQuery.trim())}`);
-        const isSuccess = res?.success || res?.data?.success;
-        const users = (res?.data?.users || res?.users || []).filter((u) => u.role === "student");
-        if (isSuccess) {
-          setSearchedUsers(users);
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }, 250);
-
-    return () => clearTimeout(t);
-  }, [userQuery]);
-
-  const handleAdjustSubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedUser) {
-      toast.error("Please select a recipient user");
-      return;
-    }
-    const delta = Number(amount);
-    if (isNaN(delta) || delta === 0) {
-      toast.error("Please enter a valid non-zero amount");
-      return;
-    }
-    if (!reason.trim() || reason.trim().length < 5) {
-      toast.error("A reason of at least 5 characters is required");
-      return;
-    }
-
-    setActionLoading(true);
-    try {
-      const res = await api.post("/api/admin/credits/adjust", {
-        userId: selectedUser._id,
-        amount: delta,
-        creditType,
-        reason: reason.trim(),
-      });
-      const isSuccess = res?.success || res?.data?.success;
-
-      if (isSuccess) {
-        toast.success(res?.message || res?.data?.message || "Credits adjusted successfully");
-        setAdjustModal(false);
-        setSelectedUser(null);
-        setUserQuery("");
-        setAmount("");
-        setReason("");
-        fetchTransactions();
-      } else {
-        toast.error(res?.message || res?.data?.message || "Failed to adjust credits");
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.message || err?.message || "Error connecting to server");
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   // Metrics from real ledger
   const totalPurchased = transactions
@@ -252,7 +179,7 @@ export default function AdminWallet() {
         style={{ background: "#0B1228", borderColor: "rgba(255,255,255,0.08)" }}
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left">
+          <table className="w-full min-w-[1050px] text-left">
             <thead>
               <tr className="border-b border-white/8 text-[11px] text-slate-400 uppercase tracking-widest bg-white/2">
                 <th className="px-4 py-3 font-bold">Transaction Reference</th>
@@ -260,19 +187,21 @@ export default function AdminWallet() {
                 <th className="px-4 py-3 font-bold">Type</th>
                 <th className="px-4 py-3 font-bold">Credit Amount</th>
                 <th className="px-4 py-3 font-bold">Balance (Before → After)</th>
+                <th className="px-4 py-3 font-bold">Reason / Description</th>
+                <th className="px-4 py-3 font-bold">Originator</th>
                 <th className="px-4 py-3 font-bold">Timestamp</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 text-xs">
+                  <td colSpan={8} className="p-8 text-center text-slate-400 text-xs">
                     Loading ledger records...
                   </td>
                 </tr>
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={8} className="p-8 text-center text-slate-500 text-xs">
                     No transactions found in ledger.
                   </td>
                 </tr>
@@ -286,7 +215,7 @@ export default function AdminWallet() {
                     >
                       <td className="px-4 py-3.5">
                         <p className="font-mono text-xs font-bold text-white">{tx.transactionId}</p>
-                        <p className="text-[11px] text-slate-400 truncate max-w-xs">{tx.desc}</p>
+                        <p className="text-[10px] text-slate-500 font-mono">{tx.referenceId || "—"}</p>
                       </td>
                       <td className="px-4 py-3.5">
                         <p className="font-bold text-slate-200">{tx.user?.name || "System"}</p>
@@ -325,7 +254,29 @@ export default function AdminWallet() {
                         {tx.balanceBefore !== undefined ? tx.balanceBefore : "—"} →{" "}
                         <strong className="text-white">{tx.balanceAfter !== undefined ? tx.balanceAfter : "—"}</strong> CR
                       </td>
+                      <td className="px-4 py-3.5 text-slate-300 text-[11px] max-w-xs">
+                        <p className="truncate" title={tx.reason || tx.desc}>
+                          {tx.reason || tx.desc || "—"}
+                        </p>
+                        {tx.note && (
+                          <p className="text-[10px] text-slate-500 italic truncate" title={tx.note}>
+                            Note: {tx.note}
+                          </p>
+                        )}
+                      </td>
                       <td className="px-4 py-3.5 text-slate-400 text-[11px]">
+                        {tx.adminName || tx.adminEmail ? (
+                          <div>
+                            <p className="text-slate-200 font-semibold">{tx.adminName || "Admin"}</p>
+                            {tx.adminEmail && <p className="text-[10px] text-slate-500">{tx.adminEmail}</p>}
+                          </div>
+                        ) : tx.type === 'WELCOME_CREDIT' ? (
+                          <span className="text-sky-400 text-[10px]">System (Registration)</span>
+                        ) : (
+                          <span className="text-slate-500 text-[10px]">System</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-400 text-[11px] whitespace-nowrap">
                         {tx.createdAt ? new Date(tx.createdAt).toLocaleString() : "—"}
                       </td>
                     </tr>
@@ -338,141 +289,13 @@ export default function AdminWallet() {
       </div>
 
       {/* ── Controlled Credit Adjustment Modal ── */}
-      <AnimatePresence>
-        {adjustModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg p-6 rounded-2xl border border-white/10 shadow-2xl"
-              style={{ background: "#0B1228" }}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Coins className="w-4 h-4 text-amber-400" />
-                  Manual Wallet Credit Adjustment
-                </h3>
-                <button onClick={() => setAdjustModal(false)} className="text-slate-400 hover:text-white">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleAdjustSubmit} className="space-y-3.5 text-xs">
-                {/* User Search & Selection */}
-                <div>
-                  <label className="text-slate-400 block mb-1 font-semibold">
-                    Target User Account <span className="text-red-400">*</span>
-                  </label>
-                  {selectedUser ? (
-                    <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 flex justify-between items-center">
-                      <div>
-                        <p className="font-bold text-white">{selectedUser.name}</p>
-                        <p className="text-[11px] text-slate-400">{selectedUser.email} · {selectedUser.role.toUpperCase()}</p>
-                        <p className="text-amber-300 font-mono text-xs mt-0.5">Current Balance: {selectedUser.walletCredits || 0} CR</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUser(null)}
-                        className="text-xs text-slate-400 hover:text-white"
-                      >
-                        Change
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-1 relative">
-                      <input
-                        value={userQuery}
-                        onChange={(e) => setUserQuery(e.target.value)}
-                        placeholder="Search student or agency by name or email..."
-                        className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-                      />
-                      {searchedUsers.length > 0 && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-white/10 rounded-xl max-h-48 overflow-y-auto z-50 p-1 shadow-2xl">
-                          {searchedUsers.map((u) => (
-                            <button
-                              key={u._id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedUser(u);
-                                setSearchedUsers([]);
-                                setUserQuery("");
-                              }}
-                              className="w-full text-left p-2 rounded-lg hover:bg-white/5 text-xs flex justify-between items-center"
-                            >
-                              <div>
-                                <p className="font-bold text-white">{u.name}</p>
-                                <p className="text-[10px] text-slate-400">{u.email}</p>
-                              </div>
-                              <span className="font-mono text-amber-400 font-bold">{u.walletCredits || 0} CR</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-slate-400 block mb-1 font-semibold">Amount (+ or -) <span className="text-red-400">*</span></label>
-                    <input
-                      type="number"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="e.g. 100 or -50"
-                      className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2 text-white font-mono font-bold focus:outline-none focus:border-amber-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1 font-semibold">Sub-Balance</label>
-                    <select
-                      value={creditType}
-                      onChange={(e) => setCreditType(e.target.value)}
-                      className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="paid">Paid Credits (Permanent)</option>
-                      <option value="free">Free Welcome Credits</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1 font-semibold">
-                    Compliance Audit Reason <span className="text-red-400">*</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Document administrative purpose for financial balance adjustment..."
-                    className="w-full bg-white/4 border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-amber-500"
-                    required
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-white/8">
-                  <button
-                    type="button"
-                    onClick={() => setAdjustModal(false)}
-                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-semibold"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={actionLoading || !selectedUser}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-all disabled:opacity-50"
-                  >
-                    {actionLoading ? "Processing..." : "Commit Credit Adjustment"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <AdminCreditAdjustmentModal
+        isOpen={adjustModal}
+        onClose={() => setAdjustModal(false)}
+        onSuccess={() => {
+          fetchTransactions();
+        }}
+      />
 
     </div>
   );

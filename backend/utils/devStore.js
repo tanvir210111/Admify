@@ -1560,8 +1560,12 @@ class DevStore {
     const populated = list.map((tx) => {
       const uid = (tx.user?._id || tx.user)?.toString();
       const u = typeof tx.user === 'object' && tx.user.name ? tx.user : db.users.find((usr) => usr._id === uid);
+      const adminId = (tx.admin?._id || tx.admin)?.toString();
+      const adminUser = adminId ? db.users.find((usr) => usr._id === adminId) : null;
       return {
         ...tx,
+        adminName: tx.adminName || adminUser?.name || '',
+        adminEmail: tx.adminEmail || adminUser?.email || '',
         user: u ? { _id: u._id, name: u.name, email: u.email, phone: u.phone, role: u.role } : null,
       };
     });
@@ -1575,6 +1579,8 @@ class DevStore {
           tx.desc?.toLowerCase().includes(s) ||
           tx.referenceId?.toLowerCase().includes(s) ||
           tx.type?.toLowerCase().includes(s) ||
+          tx.reason?.toLowerCase().includes(s) ||
+          tx.adminName?.toLowerCase().includes(s) ||
           tx.user?.name?.toLowerCase().includes(s) ||
           tx.user?.email?.toLowerCase().includes(s)
       );

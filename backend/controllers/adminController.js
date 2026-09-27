@@ -744,7 +744,9 @@ export const getAdminUserById = async (req, res, next) => {
         if (user.role === 'student') {
           related.applications = await Application.find({ user: user._id }).sort({ createdAt: -1 });
           related.paymentOrders = await PaymentOrder.find({ user: user._id }).sort({ createdAt: -1 });
-          related.creditTransactions = await CreditTransaction.find({ user: user._id }).sort({ createdAt: -1 });
+          related.creditTransactions = await CreditTransaction.find({ user: user._id })
+            .populate('admin', 'name email')
+            .sort({ createdAt: -1 });
         } else if (user.role === 'agency') {
           related.agencyProfile = user.agencyProfile || await AgencyProfile.findOne({ user: user._id });
           related.agentApplications = await AgentApplication.find({ agency: user._id });
@@ -771,9 +773,24 @@ export const getAdminUserById = async (req, res, next) => {
           user.universityId = (db.universities || []).find((un) => un._id?.toString() === uIdStr) || user.universityId;
         }
         if (user.role === 'student') {
-          related.applications = (db.applications || []).filter((a) => a.user === uid);
-          related.paymentOrders = (db.paymentOrders || []).filter((p) => p.user === uid);
-          related.creditTransactions = (db.creditTransactions || []).filter((c) => c.user === uid);
+          related.applications = (db.applications || [])
+            .filter((a) => (a.user?._id || a.user)?.toString() === uid)
+            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          related.paymentOrders = (db.paymentOrders || [])
+            .filter((p) => (p.user?._id || p.user)?.toString() === uid)
+            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          related.creditTransactions = (db.creditTransactions || [])
+            .filter((c) => (c.user?._id || c.user)?.toString() === uid)
+            .map((tx) => {
+              const adminId = (tx.admin?._id || tx.admin)?.toString();
+              const adminUser = adminId ? (db.users || []).find((u) => u._id === adminId) : null;
+              return {
+                ...tx,
+                adminName: tx.adminName || adminUser?.name || '',
+                adminEmail: tx.adminEmail || adminUser?.email || '',
+              };
+            })
+            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
         } else if (user.role === 'agency') {
           related.agencyProfile = await devStore.findAgencyProfileByUserId(uid);
           related.agentApplications = await devStore.findAgentApplications({ agency: uid });
@@ -1106,29 +1123,81 @@ export const deleteAdminUser = async (req, res, next) => {
   }
 };
 
+// In-memory cache for double-click / duplicate request protection (expires in 2.5s)
+const recentAdjustmentsCache = new Map();
+
 // ── 4. Controlled Wallet & Credit Adjustments ──────────────────────────────────
-// @desc    Controlled manual credit adjustment by Admin with strict reason and ledger entry
+// @desc    Controlled manual credit adjustment (ADD / REMOVE) by Admin with strict reason and ledger entry
 // @route   POST /api/admin/credits/adjust
 // @access  Private (Admin)
 export const adjustUserCredits = async (req, res, next) => {
   try {
+    // 1. Role enforcement: Only Admin can perform manual adjustments
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only administrators can adjust credit balances.',
+      });
+    }
+
     const userId = req.body.userId || req.params.id;
-    const { amount, creditType = 'paid', reason } = req.body;
+    const { amount, action, direction, creditType = 'paid', reason, note } = req.body;
 
     if (!userId) {
       return res.status(400).json({ success: false, message: 'User ID is required.' });
     }
 
-    const delta = Number(amount);
-    if (isNaN(delta) || delta === 0) {
-      return res.status(400).json({ success: false, message: 'Amount must be a non-zero number.' });
+    // 2. Validate Amount: Must be a positive integer
+    const rawAmount = amount;
+    const parsedAmount = Number(rawAmount);
+    if (
+      rawAmount === undefined ||
+      rawAmount === null ||
+      rawAmount === '' ||
+      isNaN(parsedAmount) ||
+      !Number.isInteger(parsedAmount) ||
+      parsedAmount === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount must be a positive integer.',
+      });
     }
 
-    if (!reason || reason.trim().length < 5) {
+    const actionUpper = (action || '').toUpperCase();
+    const directionUpper = (direction || '').toUpperCase();
+    const isDebit = actionUpper === 'REMOVE' || directionUpper === 'DEBIT' || parsedAmount < 0;
+    const absAmount = Math.abs(parsedAmount);
+
+    if (!Number.isInteger(absAmount) || absAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount must be a positive integer.',
+      });
+    }
+
+    // 3. Validate Reason: Mandatory, min 5 chars
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
       return res.status(400).json({
         success: false,
         message: 'A detailed reason (at least 5 characters) is required for audit compliance.',
       });
+    }
+
+    // 4. Duplicate request / double-click protection (10 seconds window)
+    const duplicateKey = `${req.user._id}:${userId}:${isDebit ? 'REMOVE' : 'ADD'}:${absAmount}:${reason.trim()}`;
+    const lastRequestTime = recentAdjustmentsCache.get(duplicateKey);
+    const nowTime = Date.now();
+    if (lastRequestTime && nowTime - lastRequestTime < 10000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Duplicate adjustment request detected. Please wait a moment before resubmitting.',
+      });
+    }
+    recentAdjustmentsCache.set(duplicateKey, nowTime);
+    // Cleanup cache entries older than 30 seconds
+    for (const [k, v] of recentAdjustmentsCache.entries()) {
+      if (nowTime - v > 30000) recentAdjustmentsCache.delete(k);
     }
 
     let user = null;
@@ -1147,30 +1216,89 @@ export const adjustUserCredits = async (req, res, next) => {
         });
       }
 
-      balanceBefore = (user.paidCredits || 0) + (user.freeCredits || 0);
+      balanceBefore = (Number(user.paidCredits) || 0) + (Number(user.freeCredits) || 0);
 
-      if (creditType === 'paid') {
-        user.paidCredits = Math.max(0, (user.paidCredits || 0) + delta);
+      // 5. REMOVE cannot make student's balance negative
+      if (isDebit && absAmount > balanceBefore) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot remove ${absAmount} CR. Student only has ${balanceBefore} CR available.`,
+        });
+      }
+
+      const prevPaid = user.paidCredits || 0;
+      const prevFree = user.freeCredits || 0;
+
+      if (isDebit) {
+        if (creditType === 'free') {
+          if ((user.freeCredits || 0) >= absAmount) {
+            user.freeCredits -= absAmount;
+          } else {
+            const rem = absAmount - (user.freeCredits || 0);
+            user.freeCredits = 0;
+            user.paidCredits = Math.max(0, (user.paidCredits || 0) - rem);
+          }
+        } else {
+          if ((user.paidCredits || 0) >= absAmount) {
+            user.paidCredits -= absAmount;
+          } else {
+            const rem = absAmount - (user.paidCredits || 0);
+            user.paidCredits = 0;
+            user.freeCredits = Math.max(0, (user.freeCredits || 0) - rem);
+          }
+        }
       } else {
-        user.freeCredits = Math.max(0, (user.freeCredits || 0) + delta);
+        if (creditType === 'free') {
+          user.freeCredits = (user.freeCredits || 0) + absAmount;
+        } else {
+          user.paidCredits = (user.paidCredits || 0) + absAmount;
+        }
       }
 
       user.walletCredits = (user.paidCredits || 0) + (user.freeCredits || 0);
       balanceAfter = user.walletCredits;
       await user.save();
 
+      const delta = isDebit ? -absAmount : absAmount;
       const transactionId = `CTX-ADJ-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
       ledgerTx = await CreditTransaction.create({
         transactionId,
         user: user._id,
         type: 'ADMIN_ADJUSTMENT',
+        direction: isDebit ? 'DEBIT' : 'CREDIT',
         credits: delta,
         balanceBefore,
         balanceAfter,
         referenceType: 'ADMIN_ADJUSTMENT',
         referenceId: req.user._id.toString(),
+        admin: req.user._id,
+        adminName: req.user.name || 'Admin',
+        adminEmail: req.user.email || '',
+        reason: reason.trim(),
+        note: note ? note.trim() : '',
         desc: `Admin Adjustment (${delta > 0 ? '+' : ''}${delta} CR): ${reason.trim()}`,
         status: 'COMPLETED',
+      });
+
+      // Record audit log
+      await recordAuditLog({
+        req,
+        action: 'ADMIN_CREDIT_ADJUSTMENT',
+        module: 'credits',
+        targetType: 'User',
+        targetId: userId,
+        targetName: user.name,
+        previousValue: { balance: balanceBefore, paidCredits: prevPaid, freeCredits: prevFree },
+        newValue: {
+          balance: balanceAfter,
+          adjustment: delta,
+          direction: isDebit ? 'DEBIT' : 'CREDIT',
+          amount: absAmount,
+          creditType,
+          paidCredits: user.paidCredits,
+          freeCredits: user.freeCredits,
+        },
+        reason: reason.trim(),
       });
     } else {
       user = await devStore.findUserById(userId);
@@ -1183,48 +1311,100 @@ export const adjustUserCredits = async (req, res, next) => {
         });
       }
 
-      balanceBefore = (user.paidCredits || 0) + (user.freeCredits || 0);
+      balanceBefore = (Number(user.paidCredits) || 0) + (Number(user.freeCredits) || 0);
 
-      const updates = {};
-      if (creditType === 'paid') {
-        updates.paidCredits = Math.max(0, (user.paidCredits || 0) + delta);
-      } else {
-        updates.freeCredits = Math.max(0, (user.freeCredits || 0) + delta);
+      // 5. REMOVE cannot make student's balance negative
+      if (isDebit && absAmount > balanceBefore) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot remove ${absAmount} CR. Student only has ${balanceBefore} CR available.`,
+        });
       }
-      updates.walletCredits = (updates.paidCredits !== undefined ? updates.paidCredits : user.paidCredits || 0) +
-        (updates.freeCredits !== undefined ? updates.freeCredits : user.freeCredits || 0);
 
-      balanceAfter = updates.walletCredits;
-      user = await devStore.updateUser(userId, updates);
+      const prevPaid = user.paidCredits || 0;
+      const prevFree = user.freeCredits || 0;
+      let newPaid = prevPaid;
+      let newFree = prevFree;
 
+      if (isDebit) {
+        if (creditType === 'free') {
+          if (newFree >= absAmount) {
+            newFree -= absAmount;
+          } else {
+            const rem = absAmount - newFree;
+            newFree = 0;
+            newPaid = Math.max(0, newPaid - rem);
+          }
+        } else {
+          if (newPaid >= absAmount) {
+            newPaid -= absAmount;
+          } else {
+            const rem = absAmount - newPaid;
+            newPaid = 0;
+            newFree = Math.max(0, newFree - rem);
+          }
+        }
+      } else {
+        if (creditType === 'free') {
+          newFree += absAmount;
+        } else {
+          newPaid += absAmount;
+        }
+      }
+
+      const newWallet = newPaid + newFree;
+      balanceAfter = newWallet;
+
+      user = await devStore.updateUser(userId, {
+        paidCredits: newPaid,
+        freeCredits: newFree,
+        walletCredits: newWallet,
+      });
+
+      const delta = isDebit ? -absAmount : absAmount;
       const transactionId = `CTX-ADJ-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
       ledgerTx = await devStore.createCreditTransaction({
         transactionId,
         user: userId,
         type: 'ADMIN_ADJUSTMENT',
+        direction: isDebit ? 'DEBIT' : 'CREDIT',
         credits: delta,
         balanceBefore,
         balanceAfter,
         referenceType: 'ADMIN_ADJUSTMENT',
         referenceId: req.user._id.toString(),
+        admin: req.user._id,
+        adminName: req.user.name || 'Admin',
+        adminEmail: req.user.email || '',
+        reason: reason.trim(),
+        note: note ? note.trim() : '',
         desc: `Admin Adjustment (${delta > 0 ? '+' : ''}${delta} CR): ${reason.trim()}`,
         status: 'COMPLETED',
       });
+
+      // Record audit log
+      await recordAuditLog({
+        req,
+        action: 'ADMIN_CREDIT_ADJUSTMENT',
+        module: 'credits',
+        targetType: 'User',
+        targetId: userId,
+        targetName: user.name,
+        previousValue: { balance: balanceBefore, paidCredits: prevPaid, freeCredits: prevFree },
+        newValue: {
+          balance: balanceAfter,
+          adjustment: delta,
+          direction: isDebit ? 'DEBIT' : 'CREDIT',
+          amount: absAmount,
+          creditType,
+          paidCredits: newPaid,
+          freeCredits: newFree,
+        },
+        reason: reason.trim(),
+      });
     }
 
-    // Record audit log
-    await recordAuditLog({
-      req,
-      action: 'CREDIT_ADJUSTMENT',
-      module: 'credits',
-      targetType: 'User',
-      targetId: userId,
-      targetName: user.name,
-      previousValue: { balance: balanceBefore },
-      newValue: { balance: balanceAfter, adjustment: delta, creditType },
-      reason: reason.trim(),
-    });
-
+    const delta = isDebit ? -absAmount : absAmount;
     return res.status(200).json({
       success: true,
       message: `Adjusted ${delta > 0 ? '+' : ''}${delta} credits for ${user.name}. New balance: ${balanceAfter} CR.`,
@@ -1256,10 +1436,13 @@ export const getAdminCreditTransactions = async (req, res, next) => {
         query.$or = [
           { transactionId: { $regex: search, $options: 'i' } },
           { desc: { $regex: search, $options: 'i' } },
+          { reason: { $regex: search, $options: 'i' } },
+          { adminName: { $regex: search, $options: 'i' } },
         ];
       }
       transactions = await CreditTransaction.find(query)
         .populate('user', 'name email phone role')
+        .populate('admin', 'name email')
         .sort({ createdAt: -1 });
     } else {
       transactions = await devStore.findCreditTransactions({ type, search, user });

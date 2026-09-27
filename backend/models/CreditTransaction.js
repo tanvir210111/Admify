@@ -71,6 +71,32 @@ const creditTransactionSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    direction: {
+      type: String,
+      enum: ['CREDIT', 'DEBIT'],
+      default: 'CREDIT',
+    },
+    admin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    adminName: {
+      type: String,
+      default: '',
+    },
+    adminEmail: {
+      type: String,
+      default: '',
+    },
+    reason: {
+      type: String,
+      default: '',
+    },
+    note: {
+      type: String,
+      default: '',
+    },
   },
   {
     timestamps: true,

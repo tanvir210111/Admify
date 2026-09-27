@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
+import AdminCreditAdjustmentModal from "../../components/admin/AdminCreditAdjustmentModal";
 
 export default function AdminStudents() {
   const [students, setStudents] = useState([]);
@@ -378,6 +379,13 @@ export default function AdminStudents() {
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          onClick={() => setAdjustModalStudent(s)}
+                          className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg transition-colors cursor-pointer"
+                          title="Adjust Student Credits (Add / Remove)"
+                        >
+                          <Coins className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                           onClick={() => {
                             setEditStudent(s);
                             setEditForm({
@@ -514,25 +522,77 @@ export default function AdminStudents() {
                         <p className="text-[11px] font-bold uppercase text-slate-400">Wallet & Credits</p>
                         <button
                           onClick={() => setAdjustModalStudent(selectedStudent)}
-                          className="text-amber-400 hover:underline font-bold text-[11px]"
+                          className="px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
                         >
-                          ± Adjust
+                          <Coins className="w-3 h-3 text-amber-400" />
+                          <span>± Adjust</span>
                         </button>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <div className="p-2 rounded bg-white/3 text-center">
                           <span className="text-slate-500 text-[9px] block">Total</span>
-                          <span className="text-amber-400 font-bold font-mono text-sm">{selectedStudent.walletCredits || 0}</span>
+                          <span className="text-amber-400 font-bold font-mono text-sm">{selectedStudent.walletCredits || 0} CR</span>
                         </div>
                         <div className="p-2 rounded bg-white/3 text-center">
                           <span className="text-slate-500 text-[9px] block">Free</span>
-                          <span className="text-slate-300 font-bold font-mono text-sm">{selectedStudent.freeCredits || 0}</span>
+                          <span className="text-sky-300 font-bold font-mono text-sm">{selectedStudent.freeCredits || 0} CR</span>
                         </div>
                         <div className="p-2 rounded bg-white/3 text-center">
                           <span className="text-slate-500 text-[9px] block">Paid</span>
-                          <span className="text-emerald-400 font-bold font-mono text-sm">{selectedStudent.paidCredits || 0}</span>
+                          <span className="text-emerald-400 font-bold font-mono text-sm">{selectedStudent.paidCredits || 0} CR</span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Credit Activity & Ledger */}
+                    <div className="p-3.5 rounded-xl border border-white/6 bg-white/2 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <p className="text-[11px] font-bold uppercase text-slate-400">
+                          Credit Activity ({drawerData?.related?.creditTransactions?.length || 0})
+                        </p>
+                        <button
+                          onClick={() => setAdjustModalStudent(selectedStudent)}
+                          className="text-amber-400 hover:text-amber-300 font-bold text-[11px] cursor-pointer"
+                        >
+                          + Adjust
+                        </button>
+                      </div>
+                      {!drawerData?.related?.creditTransactions || drawerData.related.creditTransactions.length === 0 ? (
+                        <p className="text-slate-500 text-xs py-2 text-center">No credit ledger records found.</p>
+                      ) : (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                          {drawerData.related.creditTransactions.map((tx, idx) => {
+                            const isPos = (tx.credits || 0) > 0;
+                            return (
+                              <div key={tx._id || idx} className="p-2 rounded bg-white/3 space-y-1 text-xs">
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+                                      tx.type === "WELCOME_CREDIT"
+                                        ? "bg-sky-500/15 text-sky-300 border-sky-500/30"
+                                        : tx.type === "ADMIN_ADJUSTMENT"
+                                        ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                        : tx.type === "PURCHASE"
+                                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                        : "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                    }`}>
+                                      {tx.type?.replace(/_/g, " ")}
+                                    </span>
+                                  </div>
+                                  <span className={`font-mono font-bold text-xs ${isPos ? "text-emerald-400" : "text-rose-400"}`}>
+                                    {isPos ? `+${tx.credits}` : tx.credits} CR
+                                  </span>
+                                </div>
+                                <p className="text-slate-300 text-[11px] truncate">{tx.desc || tx.reason}</p>
+                                <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
+                                  <span>{tx.balanceBefore !== undefined ? `${tx.balanceBefore} → ${tx.balanceAfter} CR` : "—"}</span>
+                                  <span>{tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : "—"}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {/* Applications */}
@@ -875,6 +935,19 @@ export default function AdminStudents() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── Controlled Credit Adjustment Modal ── */}
+      <AdminCreditAdjustmentModal
+        isOpen={Boolean(adjustModalStudent)}
+        onClose={() => setAdjustModalStudent(null)}
+        targetStudent={adjustModalStudent}
+        onSuccess={(data) => {
+          fetchStudents();
+          if (selectedStudent && selectedStudent._id === adjustModalStudent?._id) {
+            openStudentDrawer(data?.user || selectedStudent);
+          }
+        }}
+      />
 
     </div>
   );
