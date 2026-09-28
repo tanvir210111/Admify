@@ -29,6 +29,20 @@ export const generateUniRepRegistrationToken = (userId, applicationId) => {
   );
 };
 
+// Helper to sanitize user object for authentication responses (strictly omits heavy documents/blobs)
+export const sanitizeAuthUser = (user) => {
+  if (!user) return null;
+  const raw = typeof user.toObject === 'function' ? user.toObject() : { ...user };
+  delete raw.password;
+  delete raw.activationTokenHash;
+  delete raw.activationTokenExpires;
+  delete raw.documents;
+  delete raw.chatMessages;
+  delete raw.notifications;
+  delete raw.auditLogs;
+  return raw;
+};
+
 // @desc    Register a new user (student, agent, agency, university)
 // @route   POST /api/auth/register
 // @access  Public
@@ -554,7 +568,7 @@ export const register = async (req, res, next) => {
         message: 'Agent account successfully verified, registered, and linked to agency!',
         data: {
           token,
-          user: agentUser,
+          user: sanitizeAuthUser(agentUser),
           agency: {
             _id: agency._id,
             name: agency.name,
@@ -667,7 +681,7 @@ export const register = async (req, res, next) => {
       success: true,
       message: 'Account created successfully! Please log in.',
       data: {
-        user,
+        user: sanitizeAuthUser(user),
         token,
       },
     });
@@ -901,7 +915,7 @@ export const login = async (req, res, next) => {
       success: true,
       message: 'Welcome back!',
       data: {
-        user,
+        user: sanitizeAuthUser(user),
         token,
       },
     });
@@ -959,7 +973,7 @@ export const adminLogin = async (req, res, next) => {
       success: true,
       message: 'Administrator clearance granted',
       data: {
-        user,
+        user: sanitizeAuthUser(user),
         token,
       },
     });
@@ -1293,7 +1307,7 @@ export const getMe = async (req, res, next) => {
       success: true,
       message: 'Current user profile loaded',
       data: {
-        user,
+        user: sanitizeAuthUser(user),
       },
     });
   } catch (error) {

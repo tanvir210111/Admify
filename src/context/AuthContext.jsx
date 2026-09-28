@@ -15,6 +15,49 @@ export const AUTH_STORAGE_KEYS = [
   'admin',
 ];
 
+// Legacy keys that might be taking up space in localStorage from previous versions
+export const LEGACY_AUTH_STORAGE_KEYS = [
+  'admify_token',
+  'admify_user',
+  'admify_role',
+  'admify_admin_token',
+  'token',
+  'auth_token',
+  'accessToken',
+  'user',
+  'admin',
+  'admify_student_documents',
+  'admify_student_direct_apps',
+  'admify_student_agency_requests',
+  'admify_student_reports',
+  'admify_student_saved_unis',
+  'admify_student_compare_unis',
+  'admify_ai_rec_assessment',
+];
+
+// Whitelist of allowed keys in localStorage (strictly safe user preferences only)
+export const ALLOWED_LOCAL_STORAGE_KEYS = new Set([
+  'admify_remembered_email',
+  'admify_remembered_role',
+]);
+
+/**
+ * Purge legacy auth tokens and large cached datasets from localStorage on application boot.
+ * Guaranteed NEVER to delete remembered email or role preferences.
+ * Does NOT call localStorage.clear().
+ */
+try {
+  if (typeof localStorage !== 'undefined') {
+    LEGACY_AUTH_STORAGE_KEYS.forEach((key) => {
+      if (!ALLOWED_LOCAL_STORAGE_KEYS.has(key)) {
+        localStorage.removeItem(key);
+      }
+    });
+  }
+} catch {
+  // Ignore localStorage access failures (e.g. strict sandbox or private window)
+}
+
 /**
  * Completely clears all authentication tokens, cached user objects,
  * and session state from THIS TAB ONLY (sessionStorage).
@@ -33,16 +76,81 @@ export const clearAuthStorage = () => {
   }
 };
 
-// Purge any legacy auth tokens from localStorage once on load so they cannot bleed across tabs
-try {
-  if (typeof localStorage !== 'undefined') {
-    AUTH_STORAGE_KEYS.forEach((key) => {
-      localStorage.removeItem(key);
-    });
+/**
+ * Defensive setter for sessionStorage items with quota error handling.
+ */
+export const safeSetSessionItem = (key, value) => {
+  if (typeof sessionStorage === 'undefined') return false;
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.warn(`[Storage Safety] Failed to set sessionStorage item '${key}':`, err?.message || err);
+    return false;
   }
-} catch {
-  // Ignore
-}
+};
+
+/**
+ * Normalizes user object to a safe, lightweight authenticated identity payload.
+ * Strictly excludes heavy documents, base64 blobs, and bloated collection arrays.
+ */
+export const sanitizeAuthUser = (rawUser) => {
+  if (!rawUser || typeof rawUser !== 'object') return null;
+
+  const clean = { ...rawUser };
+
+  delete clean.password;
+  delete clean.activationTokenHash;
+  delete clean.activationTokenExpires;
+  delete clean.documents; // Never store base64/uploaded document blobs
+  delete clean.verificationDocuments;
+  delete clean.applicationDocuments;
+  delete clean.chatMessages;
+  delete clean.notifications;
+  delete clean.auditLogs;
+  delete clean.applications;
+  delete clean.bids;
+
+  // Defensive: Strip any large string values exceeding 2KB (e.g. stray base64 blobs)
+  Object.keys(clean).forEach((k) => {
+    if (typeof clean[k] === 'string' && clean[k].length > 2048) {
+      delete clean[k];
+    }
+  });
+
+  return clean;
+};
+
+/**
+ * Defensive setter for admify_user with fallback to minimal identity if quota is exceeded.
+ */
+export const safeSetSessionUser = (userObj) => {
+  if (!userObj || typeof sessionStorage === 'undefined') return;
+  try {
+    const sanitized = sanitizeAuthUser(userObj);
+    sessionStorage.setItem('admify_user', JSON.stringify(sanitized));
+  } catch (quotaErr) {
+    console.warn('[Storage Safety] Quota exceeded while writing admify_user, falling back to minimal payload:', quotaErr?.message || quotaErr);
+    try {
+      const minimalUser = {
+        id: userObj.id || userObj._id,
+        _id: userObj._id || userObj.id,
+        name: userObj.name || userObj.user_metadata?.full_name || 'User',
+        email: userObj.email || '',
+        role: userObj.role || 'student',
+        status: userObj.status || 'active',
+        accountStatus: userObj.accountStatus || 'ACTIVE',
+        user_metadata: {
+          full_name: userObj.name || userObj.user_metadata?.full_name || 'User',
+          role: userObj.role || 'student',
+        },
+      };
+      sessionStorage.setItem('admify_user', JSON.stringify(minimalUser));
+    } catch (fallbackErr) {
+      console.error('[Storage Safety] Critical: Could not write fallback minimal user to sessionStorage:', fallbackErr);
+    }
+  }
+};
 
 /**
  * Checks if a JWT string is well-formed and unexpired.
@@ -83,27 +191,31 @@ export const isTokenValid = (token) => {
 // Format user object with backwards-compatible user_metadata for existing views
 export const formatUser = (rawUser, token = null) => {
   if (!rawUser) return null;
+  const sanitized = sanitizeAuthUser(rawUser);
   const decoded = token ? decodeTokenPayload(token) : null;
   // Canonical role: Backend user role takes highest precedence, then JWT token payload role, then metadata
   const role = (
-    rawUser.role ||
+    sanitized.role ||
     decoded?.role ||
-    rawUser.user_metadata?.role ||
+    sanitized.user_metadata?.role ||
     'student'
   )
     .toString()
     .toLowerCase()
     .trim();
 
+  const id = sanitized._id || sanitized.id || decoded?.id;
+
   return {
-    ...rawUser,
-    id: rawUser._id || rawUser.id || decoded?.id,
+    ...sanitized,
+    id,
+    _id: id,
     role,
     user_metadata: {
-      full_name: rawUser.name || rawUser.user_metadata?.full_name || 'User',
-      phone: rawUser.phone || rawUser.user_metadata?.phone || '',
+      full_name: sanitized.name || sanitized.user_metadata?.full_name || 'User',
+      phone: sanitized.phone || sanitized.user_metadata?.phone || '',
       role,
-      ...(rawUser.user_metadata || {}),
+      ...(sanitized.user_metadata || {}),
     },
   };
 };
@@ -145,8 +257,8 @@ export const AuthProvider = ({ children }) => {
         if (res?.data?.user) {
           const formatted = formatUser(res.data.user, token);
           setUser(formatted);
-          sessionStorage.setItem('admify_user', JSON.stringify(formatted));
-          sessionStorage.setItem('admify_role', formatted.role);
+          safeSetSessionUser(formatted);
+          safeSetSessionItem('admify_role', formatted.role);
         } else {
           throw new Error('User profile could not be loaded');
         }
@@ -195,12 +307,12 @@ export const AuthProvider = ({ children }) => {
 
     if (token && rawUser) {
       clearAuthStorage();
-      sessionStorage.setItem('admify_token', token);
-      sessionStorage.setItem('token', token);
+      safeSetSessionItem('admify_token', token);
+      safeSetSessionItem('token', token);
       const formatted = formatUser(rawUser, token);
       if (formatted) {
-        sessionStorage.setItem('admify_user', JSON.stringify(formatted));
-        sessionStorage.setItem('admify_role', formatted.role);
+        safeSetSessionUser(formatted);
+        safeSetSessionItem('admify_role', formatted.role);
       }
       setUser(formatted);
     }
@@ -232,11 +344,11 @@ export const AuthProvider = ({ children }) => {
 
     // Tab-scoped storage: save active authentication session in sessionStorage ONLY
     clearAuthStorage();
-    sessionStorage.setItem('admify_token', token);
-    sessionStorage.setItem('token', token);
+    safeSetSessionItem('admify_token', token);
+    safeSetSessionItem('token', token);
     const formatted = formatUser(rawUser, token);
-    sessionStorage.setItem('admify_user', JSON.stringify(formatted));
-    sessionStorage.setItem('admify_role', formatted.role);
+    safeSetSessionUser(formatted);
+    safeSetSessionItem('admify_role', formatted.role);
     setUser(formatted);
 
     return { ...res, user: formatted, role: formatted.role };
@@ -264,11 +376,11 @@ export const AuthProvider = ({ children }) => {
 
     // Tab-scoped storage: save active authentication session in sessionStorage ONLY
     clearAuthStorage();
-    sessionStorage.setItem('admify_token', token);
-    sessionStorage.setItem('token', token);
+    safeSetSessionItem('admify_token', token);
+    safeSetSessionItem('token', token);
     const formatted = formatUser(rawUser, token);
-    sessionStorage.setItem('admify_user', JSON.stringify(formatted));
-    sessionStorage.setItem('admify_role', formatted.role);
+    safeSetSessionUser(formatted);
+    safeSetSessionItem('admify_role', formatted.role);
     setUser(formatted);
 
     return { ...res, user: formatted, role: formatted.role };
@@ -285,10 +397,8 @@ export const AuthProvider = ({ children }) => {
     setUser((prev) => {
       if (!prev) return null;
       const updated = formatUser({ ...prev, ...updatedFields });
-      if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.setItem('admify_user', JSON.stringify(updated));
-        sessionStorage.setItem('admify_role', updated.role);
-      }
+      safeSetSessionUser(updated);
+      safeSetSessionItem('admify_role', updated.role);
       return updated;
     });
   };

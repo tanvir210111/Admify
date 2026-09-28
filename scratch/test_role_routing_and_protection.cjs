@@ -273,6 +273,7 @@ async function runTests() {
     accountStatus: 'ACTIVE',
     status: 'active',
     isActive: true,
+    uniRepVerificationStatus: 'APPROVED',
   });
 
   // 6. Admin

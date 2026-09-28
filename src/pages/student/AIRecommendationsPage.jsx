@@ -69,8 +69,18 @@ function AIRecommendationsPage() {
   // Load existing assessment from storage if exists
   const savedAssessment = (() => {
     try {
-      const data = localStorage.getItem("admify_ai_rec_assessment");
-      return data ? JSON.parse(data) : null;
+      if (typeof sessionStorage !== 'undefined') {
+        const sessionData = sessionStorage.getItem("admify_ai_rec_assessment");
+        if (sessionData) return JSON.parse(sessionData);
+      }
+      if (typeof localStorage !== 'undefined') {
+        const legacyData = localStorage.getItem("admify_ai_rec_assessment");
+        if (legacyData) {
+          localStorage.removeItem("admify_ai_rec_assessment");
+          return JSON.parse(legacyData);
+        }
+      }
+      return null;
     } catch {
       return null;
     }
@@ -181,7 +191,13 @@ function AIRecommendationsPage() {
     setAnalyzingStep(0);
 
     // Save to storage
-    localStorage.setItem("admify_ai_rec_assessment", JSON.stringify(assessmentPayload));
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem("admify_ai_rec_assessment", JSON.stringify(assessmentPayload));
+      }
+    } catch (e) {
+      console.warn("Could not save AI assessment to sessionStorage:", e);
+    }
 
     // Multi-phase AI synthesis animation
     const steps = [

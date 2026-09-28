@@ -14,31 +14,12 @@ const STORAGE_KEYS = {
   FREE_APP_USED: 'admify_student_free_app_used',
 };
 
-// Purge mock seed data on load so student starts completely clean
+// Purge legacy student data from localStorage so it never occupies localStorage quota
 try {
-  const direct = localStorage.getItem(STORAGE_KEYS.DIRECT_APPS);
-  if (direct && (direct.includes('app-seed-1') || direct.includes('Stanford University'))) {
-    localStorage.removeItem(STORAGE_KEYS.DIRECT_APPS);
-  }
-  const agency = localStorage.getItem(STORAGE_KEYS.AGENCY_REQUESTS);
-  if (agency && agency.includes('req-9821')) {
-    localStorage.removeItem(STORAGE_KEYS.AGENCY_REQUESTS);
-  }
-  const docs = localStorage.getItem(STORAGE_KEYS.DOCUMENTS);
-  if (docs && docs.includes('doc-1')) {
-    localStorage.removeItem(STORAGE_KEYS.DOCUMENTS);
-  }
-  const reps = localStorage.getItem(STORAGE_KEYS.REPORTS);
-  if (reps && reps.includes('rep-101')) {
-    localStorage.removeItem(STORAGE_KEYS.REPORTS);
-  }
-  const saved = localStorage.getItem(STORAGE_KEYS.SAVED_UNIS);
-  if (saved && saved.includes('stanford-university')) {
-    localStorage.removeItem(STORAGE_KEYS.SAVED_UNIS);
-  }
-  const comp = localStorage.getItem(STORAGE_KEYS.COMPARE_UNIS);
-  if (comp && comp.includes('stanford-university')) {
-    localStorage.removeItem(STORAGE_KEYS.COMPARE_UNIS);
+  if (typeof localStorage !== 'undefined') {
+    Object.values(STORAGE_KEYS).forEach((k) => {
+      localStorage.removeItem(k);
+    });
   }
 } catch {}
 
@@ -118,11 +99,25 @@ export const REGISTERED_AGENCIES = [
   },
 ];
 
-// Helper to get local data safely
+// Helper to get local data safely (tab-scoped via sessionStorage)
 const getLocal = (key, fallback) => {
   try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : fallback;
+    if (typeof sessionStorage !== 'undefined') {
+      const item = sessionStorage.getItem(key);
+      if (item) return JSON.parse(item);
+    }
+    // Check legacy localStorage once for migration, but remove it from localStorage
+    if (typeof localStorage !== 'undefined') {
+      const legacyItem = localStorage.getItem(key);
+      if (legacyItem) {
+        localStorage.removeItem(key);
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(key, legacyItem);
+        }
+        return JSON.parse(legacyItem);
+      }
+    }
+    return fallback;
   } catch {
     return fallback;
   }
@@ -130,7 +125,9 @@ const getLocal = (key, fallback) => {
 
 const setLocal = (key, value) => {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(key, JSON.stringify(value));
+    }
   } catch (err) {
     console.warn(`[StudentService] setLocal failed for ${key}`, err);
   }
@@ -188,8 +185,16 @@ export const studentService = {
       const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('admify_user') : null;
       const user = cached ? JSON.parse(cached) : {};
       const updated = { ...user, ...profileData };
+      delete updated.documents;
+      delete updated.chatMessages;
+      delete updated.notifications;
+      delete updated.auditLogs;
       if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.setItem('admify_user', JSON.stringify(updated));
+        try {
+          sessionStorage.setItem('admify_user', JSON.stringify(updated));
+        } catch (e) {
+          console.warn('[StudentService] Could not persist admify_user in sessionStorage:', e);
+        }
       }
       return updated;
     }
@@ -1730,7 +1735,8 @@ ${recommenderTitle}`;
   clearAllData() {
     Object.values(STORAGE_KEYS).forEach((k) => {
       try {
-        localStorage.removeItem(k);
+        if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(k);
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(k);
       } catch (err) {
         console.warn('Failed to clear key', k, err);
       }
