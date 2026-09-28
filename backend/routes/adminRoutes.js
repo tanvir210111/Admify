@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   getAdminStats,
+  getAdminSidebarCounts,
   globalAdminSearch,
   getAdminUsers,
   getAdminUserById,
@@ -73,6 +74,7 @@ router.use(protect, authorize('admin'));
 // Dashboard Metrics & Global Search
 router.get('/stats', getAdminStats);
 router.get('/dashboard', getAdminStats);
+router.get('/sidebar-counts', getAdminSidebarCounts);
 router.get('/search', globalAdminSearch);
 
 // Central User Management

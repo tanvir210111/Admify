@@ -927,6 +927,33 @@ class DevStore {
     return null;
   }
 
+  // ── Universities ──────────────────────────────────────────────────────────
+  async findOrCreateUniversity(data = {}) {
+    const db = this.read();
+    if (!Array.isArray(db.universities)) db.universities = [];
+    const name = data.name || 'Verified University';
+    let uni = db.universities.find((u) => u.name?.toLowerCase() === name.toLowerCase());
+    if (!uni) {
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `uni-${Date.now()}`;
+      uni = {
+        _id: new mongoose.Types.ObjectId().toString(),
+        slug,
+        name,
+        country: data.country || 'Global',
+        city: data.city || '',
+        location: data.city ? `${data.city}, ${data.country || 'Global'}` : (data.country || 'Global'),
+        type: data.type || 'Public',
+        logo: data.logo || '',
+        website: data.website || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      db.universities.push(uni);
+      this.write(db);
+    }
+    return uni;
+  }
+
   // ── University Representative Applications ────────────────────────────────
   async findUniRepApplicationById(id) {
     if (!id) return null;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
+import { AdminBadgeProvider, useAdminBadges } from "../../context/AdminBadgeContext";
 import { api } from "../../lib/api";
 import {
   LayoutDashboard, Users, UserCheck, Headphones, Building2, Award,
@@ -15,28 +16,29 @@ const NAV = [
   { icon: LayoutDashboard, label: "Dashboard",             path: "/admin/dashboard" },
   { icon: Users,           label: "Central Users",         path: "/admin/users" },
   { icon: Users,           label: "Students",              path: "/admin/students" },
-  { icon: Building2,       label: "Agencies",              path: "/admin/agencies" },
-  { icon: UserCheck,       label: "Agents",                path: "/admin/agents" },
-  { icon: UserCheck,       label: "Uni Representatives",   path: "/admin/university-representatives" },
+  { icon: Building2,       label: "Agencies",              path: "/admin/agencies", countKey: "agencies" },
+  { icon: UserCheck,       label: "Agents",                path: "/admin/agents", countKey: "agents" },
+  { icon: UserCheck,       label: "Uni Representatives",   path: "/admin/university-representatives", countKey: "uniRepresentatives" },
   { icon: Building2,       label: "Universities",          path: "/admin/universities" },
-  { icon: FileCheck,       label: "Applications",          path: "/admin/applications" },
-  { icon: Handshake,       label: "Partnerships",          path: "/admin/partnerships" },
-  { icon: CreditCard,      label: "Payments",              path: "/admin/payments" },
+  { icon: FileCheck,       label: "Applications",          path: "/admin/applications", countKey: "applications" },
+  { icon: Handshake,       label: "Partnerships",          path: "/admin/partnerships", countKey: "partnerships" },
+  { icon: CreditCard,      label: "Payments",              path: "/admin/payments", countKey: "payments" },
   { icon: Wallet,          label: "Wallet & Credits",      path: "/admin/wallet" },
   { icon: Tag,             label: "Coupons",               path: "/admin/coupons" },
-  { icon: Award,           label: "Scholarships",          path: "/admin/scholarships" },
+  { icon: Award,           label: "Scholarships",          path: "/admin/scholarships", countKey: "scholarships" },
   { icon: Globe,           label: "Countries",             path: "/admin/countries" },
-  { icon: AlertCircle,     label: "Reports & Complaints",  path: "/admin/reports" },
-  { icon: MessageSquare,   label: "Support Inbox",         path: "/admin/support" },
-  { icon: Bell,            label: "Notifications",         path: "/admin/notifications" },
+  { icon: AlertCircle,     label: "Reports & Complaints",  path: "/admin/reports", countKey: "reports" },
+  { icon: MessageSquare,   label: "Support Inbox",         path: "/admin/support", countKey: "supportInbox" },
+  { icon: Bell,            label: "Notifications",         path: "/admin/notifications", countKey: "notifications" },
   { icon: Sparkles,        label: "AI Engine",             path: "/admin/ai" },
   { icon: ShieldAlert,     label: "Audit Logs",            path: "/admin/audit-logs" },
   { icon: UserPlus,        label: "Admin Accounts",        path: "/admin/admins" },
   { icon: Settings,        label: "Platform Settings",     path: "/admin/settings" },
 ];
 
-export default function AdminLayout() {
+function AdminLayoutInner() {
   const { user, signOut } = useAuth();
+  const { sidebarCounts, formatBadgeCount } = useAdminBadges();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -162,19 +164,47 @@ export default function AdminLayout() {
               to={item.path}
               onClick={() => { if (window.innerWidth < 1280) setSidebarOpen(false); }}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 group ${
+                `flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 group ${
                   isActive
                     ? "bg-violet-600/25 border border-violet-500/40 text-white font-bold shadow-[0_0_15px_rgba(139,92,246,0.15)]"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 }`
               }
             >
-              {({ isActive }) => (
-                <>
-                  <item.icon className={`flex-shrink-0 transition-colors ${isActive ? "text-violet-400" : "text-slate-500 group-hover:text-slate-300"}`} style={{ width: 16, height: 16 }} />
-                  <span className="truncate">{item.label}</span>
-                </>
-              )}
+              {({ isActive }) => {
+                const rawCount = item.countKey ? sidebarCounts[item.countKey] || 0 : 0;
+                const countDisplay = formatBadgeCount(rawCount);
+
+                return (
+                  <>
+                    <div className="flex items-center gap-3 min-w-0 pr-1">
+                      <item.icon
+                        className={`flex-shrink-0 transition-colors ${
+                          isActive ? "text-violet-400" : "text-slate-500 group-hover:text-slate-300"
+                        }`}
+                        style={{ width: 16, height: 16 }}
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </div>
+
+                    {rawCount > 0 && (
+                      <span
+                        className={`flex-shrink-0 px-1.5 py-0.5 min-w-[20px] text-center text-[10px] font-bold rounded-full transition-colors ${
+                          item.countKey === "reports"
+                            ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                            : item.countKey === "notifications"
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            : isActive
+                            ? "bg-violet-500 text-white shadow-sm shadow-violet-500/50"
+                            : "bg-violet-500/20 text-violet-300 border border-violet-500/30 group-hover:bg-violet-500/30 group-hover:text-white"
+                        }`}
+                      >
+                        {countDisplay}
+                      </span>
+                    )}
+                  </>
+                );
+              }}
             </NavLink>
           ))}
         </nav>
@@ -272,7 +302,7 @@ export default function AdminLayout() {
                 className="relative p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
               >
                 <Bell className="w-5 h-5" />
-                {notifications.some((n) => !n.read) && (
+                {(sidebarCounts.notifications > 0 || notifications.some((n) => !n.read)) && (
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-slate-900" />
                 )}
               </button>
@@ -289,8 +319,8 @@ export default function AdminLayout() {
                     >
                       <div className="flex justify-between items-center px-4 py-3 border-b border-white/8">
                         <h4 className="text-white font-bold text-sm">System Alerts</h4>
-                        <span className="text-violet-400 text-xs cursor-pointer hover:text-violet-300 font-semibold">
-                          {notifications.length} Total
+                        <span className="text-violet-400 text-xs font-semibold">
+                          {sidebarCounts.notifications > 0 ? `${sidebarCounts.notifications} Unread` : "0 Unread"}
                         </span>
                       </div>
                       {notifications.length === 0 ? (
@@ -382,5 +412,13 @@ export default function AdminLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function AdminLayout() {
+  return (
+    <AdminBadgeProvider>
+      <AdminLayoutInner />
+    </AdminBadgeProvider>
   );
 }

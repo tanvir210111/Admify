@@ -39,8 +39,12 @@ export const getNotifications = async (req, res, next) => {
 export const markAsRead = async (req, res, next) => {
   try {
     if (mongoose.connection.readyState === 1) {
+      const filter = req.user.role === 'admin'
+        ? { _id: req.params.id, $or: [{ user: req.user._id }, { user: { $exists: false } }, { user: null }] }
+        : { _id: req.params.id, user: req.user._id };
+
       const notification = await Notification.findOneAndUpdate(
-        { _id: req.params.id, user: req.user._id },
+        filter,
         { read: true },
         { new: true }
       );
@@ -82,7 +86,10 @@ export const markAsRead = async (req, res, next) => {
 export const markAllAsRead = async (req, res, next) => {
   try {
     if (mongoose.connection.readyState === 1) {
-      await Notification.updateMany({ user: req.user._id, read: false }, { read: true });
+      const filter = req.user.role === 'admin'
+        ? { $or: [{ user: req.user._id }, { user: { $exists: false } }, { user: null }], read: false }
+        : { user: req.user._id, read: false };
+      await Notification.updateMany(filter, { read: true });
     } else {
       await devStore.markAllNotificationsAsRead(req.user._id);
     }

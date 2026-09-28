@@ -79,7 +79,7 @@ const requireActiveUniRep = (req, res, next) => {
 
   return res.status(403).json({
     success: false,
-    message: 'Your University Representative account is pending verification or activation. Access to operational features is blocked until approved and activated.',
+    message: 'Your University Representative account is pending verification or approval. Access to operational features is blocked until approved by Admin.',
   });
 };
 

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
+import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending Review", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
@@ -80,10 +81,11 @@ export default function AdminUniReps() {
       });
       const isSuccess = res?.success || res?.data?.success;
       if (isSuccess) {
-        toast.success(res?.message || res?.data?.message || "University representative approved. Activation link dispatched.");
+        toast.success(res?.message || res?.data?.message || "University representative approved and account activated.");
         setActionModal(null);
         setAdminNotes("");
         fetchApplications();
+        triggerAdminBadgeRefresh();
         if (selectedApp && actionModal?.app && selectedApp._id === actionModal.app._id) {
           setSelectedApp({ ...selectedApp, status: "APPROVED" });
         }
@@ -123,6 +125,7 @@ export default function AdminUniReps() {
           setSelectedApp((prev) => (prev ? { ...prev, status: "REJECTED", profileStatus: "REJECTED" } : null));
         }
         await fetchApplications();
+        triggerAdminBadgeRefresh();
       } else {
         toast.error(res?.message || res?.data?.message || "Rejection failed");
       }
@@ -151,6 +154,7 @@ export default function AdminUniReps() {
           setSelectedApp(null);
         }
         fetchApplications();
+        triggerAdminBadgeRefresh();
       } else {
         toast.error(res?.message || res?.data?.message || "Deletion failed");
       }

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
@@ -96,6 +97,7 @@ export default function AdminAgencies() {
         setRejectionReason("");
         setAdminNotes("");
         fetchAgencies();
+        triggerAdminBadgeRefresh();
         if (selectedAgency && selectedAgency._id === actionModal.agency._id) {
           setSelectedAgency({
             ...selectedAgency,
@@ -130,6 +132,7 @@ export default function AdminAgencies() {
         setDeleteConfirmInput("");
         if (selectedAgency?._id === deleteModal._id) setSelectedAgency(null);
         fetchAgencies();
+        triggerAdminBadgeRefresh();
       } else {
         toast.error(res?.message || "Failed to delete agency.");
       }

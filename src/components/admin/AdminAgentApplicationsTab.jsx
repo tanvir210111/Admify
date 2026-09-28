@@ -18,6 +18,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
 const fade = {
@@ -88,6 +89,7 @@ export default function AdminAgentApplicationsTab() {
           activationCodeExpires: res.data.activationCodeExpires,
         });
         fetchApplications();
+        triggerAdminBadgeRefresh();
       } else {
         toast.error(res?.message || "Failed to approve application.");
       }
@@ -117,6 +119,7 @@ export default function AdminAgentApplicationsTab() {
         setShowRejectForm(false);
         setRejectionReason("");
         fetchApplications();
+        triggerAdminBadgeRefresh();
       } else {
         toast.error(res?.message || "Failed to reject application.");
       }

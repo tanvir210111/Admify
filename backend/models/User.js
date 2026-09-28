@@ -143,7 +143,7 @@ const userSchema = new mongoose.Schema(
     },
     uniRepVerificationStatus: {
       type: String,
-      enum: ['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED'],
+      enum: ['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'APPROVED', 'REJECTED'],
       default: 'PENDING',
     },
     department: {

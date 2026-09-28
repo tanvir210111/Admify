@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { formatBDT } from "../../utils/creditConstants";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
 
 const fade = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 
@@ -70,6 +71,7 @@ export default function AdminPayments() {
       if (data?.success) {
         setSuccessMsg(`Payment order approved successfully! ${data.data?.creditsAdded || ""} Credits deposited.`);
         fetchPayments();
+        triggerAdminBadgeRefresh();
       } else {
         setErrorMsg(data?.message || "Failed to approve payment.");
       }
@@ -95,6 +97,7 @@ export default function AdminPayments() {
         setRejectModalOrder(null);
         setRejectReason("");
         fetchPayments();
+        triggerAdminBadgeRefresh();
       } else {
         setErrorMsg(data?.message || "Failed to reject payment.");
       }

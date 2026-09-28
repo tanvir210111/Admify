@@ -14,6 +14,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
 const fade = {
@@ -72,9 +73,22 @@ export default function AdminNotifications() {
     try {
       await api.put("/api/notifications/read-all");
       setNotifs((prev) => prev.map((n) => ({ ...n, status: "read" })));
+      triggerAdminBadgeRefresh();
       toast.success("All notifications marked as read.");
     } catch {
       setNotifs((prev) => prev.map((n) => ({ ...n, status: "read" })));
+      triggerAdminBadgeRefresh();
+    }
+  };
+
+  const handleMarkSingleRead = async (id) => {
+    try {
+      await api.put(`/api/notifications/${id}/read`);
+      setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, status: "read" } : n)));
+      triggerAdminBadgeRefresh();
+    } catch {
+      setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, status: "read" } : n)));
+      triggerAdminBadgeRefresh();
     }
   };
 
@@ -145,9 +159,12 @@ export default function AdminNotifications() {
             return (
               <div
                 key={n.id}
+                onClick={() => {
+                  if (n.status === "unread") handleMarkSingleRead(n.id);
+                }}
                 className={`p-4 rounded-2xl border flex items-start gap-4 transition-all hover:bg-white/3 ${
                   n.status === "unread"
-                    ? "border-violet-500/30 bg-violet-600/10"
+                    ? "border-violet-500/30 bg-violet-600/10 cursor-pointer"
                     : "border-white/6 bg-white/1"
                 }`}
               >

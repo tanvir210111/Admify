@@ -826,27 +826,35 @@ export const login = async (req, res, next) => {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // UNI REP LOGIN GATE: Block login if University Representative account is not fully active
+    // UNI REP LOGIN GATE: Allow immediate login if approved/active, otherwise block
     // ──────────────────────────────────────────────────────────────────────────
-    if (
-      user.role === 'university_rep' ||
-      user.role === 'university representative' ||
-      (user.role === 'university' && user.universityRepApplicationId)
-    ) {
-      const isUniRepActive =
-        user.accountStatus === 'ACTIVE' &&
-        user.isActive === true;
+    const isUniRepUser =
+      cleanUserRole === 'university_rep' ||
+      cleanUserRole === 'university representative' ||
+      (cleanUserRole === 'university' && (user.universityRepApplicationId || user.universityRepApplication || user.officialUniversityEmail));
 
-      if (!isUniRepActive) {
-        let msg = 'Your University Representative account has not been activated yet. Please check your email after Admin approval.';
-        if (user.accountStatus === 'PENDING') {
+    if (isUniRepUser) {
+      const vStatus = (user.uniRepVerificationStatus || '').toUpperCase();
+      const aStatus = (user.accountStatus || '').toUpperCase();
+
+      if (vStatus === 'REJECTED' || aStatus === 'REJECTED') {
+        return res.status(403).json({
+          success: false,
+          accountStatus: 'REJECTED',
+          message: 'Your University Representative application was not approved. Please contact compliance@admify.world for further assistance.',
+        });
+      }
+
+      const isApproved =
+        (aStatus === 'ACTIVE' || aStatus === 'APPROVED') &&
+        (vStatus === 'APPROVED' || vStatus === 'VERIFIED');
+
+      if (!isApproved) {
+        let msg = 'Your University Representative registration is pending verification. Please complete verification submission.';
+        if (aStatus === 'UNDER_REVIEW' || vStatus === 'UNDER_REVIEW') {
+          msg = 'Your University Representative verification is currently under review by Admify Admin. You will be notified once approved.';
+        } else if (aStatus === 'PENDING' || vStatus === 'PENDING') {
           msg = 'Your University Representative registration is pending verification. Please complete verification submission.';
-        } else if (user.accountStatus === 'UNDER_REVIEW') {
-          msg = 'Your University Representative verification is currently under review by Admify Admin. You will receive an activation email once approved.';
-        } else if (user.accountStatus === 'APPROVED') {
-          msg = 'Your University Representative registration has been approved! Please check your official university email and click the activation link before logging in.';
-        } else if (user.accountStatus === 'REJECTED') {
-          msg = 'Your University Representative application was not approved. Please contact compliance@admify.world for further assistance.';
         }
 
         return res.status(403).json({
@@ -854,6 +862,36 @@ export const login = async (req, res, next) => {
           accountStatus: user.accountStatus || 'PENDING',
           message: msg,
         });
+      }
+
+      // Self-heal / normalize active Uni Rep records (including legacy records & role normalization)
+      const needsRoleFix = user.role !== 'university_rep';
+      const needsStatusFix = !user.isActive || user.accountStatus !== 'ACTIVE' || user.status !== 'active';
+
+      if (needsRoleFix || needsStatusFix) {
+        user.role = 'university_rep';
+        user.isActive = true;
+        user.accountStatus = 'ACTIVE';
+        user.status = 'active';
+        user.emailVerified = true;
+        user.activationTokenUsed = true;
+        if (user.uniRepVerificationStatus !== 'APPROVED' && user.uniRepVerificationStatus !== 'VERIFIED') {
+          user.uniRepVerificationStatus = 'APPROVED';
+        }
+
+        if (typeof user.save === 'function') {
+          await user.save();
+        } else if (devStore && typeof devStore.updateUser === 'function') {
+          await devStore.updateUser(user._id, {
+            role: 'university_rep',
+            isActive: true,
+            accountStatus: 'ACTIVE',
+            status: 'active',
+            emailVerified: true,
+            uniRepVerificationStatus: user.uniRepVerificationStatus,
+            activationTokenUsed: true,
+          });
+        }
       }
     }
 
@@ -1069,12 +1107,15 @@ export const activateUniversityRep = async (req, res, next) => {
       });
     }
 
-    // Check if token already used (Replay prevention)
-    if (user.activationTokenUsed) {
-      return res.status(400).json({
-        success: false,
+    // Check if account already active or token used
+    if (user.accountStatus === 'ACTIVE' || user.activationTokenUsed) {
+      return res.status(200).json({
+        success: true,
         alreadyUsed: true,
-        message: 'This activation link has already been used. Your account is active. Please log in.',
+        message: 'Your University Representative account is already active. You can log in directly.',
+        data: {
+          email: user.email,
+        },
       });
     }
 

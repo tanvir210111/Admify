@@ -152,7 +152,7 @@ export const getAdminStats = async (req, res, next) => {
       .reduce((acc, curr) => acc + Math.abs(Number(curr.credits) || 0), 0);
 
     const openReports = reports.filter(
-      (r) => r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION'
+      (r) => r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION' || r.status === 'OPEN'
     ).length;
 
     // Monthly registration trend (last 6 months)
@@ -271,6 +271,183 @@ export const getAdminStats = async (req, res, next) => {
           },
         },
         recentActivities: recentActivities.slice(0, 8),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get dynamic sidebar badge counts
+// @route   GET /api/admin/sidebar-counts
+// @access  Private (Admin)
+export const getAdminSidebarCounts = async (req, res, next) => {
+  try {
+    let agencies = 0;
+    let agents = 0;
+    let uniRepresentatives = 0;
+    let applications = 0;
+    let partnerships = 0;
+    let payments = 0;
+    let reports = 0;
+    let supportInbox = 0;
+    let notifications = 0;
+    let scholarships = 0;
+
+    if (mongoose.connection.readyState === 1) {
+      const [
+        pendingAgencies,
+        pendingAgents,
+        pendingUniReps,
+        pendingApplications,
+        pendingPartnerships,
+        pendingPayments,
+        openReports,
+        unreadNotifications,
+        pendingScholarships,
+        allMessages,
+      ] = await Promise.all([
+        AgencyProfile.countDocuments({
+          verificationStatus: { $in: ['PENDING', 'UNDER_REVIEW'] },
+        }),
+        AgentApplication.countDocuments({
+          status: { $in: ['SUBMITTED', 'UNDER_REVIEW', 'PENDING'] },
+        }),
+        UniversityRepresentativeApplication.countDocuments({
+          status: { $in: ['PENDING', 'UNDER_REVIEW'] },
+        }),
+        Application.countDocuments({
+          stage: { $in: ['Submitted', 'In Review', 'Documents Pending'] },
+        }),
+        UniversityAgencyConnection.countDocuments({
+          status: 'PENDING',
+        }),
+        PaymentOrder.countDocuments({
+          status: { $in: ['PENDING_PAYMENT', 'PENDING_VERIFICATION'] },
+        }),
+        Report.countDocuments({
+          status: { $in: ['PENDING', 'UNDER_INVESTIGATION', 'OPEN'] },
+        }),
+        Notification.countDocuments({
+          $or: [{ user: req.user._id }, { user: { $exists: false } }, { user: null }],
+          read: false,
+        }),
+        Scholarship.countDocuments({
+          status: { $in: ['pending', 'in_review', 'PENDING', 'UNDER_REVIEW'] },
+        }),
+        ChatMessage.find({}).sort({ createdAt: 1 }),
+      ]);
+
+      agencies = pendingAgencies;
+      agents = pendingAgents;
+      uniRepresentatives = pendingUniReps;
+      applications = pendingApplications;
+      partnerships = pendingPartnerships;
+      payments = pendingPayments;
+      reports = openReports;
+      notifications = unreadNotifications;
+      scholarships = pendingScholarships;
+
+      const sessionMap = new Map();
+      for (const msg of allMessages) {
+        if (!sessionMap.has(msg.sessionId)) {
+          sessionMap.set(msg.sessionId, {
+            status: msg.status || 'active',
+            isLiveAgentRequest: msg.isLiveAgentRequest || false,
+            lastSender: msg.sender,
+            updatedAt: msg.createdAt,
+          });
+        } else {
+          const item = sessionMap.get(msg.sessionId);
+          if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
+          if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
+            item.lastSender = msg.sender;
+            item.updatedAt = msg.createdAt;
+          }
+        }
+      }
+
+      supportInbox = Array.from(sessionMap.values()).filter(
+        (s) => (s.status || 'active') === 'active' && (s.isLiveAgentRequest || s.lastSender === 'user')
+      ).length;
+    } else {
+      const db = devStore.read();
+      const dbAgencies = db.agencyProfiles || [];
+      const dbAgentApps = db.agentApplications || [];
+      const dbUniRepApps = db.universityRepApplications || [];
+      const dbApplications = db.applications || [];
+      const dbConnections = db.universityAgencyConnections || [];
+      const dbPaymentOrders = db.paymentOrders || [];
+      const dbReports = db.reports || [];
+      const dbNotifications = db.notifications || [];
+      const dbScholarships = db.scholarships || [];
+      const dbChatMessages = db.chatMessages || [];
+
+      agencies = dbAgencies.filter(
+        (a) => a.verificationStatus === 'PENDING' || a.verificationStatus === 'UNDER_REVIEW'
+      ).length;
+      agents = dbAgentApps.filter(
+        (a) => a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW' || a.status === 'PENDING'
+      ).length;
+      uniRepresentatives = dbUniRepApps.filter(
+        (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW'
+      ).length;
+      applications = dbApplications.filter(
+        (a) => a.stage === 'Submitted' || a.stage === 'In Review' || a.stage === 'Documents Pending'
+      ).length;
+      partnerships = dbConnections.filter(
+        (c) => (c.status || '').toUpperCase() === 'PENDING'
+      ).length;
+      payments = dbPaymentOrders.filter(
+        (p) => p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION'
+      ).length;
+      reports = dbReports.filter(
+        (r) => r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION' || r.status === 'OPEN'
+      ).length;
+      notifications = dbNotifications.filter(
+        (n) => (!n.user || n.user?.toString() === req.user._id?.toString()) && !n.read
+      ).length;
+      scholarships = dbScholarships.filter(
+        (s) => ['pending', 'in_review'].includes((s.status || '').toLowerCase())
+      ).length;
+
+      const sessionMap = new Map();
+      for (const msg of dbChatMessages) {
+        if (!sessionMap.has(msg.sessionId)) {
+          sessionMap.set(msg.sessionId, {
+            status: msg.status || 'active',
+            isLiveAgentRequest: msg.isLiveAgentRequest || false,
+            lastSender: msg.sender,
+            updatedAt: msg.createdAt,
+          });
+        } else {
+          const item = sessionMap.get(msg.sessionId);
+          if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
+          if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
+            item.lastSender = msg.sender;
+            item.updatedAt = msg.createdAt;
+          }
+        }
+      }
+
+      supportInbox = Array.from(sessionMap.values()).filter(
+        (s) => (s.status || 'active') === 'active' && (s.isLiveAgentRequest || s.lastSender === 'user')
+      ).length;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        agencies,
+        agents,
+        uniRepresentatives,
+        applications,
+        partnerships,
+        payments,
+        reports,
+        supportInbox,
+        notifications,
+        scholarships,
       },
     });
   } catch (error) {
@@ -4431,9 +4608,11 @@ export const getAdminUniRepApplications = async (req, res, next) => {
       let apps = await devStore.findUniRepApplications({ status, search });
       for (const app of apps) {
         if (!app.userObj && app.user) {
-          app.user = await devStore.findUserById(app.user);
+          const uid = app.user?._id ? app.user._id.toString() : app.user.toString();
+          const found = await devStore.findUserById(uid);
+          if (found) app.user = found;
         }
-        if (app.user) {
+        if (app.user && typeof app.user === 'object') {
           app.user.walletCredits = 'N/A';
           app.user.availableCredits = 'N/A';
         }
@@ -4599,10 +4778,6 @@ export const approveUniRepApplication = async (req, res, next) => {
     const { adminNotes = '' } = req.body;
     const now = new Date();
 
-    let rawActivationToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawActivationToken).digest('hex');
-    const tokenExpires = new Date(Date.now() + 48 * 60 * 60 * 1000);
-
     let application = null;
     let repUser = null;
     let emailResult = null;
@@ -4617,6 +4792,7 @@ export const approveUniRepApplication = async (req, res, next) => {
         if (!repUser) return res.status(404).json({ success: false, message: 'Associated user account not found.' });
 
         application.status = 'APPROVED';
+        application.profileStatus = 'APPROVED';
         application.reviewedAt = now;
         application.reviewedBy = req.user._id;
         application.rejectionReason = '';
@@ -4640,23 +4816,55 @@ export const approveUniRepApplication = async (req, res, next) => {
         return res.status(404).json({ success: false, message: 'Application not found.' });
       }
 
-      await User.findByIdAndUpdate(repUser._id, {
-        accountStatus: 'APPROVED',
-        status: 'pending',
-        isActive: false,
-        uniRepVerificationStatus: 'VERIFIED',
-        activationTokenHash: tokenHash,
-        activationTokenExpires: tokenExpires,
-        activationTokenUsed: false,
-      });
+      // Check or create University record
+      const uniName = application?.university?.name || repUser.universityName || 'Verified University';
+      let uni = null;
+      if (application?.university?.matchedUniversityId) {
+        uni = await University.findById(application.university.matchedUniversityId);
+      }
+      if (!uni) {
+        uni = await University.findOne({ name: new RegExp(`^${uniName}$`, 'i') });
+      }
+      if (!uni) {
+        const slug = uniName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `uni-${Date.now()}`;
+        uni = await University.create({
+          slug,
+          name: uniName,
+          location: application?.university?.city ? `${application.university.city}, ${application.university?.country || 'Global'}` : (application?.university?.country || 'Global'),
+          country: (application?.university?.country || 'Global').toLowerCase(),
+          type: application?.university?.type || 'Public',
+          logo: application?.university?.logo || '',
+          website: application?.university?.website || '',
+        });
+      }
 
-      emailResult = await emailService.sendUniversityRepActivationEmail({
+      const userUpdates = {
+        role: 'university_rep',
+        accountStatus: 'ACTIVE',
+        status: 'active',
+        isActive: true,
+        emailVerified: true,
+        uniRepVerificationStatus: 'APPROVED',
+        activationTokenHash: null,
+        activationTokenExpires: null,
+        activationTokenUsed: true,
+        activatedAt: now,
+        approvedAt: now,
+        approvedBy: req.user._id,
+      };
+      if (uni?._id) {
+        userUpdates.universityId = uni._id;
+      }
+
+      await User.findByIdAndUpdate(repUser._id, userUpdates);
+
+      emailResult = await emailService.sendUniversityRepApprovalEmail({
         to: application?.representative?.officialEmail || repUser.email,
         representativeName: application?.representative?.fullName || repUser.name,
         universityName: application?.university?.name || repUser.universityName || 'Verified University',
         applicationId: application?.applicationId || repUser.universityRepApplicationId || 'ADM-REP-2026',
-        activationToken: rawActivationToken,
       });
+
       if (!application && repUser) {
         application = {
           _id: repUser.universityRepApplication || repUser._id,
@@ -4683,6 +4891,7 @@ export const approveUniRepApplication = async (req, res, next) => {
       }
     } else {
       application = await devStore.findUniRepApplicationById(id);
+      if (!application) application = await devStore.findUniRepApplicationByUserId(id);
       if (!application) application = await devStore.findUniRepApplicationByAppId(id);
       if (!application) return res.status(404).json({ success: false, message: 'Application not found.' });
 
@@ -4700,6 +4909,7 @@ export const approveUniRepApplication = async (req, res, next) => {
 
       application = await devStore.updateUniRepApplication(application._id, {
         status: 'APPROVED',
+        profileStatus: 'APPROVED',
         reviewedAt: now.toISOString(),
         reviewedBy: req.user._id,
         rejectionReason: '',
@@ -4707,22 +4917,37 @@ export const approveUniRepApplication = async (req, res, next) => {
         statusHistory: history,
       });
 
-      await devStore.updateUser(userId, {
-        accountStatus: 'APPROVED',
-        status: 'pending',
-        isActive: false,
-        uniRepVerificationStatus: 'VERIFIED',
-        activationTokenHash: tokenHash,
-        activationTokenExpires: tokenExpires.toISOString(),
-        activationTokenUsed: false,
+      const uniName = application.university?.name || repUser.universityName || 'Verified University';
+      const uniRecord = await devStore.findOrCreateUniversity({
+        name: uniName,
+        country: application.university?.country || 'Global',
+        city: application.university?.city || '',
+        type: application.university?.type || 'Public',
+        logo: application.university?.logo || '',
+        website: application.university?.website || '',
       });
 
-      emailResult = await emailService.sendUniversityRepActivationEmail({
+      await devStore.updateUser(userId, {
+        role: 'university_rep',
+        accountStatus: 'ACTIVE',
+        status: 'active',
+        isActive: true,
+        emailVerified: true,
+        uniRepVerificationStatus: 'APPROVED',
+        activationTokenHash: null,
+        activationTokenExpires: null,
+        activationTokenUsed: true,
+        activatedAt: now.toISOString(),
+        approvedAt: now.toISOString(),
+        approvedBy: req.user._id,
+        universityId: uniRecord?._id || repUser.universityId,
+      });
+
+      emailResult = await emailService.sendUniversityRepApprovalEmail({
         to: application.representative?.officialEmail || repUser.email,
         representativeName: application.representative?.fullName || repUser.name,
         universityName: application.university?.name || 'Verified University',
         applicationId: application.applicationId,
-        activationToken: rawActivationToken,
       });
     }
 
@@ -4738,11 +4963,10 @@ export const approveUniRepApplication = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'University Representative application approved. Activation link dispatched.',
+      message: 'University representative approved and account activated.',
       data: {
         application,
-        activationToken: rawActivationToken,
-        activationUrl: emailResult?.activationUrl || null,
+        loginUrl: emailResult?.loginUrl || 'https://admify.world/login',
         emailDispatched: emailResult?.delivered || false,
       },
     });

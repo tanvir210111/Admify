@@ -149,19 +149,16 @@ export const sendAgencyActivationEmail = async ({
   };
 };
 
-export const sendUniversityRepActivationEmail = async ({
+export const sendUniversityRepApprovalEmail = async ({
   to,
   representativeName,
   universityName,
   applicationId,
-  activationToken,
-  activationUrl,
 }) => {
-  const subject = 'Admify University Representative Approved — Activate Your Account';
+  const subject = 'Admify University Representative Approved — Account Active';
 
   const clientUrl = process.env.CLIENT_URL?.split(',')[0] || 'http://localhost:5173';
-  const fullActivationUrl =
-    activationUrl || `${clientUrl}/activate-university-rep?token=${activationToken}`;
+  const loginUrl = `${clientUrl}/login`;
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -191,41 +188,42 @@ export const sendUniversityRepActivationEmail = async ({
       <p style="margin: 6px 0 0 0; color: #ecfdf5; font-size: 14px;">University Representative Authorization</p>
     </div>
     <div class="content">
-      <h2 style="color: #ffffff; font-size: 18px; margin-top: 0;">Congratulations, ${representativeName}!</h2>
+      <h2 style="color: #ffffff; font-size: 18px; margin-top: 0;">Congratulations, ${representativeName || 'Representative'}!</h2>
       <p style="color: #cbd5e1; line-height: 1.6; font-size: 14px;">
-        We are pleased to inform you that your university representative verification application for <strong>${universityName}</strong> has been <strong>approved</strong> by the Admify Compliance Team.
+        Your University Representative registration has been approved. Your account is now active and you can log in directly.
       </p>
       
       <div class="meta-box">
         <div class="meta-row">
           <span class="meta-label">Representative:</span>
-          <span class="meta-value">${representativeName}</span>
+          <span class="meta-value">${representativeName || 'Representative'}</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">University:</span>
-          <span class="meta-value">${universityName}</span>
+          <span class="meta-value">${universityName || 'Partner University'}</span>
         </div>
+        ${applicationId ? `
         <div class="meta-row">
           <span class="meta-label">Application ID:</span>
           <span class="meta-value">${applicationId}</span>
+        </div>` : ''}
+        <div class="meta-row" style="margin-bottom: 0;">
+          <span class="meta-label">Account Status:</span>
+          <span class="meta-value" style="color: #34d399;">ACTIVE</span>
         </div>
       </div>
 
       <p style="color: #cbd5e1; line-height: 1.6; font-size: 14px;">
-        To activate your official university portal and connect with verified study-abroad agencies and incoming student applications, click the activation button below:
+        You can now access your official University Representative portal using your registered email address and password.
       </p>
 
       <div class="btn-container">
-        <a href="${fullActivationUrl}" class="btn" target="_blank">Activate My University Account</a>
+        <a href="${loginUrl}" class="btn" target="_blank">Log In to University Portal</a>
       </div>
 
       <p style="color: #94a3b8; font-size: 12px; line-height: 1.5; word-break: break-all;">
-        Or copy and paste this link in your browser:<br/>
-        <span style="color: #34d399; word-break: break-all;">${fullActivationUrl}</span>
-      </p>
-
-      <p style="color: #94a3b8; font-size: 12px; margin-top: 24px;">
-        ⚠️ <strong>Security Notice:</strong> This activation link is single-use and will expire in 48 hours. If you did not apply for a University Representative account on Admify, please contact compliance@admify.world immediately.
+        Login URL:<br/>
+        <a href="${loginUrl}" style="color: #34d399; word-break: break-all;">${loginUrl}</a>
       </p>
     </div>
     <div class="footer">
@@ -260,13 +258,13 @@ export const sendUniversityRepActivationEmail = async ({
         html: htmlContent,
       });
 
-      console.log(`[Email Service (Production)] University Rep activation email sent to ${to}: ${info.messageId}`);
+      console.log(`[Email Service (Production)] University Rep approval email sent to ${to}: ${info.messageId}`);
       return {
         success: true,
         delivered: true,
         mode: 'PRODUCTION_SMTP',
         messageId: info.messageId,
-        activationUrl: fullActivationUrl,
+        loginUrl,
       };
     } catch (err) {
       console.error(`[Email Service (SMTP Error)] Failed to deliver email to ${to}:`, err.message);
@@ -275,13 +273,14 @@ export const sendUniversityRepActivationEmail = async ({
 
   // Development Fallback Logging
   console.log('\n' + '='.repeat(70));
-  console.log(' [EMAIL SERVICE - UNIVERSITY REP ACTIVATION]');
+  console.log(' [EMAIL SERVICE - UNIVERSITY REP APPROVAL]');
   console.log(' Mode: DEVELOPMENT_FALLBACK (No SMTP credentials configured)');
   console.log(` To: ${to}`);
   console.log(` Subject: ${subject}`);
   console.log(` Representative: ${representativeName}`);
-  console.log(` University: ${universityName} (${applicationId})`);
-  console.log(` Activation URL: ${fullActivationUrl}`);
+  console.log(` University: ${universityName} (${applicationId || 'N/A'})`);
+  console.log(` Message: Your University Representative registration has been approved. Your account is now active and you can log in directly.`);
+  console.log(` Login URL: ${loginUrl}`);
   console.log('='.repeat(70) + '\n');
 
   return {
@@ -289,9 +288,13 @@ export const sendUniversityRepActivationEmail = async ({
     delivered: false,
     mode: 'DEV_FALLBACK',
     note: 'Email was logged to server console in development mode.',
-    activationUrl: fullActivationUrl,
+    loginUrl,
   };
 };
+
+// Backward-compatibility wrapper
+export const sendUniversityRepActivationEmail = sendUniversityRepApprovalEmail;
+
 
 export const sendAgencyApprovalEmail = async ({
   to,
@@ -414,6 +417,7 @@ Admify Team`;
 export default {
   sendAgencyApprovalEmail,
   sendAgencyActivationEmail,
+  sendUniversityRepApprovalEmail,
   sendUniversityRepActivationEmail,
 };
 

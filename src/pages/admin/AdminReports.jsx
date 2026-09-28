@@ -18,6 +18,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
 const fade = {
@@ -112,6 +113,7 @@ export default function AdminReports() {
         toast.success(res?.message || `Report #${selectedReport.reportId || selectedReport._id} status updated to ${statusInput}`);
         setUpdateModalOpen(false);
         fetchReports();
+        triggerAdminBadgeRefresh();
       } else {
         toast.error(res?.message || "Failed to update report status");
       }
