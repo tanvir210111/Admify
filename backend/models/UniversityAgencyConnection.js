@@ -55,6 +55,15 @@ const universityAgencyConnectionSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    isSeenByAdmin: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    adminSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

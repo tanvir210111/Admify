@@ -76,7 +76,8 @@ const validateDocument = (doc, label, maxSizeBytes = 3.5 * 1024 * 1024) => {
 const notifyAdminsOfVerification = async ({ profile, agencyName, applicationId }) => {
   const title = 'New Agency Verification Request';
   const message = `A new agency registration has been submitted by "${agencyName}" (App ID: ${applicationId}) and is waiting for review.`;
-  const link = '/admin/agents';
+  const link = '/admin/agencies';
+  const entityId = profile?._id ? profile._id.toString() : applicationId;
 
   try {
     if (mongoose.connection.readyState === 1) {
@@ -88,6 +89,9 @@ const notifyAdminsOfVerification = async ({ profile, agencyName, applicationId }
           message,
           type: 'info',
           link,
+          actionUrl: link,
+          relatedEntityType: 'agency',
+          relatedEntityId: entityId,
         });
       }
     } else {
@@ -99,6 +103,9 @@ const notifyAdminsOfVerification = async ({ profile, agencyName, applicationId }
           message,
           type: 'info',
           link,
+          actionUrl: link,
+          relatedEntityType: 'agency',
+          relatedEntityId: entityId,
         });
       }
     }
@@ -588,6 +595,7 @@ export const createAgentApplication = async (req, res) => {
     // Notify Admins of new Agent Application
     const notifTitle = 'New Agent Application Submitted';
     const notifMessage = `Agency "${req.user.name}" submitted an agent application for "${agentName.trim()}" (App ID: ${applicationId}).`;
+    const appEntityId = savedApp?._id ? savedApp._id.toString() : applicationId;
     try {
       if (mongoose.connection.readyState === 1) {
         const admins = await User.find({ role: 'admin' });
@@ -598,6 +606,9 @@ export const createAgentApplication = async (req, res) => {
             message: notifMessage,
             type: 'info',
             link: '/admin/agents',
+            actionUrl: '/admin/agents',
+            relatedEntityType: 'agent',
+            relatedEntityId: appEntityId,
           });
         }
       } else {
@@ -609,6 +620,9 @@ export const createAgentApplication = async (req, res) => {
             message: notifMessage,
             type: 'info',
             link: '/admin/agents',
+            actionUrl: '/admin/agents',
+            relatedEntityType: 'agent',
+            relatedEntityId: appEntityId,
           });
         }
       }

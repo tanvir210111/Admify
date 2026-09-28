@@ -18,7 +18,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { api } from "../../lib/api";
-import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
 const fade = {
@@ -37,11 +37,20 @@ const STATUS_MAP = {
 };
 
 export default function AdminAgentApplicationsTab() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [applications, setApplications] = useState([]);
   const [filter, setFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedApp, setSelectedApp] = useState(null);
+
+  const handleSelectApp = (app) => {
+    setSelectedApp(app);
+    if (app && !app.isSeenByAdmin) {
+      app.isSeenByAdmin = true;
+      markEntityAsSeen("agent", app._id);
+    }
+  };
 
   // Review & Action State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -191,19 +200,27 @@ export default function AdminAgentApplicationsTab() {
             { id: "approved", label: "Approved" },
             { id: "registered", label: "Registered" },
             { id: "rejected", label: "Rejected" },
-          ].map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors capitalize ${
-                filter === f.id
-                  ? "bg-violet-600/30 text-violet-300 border border-violet-500/40"
-                  : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+          ].map((f) => {
+            const count = getStatusCount("agents", f.id);
+            return (
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors capitalize flex items-center gap-1.5 ${
+                  filter === f.id
+                    ? "bg-violet-600/30 text-violet-300 border border-violet-500/40"
+                    : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
+                }`}
+              >
+                <span>{f.label}</span>
+                {count > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                    [{count}]
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -263,8 +280,17 @@ export default function AdminAgentApplicationsTab() {
                     label: app.status,
                     cls: "bg-slate-500/15 text-slate-400 border-slate-500/30",
                   };
+                  const isUnseen = !app.isSeenByAdmin;
                   return (
-                    <tr key={app._id} className="hover:bg-white/2 transition-colors">
+                    <tr
+                      key={app._id}
+                      onClick={() => handleSelectApp(app)}
+                      className={`transition-colors cursor-pointer ${
+                        isUnseen
+                          ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                          : "hover:bg-white/2"
+                      }`}
+                    >
                       <td className="py-3 px-4 font-mono font-bold text-violet-300">
                         {app.applicationId}
                       </td>

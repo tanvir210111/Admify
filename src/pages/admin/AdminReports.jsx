@@ -18,7 +18,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { api } from "../../lib/api";
-import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
 const fade = {
@@ -42,6 +42,7 @@ const PRIORITY_BADGES = {
 };
 
 export default function AdminReports() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -50,6 +51,15 @@ export default function AdminReports() {
   const [priorityFilter, setPriorityFilter] = useState("all");
 
   const [selectedReport, setSelectedReport] = useState(null);
+
+  const handleOpenReport = (report) => {
+    setSelectedReport(report);
+    if (report && !report.isSeenByAdmin) {
+      report.isSeenByAdmin = true;
+      markEntityAsSeen("report", report._id || report.id);
+    }
+  };
+
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
 
@@ -165,12 +175,12 @@ export default function AdminReports() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="bg-slate-900 border border-slate-800 text-slate-300 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-violet-500"
           >
-            <option value="all">All Statuses</option>
-            <option value="OPEN">Open</option>
-            <option value="INVESTIGATING">Investigating</option>
-            <option value="RESOLVED">Resolved</option>
-            <option value="REJECTED">Rejected</option>
-            <option value="CLOSED">Closed</option>
+            <option value="all">All Statuses {getStatusCount("reports", "all") > 0 ? `[${getStatusCount("reports", "all")}]` : ""}</option>
+            <option value="OPEN">Open {getStatusCount("reports", "OPEN") > 0 ? `[${getStatusCount("reports", "OPEN")}]` : ""}</option>
+            <option value="INVESTIGATING">Investigating {getStatusCount("reports", "INVESTIGATING") > 0 ? `[${getStatusCount("reports", "INVESTIGATING")}]` : ""}</option>
+            <option value="RESOLVED">Resolved {getStatusCount("reports", "RESOLVED") > 0 ? `[${getStatusCount("reports", "RESOLVED")}]` : ""}</option>
+            <option value="REJECTED">Rejected {getStatusCount("reports", "REJECTED") > 0 ? `[${getStatusCount("reports", "REJECTED")}]` : ""}</option>
+            <option value="CLOSED">Closed {getStatusCount("reports", "CLOSED") > 0 ? `[${getStatusCount("reports", "CLOSED")}]` : ""}</option>
           </select>
           <select
             value={targetFilter}
@@ -230,8 +240,18 @@ export default function AdminReports() {
                   </td>
                 </tr>
               ) : (
-                reports.map((report) => (
-                  <tr key={report._id || report.id} className="hover:bg-slate-800/30 transition">
+                reports.map((report) => {
+                  const isUnseen = !report.isSeenByAdmin;
+                  return (
+                    <tr
+                      key={report._id || report.id}
+                      onClick={() => handleOpenReport(report)}
+                      className={`transition cursor-pointer ${
+                        isUnseen
+                          ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                          : "hover:bg-slate-800/30"
+                      }`}
+                    >
                     <td className="py-3.5 px-4">
                       <span className="font-mono font-bold text-white block">
                         {report.reportId || report._id?.substring(0, 10)}
@@ -288,8 +308,8 @@ export default function AdminReports() {
                       </button>
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              }))}
             </tbody>
           </table>
         </div>

@@ -16,11 +16,27 @@ const initialCounts = {
   scholarships: 0,
 };
 
+const initialStatusCounts = {
+  agencies: {},
+  agents: {},
+  uniRepresentatives: {},
+  applications: {},
+  partnerships: {},
+  payments: {},
+  reports: {},
+  supportInbox: {},
+  notifications: {},
+  scholarships: {},
+};
+
 const AdminBadgeContext = createContext({
   sidebarCounts: initialCounts,
+  statusCounts: initialStatusCounts,
   isLoading: false,
   refreshSidebarCounts: () => Promise.resolve(),
   formatBadgeCount: (count) => '',
+  markEntityAsSeen: (entityType, entityId) => Promise.resolve(),
+  getStatusCount: (section, tabKey) => 0,
 });
 
 export const ADMIN_BADGE_REFRESH_EVENT = 'admify_admin_badge_refresh';
@@ -52,6 +68,7 @@ export const AdminBadgeProvider = ({ children }) => {
   const { user } = useAuth();
   const location = useLocation();
   const [sidebarCounts, setSidebarCounts] = useState(initialCounts);
+  const [statusCounts, setStatusCounts] = useState(initialStatusCounts);
   const [isLoading, setIsLoading] = useState(false);
 
   const isAdmin = useMemo(() => {
@@ -65,10 +82,14 @@ export const AdminBadgeProvider = ({ children }) => {
       setIsLoading(true);
       const res = await api.get('/api/admin/sidebar-counts');
       if (res?.success && res.data) {
+        const { statusCounts: returnedStatusCounts, ...pureSidebarCounts } = res.data;
         setSidebarCounts((prev) => ({
           ...prev,
-          ...res.data,
+          ...pureSidebarCounts,
         }));
+        if (returnedStatusCounts) {
+          setStatusCounts(returnedStatusCounts);
+        }
       }
     } catch (err) {
       // Graceful fallback without disrupting admin operations
@@ -77,6 +98,53 @@ export const AdminBadgeProvider = ({ children }) => {
       setIsLoading(false);
     }
   }, [isAdmin]);
+
+  const markEntityAsSeen = useCallback(
+    async (entityType, entityId) => {
+      if (!isAdmin || !entityType || !entityId) return;
+
+      try {
+        // Optimistic UI update for sidebar and status
+        const sectionMap = {
+          agency: 'agencies',
+          agent: 'agents',
+          agent_user: 'agents',
+          university_rep: 'uniRepresentatives',
+          application: 'applications',
+          partnership: 'partnerships',
+          payment: 'payments',
+          report: 'reports',
+          support: 'supportInbox',
+          notification: 'notifications',
+          scholarship: 'scholarships',
+        };
+
+        const sectionKey = sectionMap[entityType];
+        if (sectionKey) {
+          setSidebarCounts((prev) => ({
+            ...prev,
+            [sectionKey]: Math.max(0, (Number(prev[sectionKey]) || 0) - 1),
+          }));
+        }
+
+        await api.put(`/api/admin/seen/${entityType}/${entityId}`);
+        triggerAdminBadgeRefresh();
+      } catch (err) {
+        console.warn(`Failed to mark entity as seen (${entityType}/${entityId}):`, err?.message || err);
+      }
+    },
+    [isAdmin]
+  );
+
+  const getStatusCount = useCallback(
+    (section, tabKey) => {
+      if (!statusCounts || !statusCounts[section]) return 0;
+      const sec = statusCounts[section];
+      const normalizedKey = (tabKey || '').toString().toLowerCase().trim();
+      return sec[normalizedKey] !== undefined ? sec[normalizedKey] : (sec[tabKey] || 0);
+    },
+    [statusCounts]
+  );
 
   // Initial load and on admin page navigations
   useEffect(() => {
@@ -113,11 +181,14 @@ export const AdminBadgeProvider = ({ children }) => {
   const contextValue = useMemo(
     () => ({
       sidebarCounts,
+      statusCounts,
       isLoading,
       refreshSidebarCounts: fetchCounts,
       formatBadgeCount,
+      markEntityAsSeen,
+      getStatusCount,
     }),
-    [sidebarCounts, isLoading, fetchCounts]
+    [sidebarCounts, statusCounts, isLoading, fetchCounts, markEntityAsSeen, getStatusCount]
   );
 
   return (

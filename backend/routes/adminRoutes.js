@@ -2,6 +2,8 @@ import express from 'express';
 import {
   getAdminStats,
   getAdminSidebarCounts,
+  getAdminStatusCounts,
+  markAdminEntityAsSeen,
   globalAdminSearch,
   getAdminUsers,
   getAdminUserById,
@@ -75,6 +77,9 @@ router.use(protect, authorize('admin'));
 router.get('/stats', getAdminStats);
 router.get('/dashboard', getAdminStats);
 router.get('/sidebar-counts', getAdminSidebarCounts);
+router.get('/status-counts', getAdminStatusCounts);
+router.put('/seen/:entityType/:entityId', markAdminEntityAsSeen);
+router.post('/seen', markAdminEntityAsSeen);
 router.get('/search', globalAdminSearch);
 
 // Central User Management

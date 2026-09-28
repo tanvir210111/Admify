@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
-import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending Review", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
@@ -19,11 +19,20 @@ const STATUS_MAP = {
 };
 
 export default function AdminUniReps() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedApp, setSelectedApp] = useState(null);
+
+  const handleOpenApp = (app) => {
+    setSelectedApp(app);
+    if (app && !app.isSeenByAdmin) {
+      app.isSeenByAdmin = true;
+      markEntityAsSeen("university_rep", app._id);
+    }
+  };
 
   // Review Modal State
   const [actionModal, setActionModal] = useState(null); // { app, targetStatus }
@@ -202,19 +211,27 @@ export default function AdminUniReps() {
         </form>
 
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto min-w-0 max-w-full">
-          {["all", "PENDING", "PROFILE_INCOMPLETE", "UNDER_REVIEW", "APPROVED", "ACTIVE", "REJECTED"].map((st) => (
-            <button
-              key={st}
-              onClick={() => setFilter(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
-                filter === st
-                  ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/30"
-                  : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
-              }`}
-            >
-              {st === "all" ? "All Applications" : STATUS_MAP[st]?.label || st}
-            </button>
-          ))}
+          {["all", "PENDING", "PROFILE_INCOMPLETE", "UNDER_REVIEW", "APPROVED", "ACTIVE", "REJECTED"].map((st) => {
+            const count = getStatusCount("uniRepresentatives", st);
+            return (
+              <button
+                key={st}
+                onClick={() => setFilter(st)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                  filter === st
+                    ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/30"
+                    : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
+                }`}
+              >
+                <span>{st === "all" ? "All Applications" : STATUS_MAP[st]?.label || st}</span>
+                {count > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    [{count}]
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -260,10 +277,16 @@ export default function AdminUniReps() {
                           ? 'PROFILE_INCOMPLETE'
                           : (app.status || 'PENDING'))));
                   const statusInfo = STATUS_MAP[statusKey] || STATUS_MAP.PENDING;
+                  const isUnseen = !app.isSeenByAdmin;
                   return (
                     <tr
                       key={app._id}
-                      className="border-b border-white/4 hover:bg-white/2 transition-colors text-xs text-slate-300"
+                      onClick={() => handleOpenApp(app)}
+                      className={`border-b border-white/4 transition-colors text-xs text-slate-300 cursor-pointer ${
+                        isUnseen
+                          ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                          : "hover:bg-white/2"
+                      }`}
                     >
                       <td className="px-4 py-3.5">
                         <div>

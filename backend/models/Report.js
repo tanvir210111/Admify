@@ -95,6 +95,15 @@ const reportSchema = new mongoose.Schema(
         note: String,
       },
     ],
+    isSeenByAdmin: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    adminSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

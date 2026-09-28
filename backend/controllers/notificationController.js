@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Notification from '../models/Notification.js';
 import devStore from '../utils/devStore.js';
+import { markEntityAsSeenHelper } from './adminController.js';
 
 // @desc    Get user notifications
 // @route   GET /api/notifications
@@ -56,6 +57,10 @@ export const markAsRead = async (req, res, next) => {
         });
       }
 
+      if (req.user.role === 'admin' && notification.relatedEntityType && notification.relatedEntityId) {
+        await markEntityAsSeenHelper(notification.relatedEntityType, notification.relatedEntityId, req.user._id);
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Notification marked as read',
@@ -69,6 +74,11 @@ export const markAsRead = async (req, res, next) => {
           message: 'Notification not found',
         });
       }
+
+      if (req.user.role === 'admin' && notification.relatedEntityType && notification.relatedEntityId) {
+        await markEntityAsSeenHelper(notification.relatedEntityType, notification.relatedEntityId, req.user._id);
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Notification marked as read',

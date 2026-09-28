@@ -9,6 +9,7 @@ import PaymentOrder from '../models/PaymentOrder.js';
 import CreditTransaction from '../models/CreditTransaction.js';
 import AgencyServiceOrder from '../models/AgencyServiceOrder.js';
 import Notification from '../models/Notification.js';
+import AdminSeenItem from '../models/AdminSeenItem.js';
 import AgencyProfile from '../models/AgencyProfile.js';
 import AgentApplication from '../models/AgentApplication.js';
 import UniversityRepresentativeApplication from '../models/UniversityRepresentativeApplication.js';
@@ -112,36 +113,50 @@ export const getAdminStats = async (req, res, next) => {
       reports = db.reports || [];
     }
 
+    // Prepare seen items map for accurate unseen review queues
+    let seenMap = new Map();
+    if (mongoose.connection.readyState === 1) {
+      const seenItems = await AdminSeenItem.find({}).lean();
+      for (const item of seenItems) {
+        seenMap.set(`${item.entityType}:${item.entityId}`, true);
+      }
+    } else {
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      for (const item of dbSeen) {
+        seenMap.set(`${item.entityType}:${item.entityId}`, true);
+      }
+    }
+
     // Role-based counts
     const students = users.filter((u) => u.role === 'student');
     const totalStudents = students.length;
     const totalAgencies = users.filter((u) => u.role === 'agency').length;
     const verifiedAgencies = agencies.filter((a) => a.verificationStatus === 'VERIFIED').length;
     const pendingAgencyVerifications = agencies.filter(
-      (a) => a.verificationStatus === 'PENDING' || a.verificationStatus === 'UNDER_REVIEW'
+      (a) => (a.verificationStatus === 'PENDING' || a.verificationStatus === 'UNDER_REVIEW') && !isEntityDocSeen('agency', a, seenMap)
     ).length;
 
     const totalAgents = users.filter((u) => u.role === 'agent').length;
     const pendingAgentApplications = agentApps.filter(
-      (a) => a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW' || a.status === 'PENDING'
+      (a) => (a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW' || a.status === 'PENDING') && !isEntityDocSeen('agent', a, seenMap)
     ).length;
 
     const totalUniReps = users.filter(
       (u) => u.role === 'university_rep' || u.role === 'university representative' || u.role === 'university'
     ).length;
     const pendingUniRepVerifications = uniRepApps.filter(
-      (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW'
+      (a) => (a.status === 'PENDING' || a.status === 'UNDER_REVIEW') && !isEntityDocSeen('university_rep', a, seenMap)
     ).length;
 
     const activeUniversities = universities.filter((u) => (u.status || 'active') === 'active').length;
     const totalApplications = applications.length;
     const pendingApplications = applications.filter(
-      (a) => a.stage === 'Submitted' || a.stage === 'In Review' || a.stage === 'Documents Pending'
+      (a) => (a.stage === 'Submitted' || a.stage === 'In Review' || a.stage === 'Documents Pending') && !isEntityDocSeen('application', a, seenMap)
     ).length;
 
     const approvedPayments = paymentOrders.filter((p) => p.status === 'APPROVED');
     const pendingPayments = paymentOrders.filter(
-      (p) => p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION'
+      (p) => (p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION') && !isEntityDocSeen('payment', p, seenMap)
     ).length;
 
     const totalBdtRevenue = approvedPayments.reduce((acc, curr) => acc + (Number(curr.finalAmount) || 0), 0);
@@ -152,7 +167,7 @@ export const getAdminStats = async (req, res, next) => {
       .reduce((acc, curr) => acc + Math.abs(Number(curr.credits) || 0), 0);
 
     const openReports = reports.filter(
-      (r) => r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION' || r.status === 'OPEN'
+      (r) => (r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION' || r.status === 'OPEN') && !isEntityDocSeen('report', r, seenMap)
     ).length;
 
     // Monthly registration trend (last 6 months)
@@ -278,176 +293,633 @@ export const getAdminStats = async (req, res, next) => {
   }
 };
 
+// ── Admin Seen / Actionable Tracking Helpers ─────────────────────────────────
+export const isEntityDocSeen = (type, doc, seenItems = null) => {
+  if (!doc) return false;
+  if (doc.isSeenByAdmin === true) return true;
+  const idStr = doc._id ? doc._id.toString() : (doc.id ? doc.id.toString() : '');
+  const altId = doc.applicationId || doc.orderId || doc.reportId || doc.sessionId || '';
+  if (seenItems instanceof Map) {
+    if (idStr && seenItems.has(`${type}:${idStr}`)) return true;
+    if (altId && seenItems.has(`${type}:${altId}`)) return true;
+    return false;
+  }
+  if (Array.isArray(seenItems)) {
+    return seenItems.some(
+      (item) => item.entityType === type && (item.entityId === idStr || (altId && item.entityId === altId))
+    );
+  }
+  return false;
+};
+
+export const markEntityAsSeenHelper = async (entityType, entityId, adminId = null) => {
+  if (!entityType || !entityId) return false;
+  const idStr = String(entityId).trim();
+  const rawType = String(entityType).trim().toLowerCase();
+
+  const typeMap = {
+    agencies: 'agency',
+    agency: 'agency',
+    agents: 'agent',
+    agent: 'agent',
+    agent_application: 'agent',
+    agent_applications: 'agent',
+    agent_user: 'agent_user',
+    unirepresentatives: 'university_rep',
+    unirep: 'university_rep',
+    university_rep: 'university_rep',
+    university_representative: 'university_rep',
+    applications: 'application',
+    application: 'application',
+    partnerships: 'partnership',
+    partnership: 'partnership',
+    payments: 'payment',
+    payment: 'payment',
+    scholarships: 'scholarship',
+    scholarship: 'scholarship',
+    reports: 'report',
+    report: 'report',
+    support: 'support',
+    supportinbox: 'support',
+    chat: 'support',
+    notifications: 'notification',
+    notification: 'notification',
+  };
+
+  const normType = typeMap[rawType] || rawType;
+  const now = new Date();
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      await AdminSeenItem.findOneAndUpdate(
+        { entityType: normType, entityId: idStr },
+        {
+          $setOnInsert: {
+            admin: adminId || null,
+            seenAt: now,
+          },
+        },
+        { upsert: true, new: true }
+      );
+    } catch {
+      // Ignored for duplicate idempotency
+    }
+
+    if (normType === 'agency') {
+      await AgencyProfile.updateOne(
+        { $or: [{ _id: idStr }, { applicationId: idStr }] },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'agent') {
+      await AgentApplication.updateOne(
+        { $or: [{ _id: idStr }, { applicationId: idStr }] },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'agent_user') {
+      await User.updateOne(
+        { _id: idStr, role: 'agent' },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'university_rep') {
+      await UniversityRepresentativeApplication.updateOne(
+        { $or: [{ _id: idStr }, { applicationId: idStr }] },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+      await User.updateOne(
+        { _id: idStr, role: { $in: ['university_rep', 'university representative'] } },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'application') {
+      await Application.updateOne(
+        { _id: idStr },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'partnership') {
+      await UniversityAgencyConnection.updateOne(
+        { _id: idStr },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'payment') {
+      await PaymentOrder.updateOne(
+        { $or: [{ _id: idStr }, { orderId: idStr }] },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'scholarship') {
+      await Scholarship.updateOne(
+        { _id: idStr },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'report') {
+      await Report.updateOne(
+        { $or: [{ _id: idStr }, { reportId: idStr }] },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'support') {
+      await ChatMessage.updateMany(
+        { $or: [{ sessionId: idStr }, { _id: idStr }] },
+        { isSeenByAdmin: true, adminSeenAt: now }
+      );
+    } else if (normType === 'notification') {
+      await Notification.updateOne(
+        { _id: idStr },
+        { read: true }
+      );
+    }
+
+    try {
+      await Notification.updateMany(
+        {
+          $or: [
+            { relatedEntityId: idStr },
+            { link: { $regex: idStr } },
+          ],
+          read: false,
+        },
+        { read: true }
+      );
+    } catch {
+      // safe fallback
+    }
+
+    return true;
+  } else {
+    return devStore.markEntitySeen(normType, idStr, adminId);
+  }
+};
+
+// @desc    Mark an admin actionable entity as seen
+// @route   PUT /api/admin/seen/:entityType/:entityId or POST /api/admin/seen
+// @access  Private (Admin)
+export const markAdminEntityAsSeen = async (req, res, next) => {
+  try {
+    const entityType = (req.params.entityType || req.body.entityType || '').trim().toLowerCase();
+    const entityId = (req.params.entityId || req.body.entityId || '').trim();
+
+    if (!entityType || !entityId) {
+      return res.status(400).json({
+        success: false,
+        message: 'entityType and entityId are required',
+      });
+    }
+
+    const adminId = req.user?._id;
+    await markEntityAsSeenHelper(entityType, entityId, adminId);
+
+    return res.status(200).json({
+      success: true,
+      message: `Entity ${entityType}:${entityId} marked as seen by admin`,
+      data: {
+        entityType,
+        entityId,
+        isSeenByAdmin: true,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Calculate unified Admin sidebar and tab unseen counts
+export const calculateAdminUnseenCounts = async (adminUserId) => {
+  let seenMap = new Map();
+
+  if (mongoose.connection.readyState === 1) {
+    const seenItems = await AdminSeenItem.find({}).lean();
+    for (const item of seenItems) {
+      seenMap.set(`${item.entityType}:${item.entityId}`, true);
+    }
+
+    const [
+      allAgencies,
+      allAgentApps,
+      allAgentUsers,
+      allUniRepApps,
+      allApplications,
+      allConnections,
+      allPaymentOrders,
+      allReports,
+      allScholarships,
+      allMessages,
+      unreadNotificationsList,
+    ] = await Promise.all([
+      AgencyProfile.find({}).lean(),
+      AgentApplication.find({}).lean(),
+      User.find({ role: 'agent' }).lean(),
+      UniversityRepresentativeApplication.find({}).lean(),
+      Application.find({}).lean(),
+      UniversityAgencyConnection.find({}).lean(),
+      PaymentOrder.find({}).lean(),
+      Report.find({}).lean(),
+      Scholarship.find({}).lean(),
+      ChatMessage.find({}).sort({ createdAt: 1 }).lean(),
+      Notification.find({
+        $or: [{ user: adminUserId }, { user: { $exists: false } }, { user: null }],
+        read: false,
+      }).lean(),
+    ]);
+
+    // 1. Agencies
+    const unseenAgencies = allAgencies.filter((a) => !isEntityDocSeen('agency', a, seenMap));
+    const pendingAgenciesUnseen = unseenAgencies.filter(
+      (a) => a.verificationStatus === 'PENDING' || a.verificationStatus === 'UNDER_REVIEW'
+    ).length;
+
+    // 2. Agents
+    const unseenAgentApps = allAgentApps.filter((a) => !isEntityDocSeen('agent', a, seenMap));
+    const unseenAgentUsers = allAgentUsers.filter((u) => !isEntityDocSeen('agent_user', u, seenMap));
+    const pendingAgentsUnseen = unseenAgentApps.filter(
+      (a) => a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW' || a.status === 'PENDING'
+    ).length;
+
+    // 3. Uni Reps
+    const unseenUniRepApps = allUniRepApps.filter((a) => !isEntityDocSeen('university_rep', a, seenMap));
+    const pendingUniRepsUnseen = unseenUniRepApps.filter(
+      (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW'
+    ).length;
+
+    // 4. Applications
+    const unseenApplications = allApplications.filter((a) => !isEntityDocSeen('application', a, seenMap));
+    const pendingApplicationsUnseen = unseenApplications.filter(
+      (a) => a.stage === 'Submitted' || a.stage === 'In Review' || a.stage === 'Documents Pending'
+    ).length;
+
+    // 5. Partnerships
+    const unseenPartnerships = allConnections.filter((c) => !isEntityDocSeen('partnership', c, seenMap));
+    const pendingPartnershipsUnseen = unseenPartnerships.filter(
+      (c) => (c.status || '').toUpperCase() === 'PENDING'
+    ).length;
+
+    // 6. Payments
+    const unseenPayments = allPaymentOrders.filter((p) => !isEntityDocSeen('payment', p, seenMap));
+    const pendingPaymentsUnseen = unseenPayments.filter(
+      (p) => p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION'
+    ).length;
+
+    // 7. Reports
+    const unseenReports = allReports.filter((r) => !isEntityDocSeen('report', r, seenMap));
+    const openReportsUnseen = unseenReports.filter(
+      (r) => r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION' || r.status === 'OPEN'
+    ).length;
+
+    // 8. Scholarships
+    const unseenScholarships = allScholarships.filter((s) => !isEntityDocSeen('scholarship', s, seenMap));
+    const pendingScholarshipsUnseen = unseenScholarships.filter(
+      (s) => ['pending', 'in_review'].includes((s.status || '').toLowerCase())
+    ).length;
+
+    // 9. Support
+    const sessionMap = new Map();
+    for (const msg of allMessages) {
+      const isMsgUnseen = !isEntityDocSeen('support', msg, seenMap) && !isEntityDocSeen('support', { _id: msg.sessionId }, seenMap);
+      if (!sessionMap.has(msg.sessionId)) {
+        sessionMap.set(msg.sessionId, {
+          sessionId: msg.sessionId,
+          status: msg.status || 'active',
+          isLiveAgentRequest: msg.isLiveAgentRequest || false,
+          lastSender: msg.sender,
+          updatedAt: msg.createdAt,
+          hasUnseen: isMsgUnseen,
+        });
+      } else {
+        const item = sessionMap.get(msg.sessionId);
+        if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
+        if (isMsgUnseen) item.hasUnseen = true;
+        if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
+          item.lastSender = msg.sender;
+          item.updatedAt = msg.createdAt;
+        }
+      }
+    }
+
+    const allSessions = Array.from(sessionMap.values());
+    const unseenSupportSessions = allSessions.filter((s) => s.hasUnseen);
+    const supportInboxUnseen = allSessions.filter(
+      (s) => (s.status || 'active') === 'active' && (s.isLiveAgentRequest || s.lastSender === 'user') && s.hasUnseen
+    ).length;
+
+    // 10. Notifications
+    const unreadNotifications = unreadNotificationsList.length;
+
+    const statusCounts = {
+      agencies: {
+        all: unseenAgencies.length,
+        PENDING: unseenAgencies.filter((a) => a.verificationStatus === 'PENDING').length,
+        UNDER_REVIEW: unseenAgencies.filter((a) => a.verificationStatus === 'UNDER_REVIEW').length,
+        VERIFIED: unseenAgencies.filter((a) => a.verificationStatus === 'VERIFIED' || a.verificationStatus === 'APPROVED').length,
+        REJECTED: unseenAgencies.filter((a) => a.verificationStatus === 'REJECTED').length,
+      },
+      agents: {
+        all: unseenAgentApps.length,
+        pending: unseenAgentApps.filter((a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW' || a.status === 'SUBMITTED').length,
+        approved: unseenAgentApps.filter((a) => a.status === 'APPROVED').length,
+        registered: unseenAgentApps.filter((a) => a.status === 'REGISTERED' || a.status === 'COMPLETED').length,
+        rejected: unseenAgentApps.filter((a) => a.status === 'REJECTED').length,
+        active: unseenAgentUsers.filter((u) => (u.status || '').toLowerCase() === 'active').length,
+        suspended: unseenAgentUsers.filter((u) => (u.status || '').toLowerCase() === 'suspended').length,
+      },
+      uniRepresentatives: {
+        all: unseenUniRepApps.length,
+        PENDING: unseenUniRepApps.filter((a) => a.status === 'PENDING').length,
+        PROFILE_INCOMPLETE: unseenUniRepApps.filter((a) => !a.isProfileComplete || a.status === 'PROFILE_INCOMPLETE' || a.profileStatus === 'PROFILE_INCOMPLETE').length,
+        UNDER_REVIEW: unseenUniRepApps.filter((a) => a.status === 'UNDER_REVIEW' || a.profileStatus === 'UNDER_REVIEW').length,
+        APPROVED: unseenUniRepApps.filter((a) => a.status === 'APPROVED').length,
+        ACTIVE: unseenUniRepApps.filter((a) => a.status === 'ACTIVE').length,
+        REJECTED: unseenUniRepApps.filter((a) => a.status === 'REJECTED').length,
+      },
+      applications: {
+        all: unseenApplications.length,
+        Submitted: unseenApplications.filter((a) => a.stage === 'Submitted').length,
+        'In Review': unseenApplications.filter((a) => a.stage === 'In Review').length,
+        'Documents Pending': unseenApplications.filter((a) => a.stage === 'Documents Pending').length,
+        Accepted: unseenApplications.filter((a) => a.stage === 'Accepted').length,
+        'Visa Processing': unseenApplications.filter((a) => a.stage === 'Visa Processing').length,
+        Enrolled: unseenApplications.filter((a) => a.stage === 'Enrolled').length,
+        Rejected: unseenApplications.filter((a) => a.stage === 'Rejected').length,
+      },
+      partnerships: {
+        all: unseenPartnerships.length,
+        PENDING: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'PENDING').length,
+        ACCEPTED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'ACCEPTED').length,
+        REJECTED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'REJECTED').length,
+        BLOCKED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'BLOCKED').length,
+        SUSPENDED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'SUSPENDED').length,
+      },
+      payments: {
+        all: unseenPayments.length,
+        PENDING_VERIFICATION: unseenPayments.filter((p) => p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION').length,
+        APPROVED: unseenPayments.filter((p) => p.status === 'APPROVED' || p.status === 'COMPLETED').length,
+        REJECTED: unseenPayments.filter((p) => p.status === 'REJECTED').length,
+      },
+      reports: {
+        all: unseenReports.length,
+        OPEN: unseenReports.filter((r) => r.status === 'OPEN' || r.status === 'PENDING').length,
+        INVESTIGATING: unseenReports.filter((r) => r.status === 'INVESTIGATING' || r.status === 'UNDER_INVESTIGATION').length,
+        RESOLVED: unseenReports.filter((r) => r.status === 'RESOLVED').length,
+        REJECTED: unseenReports.filter((r) => r.status === 'REJECTED').length,
+        CLOSED: unseenReports.filter((r) => r.status === 'CLOSED').length,
+      },
+      supportInbox: {
+        all: unseenSupportSessions.length,
+        needs_agent: supportInboxUnseen,
+        open: allSessions.filter((s) => (s.status || 'active') === 'active' && s.hasUnseen).length,
+        resolved: allSessions.filter((s) => s.status === 'resolved' && s.hasUnseen).length,
+      },
+      notifications: {
+        all: unreadNotifications,
+        agents: unreadNotificationsList.filter((n) => n.type === 'agents' || n.relatedEntityType === 'agent' || n.link?.includes('agent')).length,
+        students: unreadNotificationsList.filter((n) => n.type === 'students' || n.relatedEntityType === 'student' || n.link?.includes('student')).length,
+        system: unreadNotificationsList.filter((n) => n.type === 'system' || n.type === 'alert' || n.type === 'warning').length,
+      },
+      scholarships: {
+        all: unseenScholarships.length,
+      },
+    };
+
+    return {
+      agencies: pendingAgenciesUnseen,
+      agents: pendingAgentsUnseen,
+      uniRepresentatives: pendingUniRepsUnseen,
+      applications: pendingApplicationsUnseen,
+      partnerships: pendingPartnershipsUnseen,
+      payments: pendingPaymentsUnseen,
+      reports: openReportsUnseen,
+      supportInbox: supportInboxUnseen,
+      notifications: unreadNotifications,
+      scholarships: pendingScholarshipsUnseen,
+      statusCounts,
+    };
+  } else {
+    const db = devStore.read();
+    const seenList = db.adminSeenItems || [];
+    for (const item of seenList) {
+      seenMap.set(`${item.entityType}:${item.entityId}`, true);
+    }
+
+    const allAgencies = db.agencyProfiles || [];
+    const allAgentApps = db.agentApplications || [];
+    const allAgentUsers = (db.users || []).filter((u) => u.role === 'agent');
+    const allUniRepApps = db.universityRepApplications || [];
+    const allApplications = db.applications || [];
+    const allConnections = db.universityAgencyConnections || [];
+    const allPaymentOrders = db.paymentOrders || [];
+    const allReports = db.reports || [];
+    const allScholarships = db.scholarships || [];
+    const allMessages = db.chatMessages || [];
+    const unreadNotificationsList = (db.notifications || []).filter(
+      (n) => (!n.user || n.user?.toString() === adminUserId?.toString()) && !n.read
+    );
+
+    // 1. Agencies
+    const unseenAgencies = allAgencies.filter((a) => !isEntityDocSeen('agency', a, seenMap));
+    const pendingAgenciesUnseen = unseenAgencies.filter(
+      (a) => a.verificationStatus === 'PENDING' || a.verificationStatus === 'UNDER_REVIEW'
+    ).length;
+
+    // 2. Agents
+    const unseenAgentApps = allAgentApps.filter((a) => !isEntityDocSeen('agent', a, seenMap));
+    const unseenAgentUsers = allAgentUsers.filter((u) => !isEntityDocSeen('agent_user', u, seenMap));
+    const pendingAgentsUnseen = unseenAgentApps.filter(
+      (a) => a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW' || a.status === 'PENDING'
+    ).length;
+
+    // 3. Uni Reps
+    const unseenUniRepApps = allUniRepApps.filter((a) => !isEntityDocSeen('university_rep', a, seenMap));
+    const pendingUniRepsUnseen = unseenUniRepApps.filter(
+      (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW'
+    ).length;
+
+    // 4. Applications
+    const unseenApplications = allApplications.filter((a) => !isEntityDocSeen('application', a, seenMap));
+    const pendingApplicationsUnseen = unseenApplications.filter(
+      (a) => a.stage === 'Submitted' || a.stage === 'In Review' || a.stage === 'Documents Pending'
+    ).length;
+
+    // 5. Partnerships
+    const unseenPartnerships = allConnections.filter((c) => !isEntityDocSeen('partnership', c, seenMap));
+    const pendingPartnershipsUnseen = unseenPartnerships.filter(
+      (c) => (c.status || '').toUpperCase() === 'PENDING'
+    ).length;
+
+    // 6. Payments
+    const unseenPayments = allPaymentOrders.filter((p) => !isEntityDocSeen('payment', p, seenMap));
+    const pendingPaymentsUnseen = unseenPayments.filter(
+      (p) => p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION'
+    ).length;
+
+    // 7. Reports
+    const unseenReports = allReports.filter((r) => !isEntityDocSeen('report', r, seenMap));
+    const openReportsUnseen = unseenReports.filter(
+      (r) => r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION' || r.status === 'OPEN'
+    ).length;
+
+    // 8. Scholarships
+    const unseenScholarships = allScholarships.filter((s) => !isEntityDocSeen('scholarship', s, seenMap));
+    const pendingScholarshipsUnseen = unseenScholarships.filter(
+      (s) => ['pending', 'in_review'].includes((s.status || '').toLowerCase())
+    ).length;
+
+    // 9. Support
+    const sessionMap = new Map();
+    for (const msg of allMessages) {
+      const isMsgUnseen = !isEntityDocSeen('support', msg, seenMap) && !isEntityDocSeen('support', { _id: msg.sessionId }, seenMap);
+      if (!sessionMap.has(msg.sessionId)) {
+        sessionMap.set(msg.sessionId, {
+          sessionId: msg.sessionId,
+          status: msg.status || 'active',
+          isLiveAgentRequest: msg.isLiveAgentRequest || false,
+          lastSender: msg.sender,
+          updatedAt: msg.createdAt,
+          hasUnseen: isMsgUnseen,
+        });
+      } else {
+        const item = sessionMap.get(msg.sessionId);
+        if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
+        if (isMsgUnseen) item.hasUnseen = true;
+        if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
+          item.lastSender = msg.sender;
+          item.updatedAt = msg.createdAt;
+        }
+      }
+    }
+
+    const allSessions = Array.from(sessionMap.values());
+    const unseenSupportSessions = allSessions.filter((s) => s.hasUnseen);
+    const supportInboxUnseen = allSessions.filter(
+      (s) => (s.status || 'active') === 'active' && (s.isLiveAgentRequest || s.lastSender === 'user') && s.hasUnseen
+    ).length;
+
+    // 10. Notifications
+    const unreadNotifications = unreadNotificationsList.length;
+
+    const statusCounts = {
+      agencies: {
+        all: unseenAgencies.length,
+        PENDING: unseenAgencies.filter((a) => a.verificationStatus === 'PENDING').length,
+        UNDER_REVIEW: unseenAgencies.filter((a) => a.verificationStatus === 'UNDER_REVIEW').length,
+        VERIFIED: unseenAgencies.filter((a) => a.verificationStatus === 'VERIFIED' || a.verificationStatus === 'APPROVED').length,
+        REJECTED: unseenAgencies.filter((a) => a.verificationStatus === 'REJECTED').length,
+      },
+      agents: {
+        all: unseenAgentApps.length,
+        pending: unseenAgentApps.filter((a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW' || a.status === 'SUBMITTED').length,
+        approved: unseenAgentApps.filter((a) => a.status === 'APPROVED').length,
+        registered: unseenAgentApps.filter((a) => a.status === 'REGISTERED' || a.status === 'COMPLETED').length,
+        rejected: unseenAgentApps.filter((a) => a.status === 'REJECTED').length,
+        active: unseenAgentUsers.filter((u) => (u.status || '').toLowerCase() === 'active').length,
+        suspended: unseenAgentUsers.filter((u) => (u.status || '').toLowerCase() === 'suspended').length,
+      },
+      uniRepresentatives: {
+        all: unseenUniRepApps.length,
+        PENDING: unseenUniRepApps.filter((a) => a.status === 'PENDING').length,
+        PROFILE_INCOMPLETE: unseenUniRepApps.filter((a) => !a.isProfileComplete || a.status === 'PROFILE_INCOMPLETE' || a.profileStatus === 'PROFILE_INCOMPLETE').length,
+        UNDER_REVIEW: unseenUniRepApps.filter((a) => a.status === 'UNDER_REVIEW' || a.profileStatus === 'UNDER_REVIEW').length,
+        APPROVED: unseenUniRepApps.filter((a) => a.status === 'APPROVED').length,
+        ACTIVE: unseenUniRepApps.filter((a) => a.status === 'ACTIVE').length,
+        REJECTED: unseenUniRepApps.filter((a) => a.status === 'REJECTED').length,
+      },
+      applications: {
+        all: unseenApplications.length,
+        Submitted: unseenApplications.filter((a) => a.stage === 'Submitted').length,
+        'In Review': unseenApplications.filter((a) => a.stage === 'In Review').length,
+        'Documents Pending': unseenApplications.filter((a) => a.stage === 'Documents Pending').length,
+        Accepted: unseenApplications.filter((a) => a.stage === 'Accepted').length,
+        'Visa Processing': unseenApplications.filter((a) => a.stage === 'Visa Processing').length,
+        Enrolled: unseenApplications.filter((a) => a.stage === 'Enrolled').length,
+        Rejected: unseenApplications.filter((a) => a.stage === 'Rejected').length,
+      },
+      partnerships: {
+        all: unseenPartnerships.length,
+        PENDING: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'PENDING').length,
+        ACCEPTED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'ACCEPTED').length,
+        REJECTED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'REJECTED').length,
+        BLOCKED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'BLOCKED').length,
+        SUSPENDED: unseenPartnerships.filter((c) => (c.status || '').toUpperCase() === 'SUSPENDED').length,
+      },
+      payments: {
+        all: unseenPayments.length,
+        PENDING_VERIFICATION: unseenPayments.filter((p) => p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION').length,
+        APPROVED: unseenPayments.filter((p) => p.status === 'APPROVED' || p.status === 'COMPLETED').length,
+        REJECTED: unseenPayments.filter((p) => p.status === 'REJECTED').length,
+      },
+      reports: {
+        all: unseenReports.length,
+        OPEN: unseenReports.filter((r) => r.status === 'OPEN' || r.status === 'PENDING').length,
+        INVESTIGATING: unseenReports.filter((r) => r.status === 'INVESTIGATING' || r.status === 'UNDER_INVESTIGATION').length,
+        RESOLVED: unseenReports.filter((r) => r.status === 'RESOLVED').length,
+        REJECTED: unseenReports.filter((r) => r.status === 'REJECTED').length,
+        CLOSED: unseenReports.filter((r) => r.status === 'CLOSED').length,
+      },
+      supportInbox: {
+        all: unseenSupportSessions.length,
+        needs_agent: supportInboxUnseen,
+        open: allSessions.filter((s) => (s.status || 'active') === 'active' && s.hasUnseen).length,
+        resolved: allSessions.filter((s) => s.status === 'resolved' && s.hasUnseen).length,
+      },
+      notifications: {
+        all: unreadNotifications,
+        agents: unreadNotificationsList.filter((n) => n.type === 'agents' || n.relatedEntityType === 'agent' || n.link?.includes('agent')).length,
+        students: unreadNotificationsList.filter((n) => n.type === 'students' || n.relatedEntityType === 'student' || n.link?.includes('student')).length,
+        system: unreadNotificationsList.filter((n) => n.type === 'system' || n.type === 'alert' || n.type === 'warning').length,
+      },
+      scholarships: {
+        all: unseenScholarships.length,
+      },
+    };
+
+    return {
+      agencies: pendingAgenciesUnseen,
+      agents: pendingAgentsUnseen,
+      uniRepresentatives: pendingUniRepsUnseen,
+      applications: pendingApplicationsUnseen,
+      partnerships: pendingPartnershipsUnseen,
+      payments: pendingPaymentsUnseen,
+      reports: openReportsUnseen,
+      supportInbox: supportInboxUnseen,
+      notifications: unreadNotifications,
+      scholarships: pendingScholarshipsUnseen,
+      statusCounts,
+    };
+  }
+};
+
 // @desc    Get dynamic sidebar badge counts
 // @route   GET /api/admin/sidebar-counts
 // @access  Private (Admin)
 export const getAdminSidebarCounts = async (req, res, next) => {
   try {
-    let agencies = 0;
-    let agents = 0;
-    let uniRepresentatives = 0;
-    let applications = 0;
-    let partnerships = 0;
-    let payments = 0;
-    let reports = 0;
-    let supportInbox = 0;
-    let notifications = 0;
-    let scholarships = 0;
+    const counts = await calculateAdminUnseenCounts(req.user._id);
+    return res.status(200).json({
+      success: true,
+      data: counts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-    if (mongoose.connection.readyState === 1) {
-      const [
-        pendingAgencies,
-        pendingAgents,
-        pendingUniReps,
-        pendingApplications,
-        pendingPartnerships,
-        pendingPayments,
-        openReports,
-        unreadNotifications,
-        pendingScholarships,
-        allMessages,
-      ] = await Promise.all([
-        AgencyProfile.countDocuments({
-          verificationStatus: { $in: ['PENDING', 'UNDER_REVIEW'] },
-        }),
-        AgentApplication.countDocuments({
-          status: { $in: ['SUBMITTED', 'UNDER_REVIEW', 'PENDING'] },
-        }),
-        UniversityRepresentativeApplication.countDocuments({
-          status: { $in: ['PENDING', 'UNDER_REVIEW'] },
-        }),
-        Application.countDocuments({
-          stage: { $in: ['Submitted', 'In Review', 'Documents Pending'] },
-        }),
-        UniversityAgencyConnection.countDocuments({
-          status: 'PENDING',
-        }),
-        PaymentOrder.countDocuments({
-          status: { $in: ['PENDING_PAYMENT', 'PENDING_VERIFICATION'] },
-        }),
-        Report.countDocuments({
-          status: { $in: ['PENDING', 'UNDER_INVESTIGATION', 'OPEN'] },
-        }),
-        Notification.countDocuments({
-          $or: [{ user: req.user._id }, { user: { $exists: false } }, { user: null }],
-          read: false,
-        }),
-        Scholarship.countDocuments({
-          status: { $in: ['pending', 'in_review', 'PENDING', 'UNDER_REVIEW'] },
-        }),
-        ChatMessage.find({}).sort({ createdAt: 1 }),
-      ]);
-
-      agencies = pendingAgencies;
-      agents = pendingAgents;
-      uniRepresentatives = pendingUniReps;
-      applications = pendingApplications;
-      partnerships = pendingPartnerships;
-      payments = pendingPayments;
-      reports = openReports;
-      notifications = unreadNotifications;
-      scholarships = pendingScholarships;
-
-      const sessionMap = new Map();
-      for (const msg of allMessages) {
-        if (!sessionMap.has(msg.sessionId)) {
-          sessionMap.set(msg.sessionId, {
-            status: msg.status || 'active',
-            isLiveAgentRequest: msg.isLiveAgentRequest || false,
-            lastSender: msg.sender,
-            updatedAt: msg.createdAt,
-          });
-        } else {
-          const item = sessionMap.get(msg.sessionId);
-          if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
-          if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
-            item.lastSender = msg.sender;
-            item.updatedAt = msg.createdAt;
-          }
-        }
-      }
-
-      supportInbox = Array.from(sessionMap.values()).filter(
-        (s) => (s.status || 'active') === 'active' && (s.isLiveAgentRequest || s.lastSender === 'user')
-      ).length;
-    } else {
-      const db = devStore.read();
-      const dbAgencies = db.agencyProfiles || [];
-      const dbAgentApps = db.agentApplications || [];
-      const dbUniRepApps = db.universityRepApplications || [];
-      const dbApplications = db.applications || [];
-      const dbConnections = db.universityAgencyConnections || [];
-      const dbPaymentOrders = db.paymentOrders || [];
-      const dbReports = db.reports || [];
-      const dbNotifications = db.notifications || [];
-      const dbScholarships = db.scholarships || [];
-      const dbChatMessages = db.chatMessages || [];
-
-      agencies = dbAgencies.filter(
-        (a) => a.verificationStatus === 'PENDING' || a.verificationStatus === 'UNDER_REVIEW'
-      ).length;
-      agents = dbAgentApps.filter(
-        (a) => a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW' || a.status === 'PENDING'
-      ).length;
-      uniRepresentatives = dbUniRepApps.filter(
-        (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW'
-      ).length;
-      applications = dbApplications.filter(
-        (a) => a.stage === 'Submitted' || a.stage === 'In Review' || a.stage === 'Documents Pending'
-      ).length;
-      partnerships = dbConnections.filter(
-        (c) => (c.status || '').toUpperCase() === 'PENDING'
-      ).length;
-      payments = dbPaymentOrders.filter(
-        (p) => p.status === 'PENDING_PAYMENT' || p.status === 'PENDING_VERIFICATION'
-      ).length;
-      reports = dbReports.filter(
-        (r) => r.status === 'PENDING' || r.status === 'UNDER_INVESTIGATION' || r.status === 'OPEN'
-      ).length;
-      notifications = dbNotifications.filter(
-        (n) => (!n.user || n.user?.toString() === req.user._id?.toString()) && !n.read
-      ).length;
-      scholarships = dbScholarships.filter(
-        (s) => ['pending', 'in_review'].includes((s.status || '').toLowerCase())
-      ).length;
-
-      const sessionMap = new Map();
-      for (const msg of dbChatMessages) {
-        if (!sessionMap.has(msg.sessionId)) {
-          sessionMap.set(msg.sessionId, {
-            status: msg.status || 'active',
-            isLiveAgentRequest: msg.isLiveAgentRequest || false,
-            lastSender: msg.sender,
-            updatedAt: msg.createdAt,
-          });
-        } else {
-          const item = sessionMap.get(msg.sessionId);
-          if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
-          if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
-            item.lastSender = msg.sender;
-            item.updatedAt = msg.createdAt;
-          }
-        }
-      }
-
-      supportInbox = Array.from(sessionMap.values()).filter(
-        (s) => (s.status || 'active') === 'active' && (s.isLiveAgentRequest || s.lastSender === 'user')
-      ).length;
-    }
-
+// @desc    Get internal page/status/tab unseen counts
+// @route   GET /api/admin/status-counts
+// @access  Private (Admin)
+export const getAdminStatusCounts = async (req, res, next) => {
+  try {
+    const counts = await calculateAdminUnseenCounts(req.user._id);
     return res.status(200).json({
       success: true,
       data: {
-        agencies,
-        agents,
-        uniRepresentatives,
-        applications,
-        partnerships,
-        payments,
-        reports,
-        supportInbox,
-        notifications,
-        scholarships,
+        ...counts.statusCounts,
+        sidebarCounts: {
+          agencies: counts.agencies,
+          agents: counts.agents,
+          uniRepresentatives: counts.uniRepresentatives,
+          applications: counts.applications,
+          partnerships: counts.partnerships,
+          payments: counts.payments,
+          reports: counts.reports,
+          supportInbox: counts.supportInbox,
+          notifications: counts.notifications,
+          scholarships: counts.scholarships,
+        },
+        statusCounts: counts.statusCounts,
       },
     });
   } catch (error) {
@@ -1769,8 +2241,22 @@ export const getAdminApplications = async (req, res, next) => {
         .populate('user', 'name email phone gpa ielts targetCountry')
         .populate('assignedAgent', 'name email phone')
         .sort({ createdAt: -1 });
+      const seenItems = await AdminSeenItem.find({ entityType: 'application' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      applications = applications.map((a) => {
+        const item = a.toObject ? a.toObject() : { ...a };
+        item.isSeenByAdmin = Boolean(item.isSeenByAdmin || isEntityDocSeen('application', item, seenMap));
+        return item;
+      });
     } else {
-      applications = await devStore.findApplications({ stage, search });
+      const rawApps = await devStore.findApplications({ stage, search });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      applications = rawApps.map((a) => ({
+        ...a,
+        isSeenByAdmin: Boolean(a.isSeenByAdmin || isEntityDocSeen('application', a, dbSeen)),
+      }));
     }
 
     return res.status(200).json({
@@ -1802,6 +2288,8 @@ export const updateAdminApplication = async (req, res, next) => {
       if (stage) app.stage = stage;
       if (progress !== undefined) app.progress = Number(progress);
       if (assignedAgent !== undefined) app.assignedAgent = assignedAgent;
+      app.isSeenByAdmin = true;
+      app.adminSeenAt = new Date();
       if (notes !== undefined) app.notes = notes;
 
       if (stepLabel) {
@@ -1878,6 +2366,15 @@ export const getAdminPartnerships = async (req, res, next) => {
         .populate('universityId', 'name location country logo website')
         .populate('universityRepresentativeId', 'name email phone designation')
         .sort({ createdAt: -1 });
+      const seenItems = await AdminSeenItem.find({ entityType: 'partnership' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      connections = connections.map((c) => {
+        const item = c.toObject ? c.toObject() : { ...c };
+        item.isSeenByAdmin = Boolean(item.isSeenByAdmin || isEntityDocSeen('partnership', item, seenMap));
+        return item;
+      });
     } else {
       const filter = {};
       if (status && status !== 'all') filter.status = status.toUpperCase();
@@ -1885,12 +2382,14 @@ export const getAdminPartnerships = async (req, res, next) => {
 
       // Populate details from devStore
       const populated = [];
+      const dbSeen = (devStore.read()).adminSeenItems || [];
       for (const c of connections) {
         const agency = await devStore.findUserById(c.agencyId);
         const uni = await devStore.findUniversityById(c.universityId);
         const rep = await devStore.findUserById(c.universityRepresentativeId);
         populated.push({
           ...c,
+          isSeenByAdmin: Boolean(c.isSeenByAdmin || isEntityDocSeen('partnership', c, dbSeen)),
           agencyId: agency ? { _id: agency._id, name: agency.name, email: agency.email, phone: agency.phone } : null,
           universityId: uni ? { _id: uni._id, name: uni.name, location: uni.location, country: uni.country } : null,
           universityRepresentativeId: rep ? { _id: rep._id, name: rep.name, email: rep.email, designation: rep.designation } : null,
@@ -1931,6 +2430,8 @@ export const updateAdminPartnershipStatus = async (req, res, next) => {
       conn.status = status;
       if (notes) conn.notes = notes;
       conn.respondedAt = new Date();
+      conn.isSeenByAdmin = true;
+      conn.adminSeenAt = new Date();
       conn.respondedBy = req.user._id;
       await conn.save();
     } else {
@@ -2133,9 +2634,22 @@ export const getAdminScholarships = async (req, res, next) => {
           { university: { $regex: search, $options: 'i' } },
         ];
       }
-      scholarships = await Scholarship.find(query).sort({ createdAt: -1 });
+      const seenItems = await AdminSeenItem.find({ entityType: 'scholarship' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      scholarships = (await Scholarship.find(query).sort({ createdAt: -1 })).map((s) => {
+        const item = s.toObject ? s.toObject() : { ...s };
+        item.isSeenByAdmin = Boolean(item.isSeenByAdmin || isEntityDocSeen('scholarship', item, seenMap));
+        return item;
+      });
     } else {
-      scholarships = await devStore.findScholarships({ search, country });
+      const rawScholarships = await devStore.findScholarships({ search, country });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      scholarships = rawScholarships.map((s) => ({
+        ...s,
+        isSeenByAdmin: Boolean(s.isSeenByAdmin || isEntityDocSeen('scholarship', s, dbSeen)),
+      }));
     }
 
     return res.status(200).json({
@@ -2556,8 +3070,22 @@ export const getAdminReports = async (req, res, next) => {
         .populate('reportedBy', 'name email phone role')
         .populate('assignedReviewer', 'name email')
         .sort({ createdAt: -1 });
+      const seenItems = await AdminSeenItem.find({ entityType: 'report' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      reports = reports.map((r) => {
+        const item = r.toObject ? r.toObject() : { ...r };
+        item.isSeenByAdmin = Boolean(item.isSeenByAdmin || isEntityDocSeen('report', item, seenMap));
+        return item;
+      });
     } else {
-      reports = await devStore.findReports({ status, priority, targetType, search });
+      const rawReports = await devStore.findReports({ status, priority, targetType, search });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      reports = rawReports.map((r) => ({
+        ...r,
+        isSeenByAdmin: Boolean(r.isSeenByAdmin || isEntityDocSeen('report', r, dbSeen)),
+      }));
     }
 
     return res.status(200).json({
@@ -2584,6 +3112,8 @@ export const updateAdminReport = async (req, res, next) => {
       report = await Report.findById(id);
       if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
 
+      report.isSeenByAdmin = true;
+      report.adminSeenAt = new Date();
       if (status) {
         report.status = status;
         if (status === 'RESOLVED' || status === 'CLOSED') {
@@ -2684,9 +3214,23 @@ export const getAdminSupportConversations = async (req, res, next) => {
         }
       }
 
-      sessions = Array.from(sessionMap.values()).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      const seenItems = await AdminSeenItem.find({ entityType: 'support' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      sessions = Array.from(sessionMap.values())
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+        .map((s) => ({
+          ...s,
+          isSeenByAdmin: Boolean(seenMap.has(s.sessionId)),
+        }));
     } else {
-      sessions = await devStore.findChatSessions();
+      const rawSessions = await devStore.findChatSessions();
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      sessions = rawSessions.map((s) => ({
+        ...s,
+        isSeenByAdmin: Boolean(dbSeen.some((item) => item.entityType === 'support' && item.entityId === s.sessionId)),
+      }));
     }
 
     return res.status(200).json({
@@ -2706,6 +3250,8 @@ export const getAdminSupportMessages = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
     let messages = [];
+
+    await markEntityAsSeenHelper('support', sessionId, req.user?._id);
 
     if (mongoose.connection.readyState === 1) {
       messages = await ChatMessage.find({ sessionId }).populate('user', 'name email').sort({ createdAt: 1 });
@@ -3152,12 +3698,25 @@ export const getAllPaymentOrders = async (req, res, next) => {
           { transactionId: { $regex: search, $options: 'i' } },
         ];
       }
-      payments = await PaymentOrder.find(query)
+      const seenItems = await AdminSeenItem.find({ entityType: 'payment' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      payments = (await PaymentOrder.find(query)
         .populate('user', 'name email phone role')
         .populate('verifiedBy', 'name email')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })).map((p) => {
+          const item = p.toObject ? p.toObject() : { ...p };
+          item.isSeenByAdmin = Boolean(item.isSeenByAdmin || isEntityDocSeen('payment', item, seenMap));
+          return item;
+        });
     } else {
-      payments = await devStore.findPaymentOrders({ status, search });
+      const rawPayments = await devStore.findPaymentOrders({ status, search });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      payments = rawPayments.map((p) => ({
+        ...p,
+        isSeenByAdmin: Boolean(p.isSeenByAdmin || isEntityDocSeen('payment', p, dbSeen)),
+      }));
     }
 
     return res.status(200).json({
@@ -3537,19 +4096,34 @@ export const getAllAgencyVerifications = async (req, res, next) => {
         .populate('reviewedBy', 'name email')
         .sort({ createdAt: -1 });
 
+      const seenItems = await AdminSeenItem.find({ entityType: 'agency' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      const formatted = verifications.map((v) => {
+        const item = v.toObject ? v.toObject() : { ...v };
+        item.isSeenByAdmin = Boolean(item.isSeenByAdmin || isEntityDocSeen('agency', item, seenMap));
+        return item;
+      });
+
       return res.status(200).json({
         success: true,
-        count: verifications.length,
-        data: { verifications },
-        verifications,
+        count: formatted.length,
+        data: { verifications: formatted },
+        verifications: formatted,
       });
     } else {
       const verifications = await devStore.findAgencyProfiles({ verificationStatus: status, search });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      const formatted = verifications.map((v) => ({
+        ...v,
+        isSeenByAdmin: Boolean(v.isSeenByAdmin || isEntityDocSeen('agency', v, dbSeen)),
+      }));
       return res.status(200).json({
         success: true,
-        count: verifications.length,
-        data: { verifications },
-        verifications,
+        count: formatted.length,
+        data: { verifications: formatted },
+        verifications: formatted,
       });
     }
   } catch (error) {
@@ -3622,6 +4196,14 @@ export const getAgencyVerificationDetails = async (req, res, next) => {
     if (!verification) {
       return res.status(404).json({ success: false, message: 'Agency verification profile not found' });
     }
+
+    const agencyIdToMark = verification._id ? verification._id.toString() : id;
+    await markEntityAsSeenHelper('agency', agencyIdToMark, req.user?._id);
+    if (verification.applicationId) {
+      await markEntityAsSeenHelper('agency', verification.applicationId, req.user?._id);
+    }
+    if (verification.toObject) verification = verification.toObject();
+    verification.isSeenByAdmin = true;
 
     return res.status(200).json({
       success: true,
@@ -4026,6 +4608,14 @@ export const getAdminAgents = async (req, res, next) => {
         })
       );
 
+      const seenItems = await AdminSeenItem.find({ entityType: 'agent_user' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      agents.forEach((ag) => {
+        ag.isSeenByAdmin = Boolean(ag.isSeenByAdmin || isEntityDocSeen('agent_user', ag, seenMap));
+      });
+
       return res.status(200).json({
         success: true,
         count: agents.length,
@@ -4033,7 +4623,12 @@ export const getAdminAgents = async (req, res, next) => {
         agents,
       });
     } else {
-      const agents = await devStore.findAgents({ status, search, agencyId });
+      const rawAgents = await devStore.findAgents({ status, search, agencyId });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      const agents = rawAgents.map((ag) => ({
+        ...ag,
+        isSeenByAdmin: Boolean(ag.isSeenByAdmin || isEntityDocSeen('agent_user', ag, dbSeen)),
+      }));
       return res.status(200).json({
         success: true,
         count: agents.length,
@@ -4121,6 +4716,16 @@ export const getAdminAgentApplications = async (req, res, next) => {
         );
       }
 
+      const seenItems = await AdminSeenItem.find({ entityType: 'agent' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      applications = applications.map((a) => {
+        const item = a.toObject ? a.toObject() : { ...a };
+        item.isSeenByAdmin = Boolean(item.isSeenByAdmin || isEntityDocSeen('agent', item, seenMap));
+        return item;
+      });
+
       return res.status(200).json({
         success: true,
         count: applications.length,
@@ -4128,7 +4733,12 @@ export const getAdminAgentApplications = async (req, res, next) => {
         applications,
       });
     } else {
-      let applications = await devStore.findAgentApplications({ status, agencyId, search });
+      let rawApps = await devStore.findAgentApplications({ status, agencyId, search });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
+      const applications = rawApps.map((a) => ({
+        ...a,
+        isSeenByAdmin: Boolean(a.isSeenByAdmin || isEntityDocSeen('agent', a, dbSeen)),
+      }));
       return res.status(200).json({
         success: true,
         count: applications.length,
@@ -4160,6 +4770,14 @@ export const getAdminAgentApplicationById = async (req, res, next) => {
     if (!application) {
       return res.status(404).json({ success: false, message: 'Agent application not found' });
     }
+
+    const agentIdToMark = application._id ? application._id.toString() : id;
+    await markEntityAsSeenHelper('agent', agentIdToMark, req.user?._id);
+    if (application.applicationId) {
+      await markEntityAsSeenHelper('agent', application.applicationId, req.user?._id);
+    }
+    if (application.toObject) application = application.toObject();
+    application.isSeenByAdmin = true;
 
     return res.status(200).json({
       success: true,
@@ -4598,6 +5216,15 @@ export const getAdminUniRepApplications = async (req, res, next) => {
         });
       }
 
+      const seenItems = await AdminSeenItem.find({ entityType: 'university_rep' }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) seenMap.set(s.entityId, true);
+
+      filtered = filtered.map((app) => ({
+        ...app,
+        isSeenByAdmin: Boolean(app.isSeenByAdmin || isEntityDocSeen('university_rep', app, seenMap)),
+      }));
+
       return res.status(200).json({
         success: true,
         count: filtered.length,
@@ -4606,6 +5233,7 @@ export const getAdminUniRepApplications = async (req, res, next) => {
       });
     } else {
       let apps = await devStore.findUniRepApplications({ status, search });
+      const dbSeen = (devStore.read()).adminSeenItems || [];
       for (const app of apps) {
         if (!app.userObj && app.user) {
           const uid = app.user?._id ? app.user._id.toString() : app.user.toString();
@@ -4616,6 +5244,7 @@ export const getAdminUniRepApplications = async (req, res, next) => {
           app.user.walletCredits = 'N/A';
           app.user.availableCredits = 'N/A';
         }
+        app.isSeenByAdmin = Boolean(app.isSeenByAdmin || isEntityDocSeen('university_rep', app, dbSeen));
       }
 
       return res.status(200).json({
@@ -4761,6 +5390,13 @@ export const getAdminUniRepApplicationById = async (req, res, next) => {
     if (!application) {
       return res.status(404).json({ success: false, message: 'University Representative application not found.' });
     }
+
+    const repIdToMark = application._id ? application._id.toString() : id;
+    await markEntityAsSeenHelper('university_rep', repIdToMark, req.user?._id);
+    if (application.applicationId) {
+      await markEntityAsSeenHelper('university_rep', application.applicationId, req.user?._id);
+    }
+    application.isSeenByAdmin = true;
 
     return res.status(200).json({
       success: true,

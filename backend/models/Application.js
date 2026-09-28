@@ -89,6 +89,15 @@ const applicationSchema = new mongoose.Schema(
         createdAt: { type: Date, default: Date.now },
       },
     ],
+    isSeenByAdmin: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    adminSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

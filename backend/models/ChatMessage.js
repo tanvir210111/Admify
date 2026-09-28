@@ -29,6 +29,15 @@ const chatMessageSchema = new mongoose.Schema(
       enum: ['active', 'closed'],
       default: 'active',
     },
+    isSeenByAdmin: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    adminSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

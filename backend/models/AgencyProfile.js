@@ -247,6 +247,15 @@ const agencyProfileSchema = new mongoose.Schema(
         note: { type: String, default: '' },
       },
     ],
+    isSeenByAdmin: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    adminSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

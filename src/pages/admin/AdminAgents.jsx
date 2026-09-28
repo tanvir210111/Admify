@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
+import { useAdminBadges } from "../../context/AdminBadgeContext";
 import AdminAgentApplicationsTab from "../../components/admin/AdminAgentApplicationsTab";
 
 const fade = {
@@ -26,6 +27,7 @@ const STATUS_MAP = {
 };
 
 export default function AdminAgents() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [activeTab, setActiveTab] = useState("roster"); // 'roster' | 'applications'
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -200,7 +202,12 @@ export default function AdminAgents() {
           }`}
         >
           <Building2 className="w-4 h-4 text-blue-400" />
-          Agent Applications & Codes
+          <span>Agent Applications & Codes</span>
+          {getStatusCount("agents", "all") > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+              [{getStatusCount("agents", "all")}]
+            </span>
+          )}
         </button>
       </div>
 
@@ -257,19 +264,27 @@ export default function AdminAgents() {
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-              {["all", "active", "pending", "suspended"].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setFilter(st)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all border ${
-                    filter === st
-                      ? "bg-violet-600/30 text-violet-300 border-violet-500/50 shadow-sm"
-                      : "bg-white/3 text-slate-400 border-white/5 hover:text-white hover:bg-white/6"
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+              {["all", "active", "pending", "suspended"].map((st) => {
+                const count = getStatusCount("agents", st);
+                return (
+                  <button
+                    key={st}
+                    onClick={() => setFilter(st)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all border flex items-center gap-1.5 ${
+                      filter === st
+                        ? "bg-violet-600/30 text-violet-300 border-violet-500/50 shadow-sm"
+                        : "bg-white/3 text-slate-400 border-white/5 hover:text-white hover:bg-white/6"
+                    }`}
+                  >
+                    <span>{st}</span>
+                    {count > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                        [{count}]
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -320,11 +335,23 @@ export default function AdminAgents() {
                       const isSuspended = stKey === "SUSPENDED";
                       const agencyTitle = agent.agencyName || agent.agencyId?.name || "Independent / Unassigned";
                       const appId = agent.agentApplicationId || agent.agentApplication?.applicationId || "N/A";
+                      const isUnseen = !agent.isSeenByAdmin;
 
                       return (
                         <tr
                           key={agent._id}
-                          className="hover:bg-white/2 transition-colors border-b border-white/5"
+                          onClick={() => {
+                            setSelectedAgent(agent);
+                            if (!agent.isSeenByAdmin) {
+                              agent.isSeenByAdmin = true;
+                              markEntityAsSeen("agent_user", agent._id);
+                            }
+                          }}
+                          className={`transition-colors border-b border-white/5 cursor-pointer ${
+                            isUnseen
+                              ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                              : "hover:bg-white/2"
+                          }`}
                         >
                           {/* Agent Name & Email */}
                           <td className="py-3.5 px-4">

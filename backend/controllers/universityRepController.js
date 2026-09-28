@@ -166,7 +166,7 @@ const validateDocument = (doc, label, maxSizeBytes = 3.5 * 1024 * 1024) => {
 const notifyAdminsOfUniRepVerification = async ({ repName, universityName, applicationId }) => {
   const title = 'New University Representative Verification Request';
   const message = `A new University Representative verification has been submitted by "${repName}" for "${universityName}" (App ID: ${applicationId}) and is waiting for review.`;
-  const link = '/admin/universities';
+  const link = '/admin/university-reps';
 
   try {
     if (mongoose.connection.readyState === 1) {
@@ -178,6 +178,9 @@ const notifyAdminsOfUniRepVerification = async ({ repName, universityName, appli
           message,
           type: 'info',
           link,
+          actionUrl: link,
+          relatedEntityType: 'university_rep',
+          relatedEntityId: applicationId,
         });
       }
     } else {
@@ -189,6 +192,9 @@ const notifyAdminsOfUniRepVerification = async ({ repName, universityName, appli
           message,
           type: 'info',
           link,
+          actionUrl: link,
+          relatedEntityType: 'university_rep',
+          relatedEntityId: applicationId,
         });
       }
     }

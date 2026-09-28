@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Bell,
@@ -14,7 +15,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { api } from "../../lib/api";
-import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
 const fade = {
@@ -30,6 +31,8 @@ const PRIO_MAP = {
 };
 
 export default function AdminNotifications() {
+  const navigate = useNavigate();
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [activeTab, setActiveTab] = useState("all");
   const [notifs, setNotifs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -54,7 +57,9 @@ export default function AdminNotifications() {
           time: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
           status: n.read ? "read" : "unread",
           icon: n.title?.toLowerCase().includes("agency") ? Building2 : Bell,
-          link: n.link || "",
+          link: n.actionUrl || n.link || "",
+          relatedEntityType: n.relatedEntityType,
+          relatedEntityId: n.relatedEntityId,
         }));
         setNotifs(formatted);
       }
@@ -81,14 +86,24 @@ export default function AdminNotifications() {
     }
   };
 
-  const handleMarkSingleRead = async (id) => {
+  const handleNotificationClick = async (n) => {
     try {
-      await api.put(`/api/notifications/${id}/read`);
-      setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, status: "read" } : n)));
-      triggerAdminBadgeRefresh();
-    } catch {
-      setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, status: "read" } : n)));
-      triggerAdminBadgeRefresh();
+      if (n.status === "unread") {
+        await api.put(`/api/notifications/${n.id}/read`);
+        setNotifs((prev) => prev.map((item) => (item.id === n.id ? { ...item, status: "read" } : item)));
+        triggerAdminBadgeRefresh();
+      }
+
+      if (n.relatedEntityType && n.relatedEntityId) {
+        await markEntityAsSeen(n.relatedEntityType, n.relatedEntityId);
+      }
+
+      if (n.link) {
+        navigate(n.link);
+      }
+    } catch (err) {
+      console.warn("Error handling notification click:", err);
+      if (n.link) navigate(n.link);
     }
   };
 
@@ -132,19 +147,27 @@ export default function AdminNotifications() {
 
       {/* Tabs */}
       <motion.div variants={fade} className="flex flex-wrap gap-2 border-b border-white/6 pb-2">
-        {["all", "agents", "students", "system"].map((t) => (
-          <button
-            key={t}
-            onClick={() => setActiveTab(t)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all border ${
-              activeTab === t
-                ? "bg-violet-600/20 border-violet-500/40 text-white"
-                : "bg-transparent border-transparent text-slate-400 hover:text-white"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
+        {["all", "agents", "students", "system"].map((t) => {
+          const count = getStatusCount("notifications", t);
+          return (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all border flex items-center gap-1.5 ${
+                activeTab === t
+                  ? "bg-violet-600/20 border-violet-500/40 text-white"
+                  : "bg-transparent border-transparent text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>{t}</span>
+              {count > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  [{count}]
+                </span>
+              )}
+            </button>
+          );
+        })}
       </motion.div>
 
       {/* Notifications List */}
@@ -156,15 +179,14 @@ export default function AdminNotifications() {
         ) : (
           filtered.map((n) => {
             const Icon = n.icon;
+            const isUnread = n.status === "unread";
             return (
               <div
                 key={n.id}
-                onClick={() => {
-                  if (n.status === "unread") handleMarkSingleRead(n.id);
-                }}
-                className={`p-4 rounded-2xl border flex items-start gap-4 transition-all hover:bg-white/3 ${
-                  n.status === "unread"
-                    ? "border-violet-500/30 bg-violet-600/10 cursor-pointer"
+                onClick={() => handleNotificationClick(n)}
+                className={`p-4 rounded-2xl border flex items-start gap-4 transition-all hover:bg-white/3 cursor-pointer ${
+                  isUnread
+                    ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] border-violet-500/30"
                     : "border-white/6 bg-white/1"
                 }`}
               >

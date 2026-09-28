@@ -338,6 +338,23 @@ export const submitPaymentOrder = async (req, res, next) => {
         link: '/student/wallet',
       });
 
+      // Notify Admins of payment verification request
+      try {
+        const admins = await User.find({ role: 'admin' });
+        for (const admin of admins) {
+          await Notification.create({
+            user: admin._id,
+            title: 'New Payment Verification Request',
+            message: `A new payment order ${orderId} for ৳${finalAmount.toLocaleString('en-BD')} was submitted and is pending verification.`,
+            type: 'info',
+            link: '/admin/payments',
+            actionUrl: '/admin/payments',
+            relatedEntityType: 'payment',
+            relatedEntityId: paymentOrder._id ? paymentOrder._id.toString() : orderId,
+          });
+        }
+      } catch {}
+
       return res.status(201).json({
         success: true,
         message: 'Payment details submitted successfully! Your order is pending verification (approx. 1–2 hours).',
@@ -427,6 +444,22 @@ export const submitPaymentOrder = async (req, res, next) => {
         type: 'info',
         link: '/student/wallet',
       });
+
+      try {
+        const admins = await devStore.findAdmins();
+        for (const admin of admins) {
+          await devStore.createNotification({
+            user: admin._id,
+            title: 'New Payment Verification Request',
+            message: `A new payment order ${orderId} for ৳${finalAmount.toLocaleString('en-BD')} was submitted and is pending verification.`,
+            type: 'info',
+            link: '/admin/payments',
+            actionUrl: '/admin/payments',
+            relatedEntityType: 'payment',
+            relatedEntityId: paymentOrder._id ? paymentOrder._id.toString() : orderId,
+          });
+        }
+      } catch {}
 
       return res.status(201).json({
         success: true,

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 
 const STATUS_MAP = {
   PENDING: { label: "Pending Response", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
@@ -16,11 +17,20 @@ const STATUS_MAP = {
 };
 
 export default function AdminPartnerships() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedConn, setSelectedConn] = useState(null);
+
+  const handleOpenConn = (conn) => {
+    setSelectedConn(conn);
+    if (conn && !conn.isSeenByAdmin) {
+      conn.isSeenByAdmin = true;
+      markEntityAsSeen("partnership", conn._id);
+    }
+  };
 
   // Status update modal
   const [actionModal, setActionModal] = useState(null); // { conn, targetStatus }
@@ -125,19 +135,27 @@ export default function AdminPartnerships() {
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar w-full sm:w-auto">
-          {["all", "PENDING", "ACCEPTED", "REJECTED", "BLOCKED"].map((st) => (
-            <button
-              key={st}
-              onClick={() => setFilter(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
-                filter === st
-                  ? "bg-cyan-600/30 text-cyan-300 border border-cyan-500/30"
-                  : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
-              }`}
-            >
-              {st === "all" ? "All Partnerships" : STATUS_MAP[st]?.label || st}
-            </button>
-          ))}
+          {["all", "PENDING", "ACCEPTED", "REJECTED", "BLOCKED"].map((st) => {
+            const count = getStatusCount("partnerships", st);
+            return (
+              <button
+                key={st}
+                onClick={() => setFilter(st)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                  filter === st
+                    ? "bg-cyan-600/30 text-cyan-300 border border-cyan-500/30"
+                    : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
+                }`}
+              >
+                <span>{st === "all" ? "All Partnerships" : STATUS_MAP[st]?.label || st}</span>
+                {count > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    [{count}]
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -174,10 +192,16 @@ export default function AdminPartnerships() {
               ) : (
                 filtered.map((c) => {
                   const statusInfo = STATUS_MAP[c.status] || STATUS_MAP.PENDING;
+                  const isUnseen = !c.isSeenByAdmin;
                   return (
                     <tr
                       key={c._id}
-                      className="border-b border-white/4 hover:bg-white/2 transition-colors text-xs text-slate-300"
+                      onClick={() => handleOpenConn(c)}
+                      className={`border-b border-white/4 transition-colors text-xs text-slate-300 cursor-pointer ${
+                        isUnseen
+                          ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                          : "hover:bg-white/2"
+                      }`}
                     >
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2.5">

@@ -6,15 +6,25 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 
 const STAGES = ["Submitted", "Documents Pending", "In Review", "Accepted", "Rejected", "Waitlisted"];
 
 export default function AdminApplications() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stageFilter, setStageFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedApp, setSelectedApp] = useState(null);
+
+  const handleOpenApp = (app) => {
+    setSelectedApp(app);
+    if (app && !app.isSeenByAdmin) {
+      app.isSeenByAdmin = true;
+      markEntityAsSeen("application", app._id);
+    }
+  };
 
   // Status update modal
   const [editModal, setEditModal] = useState(null); // application object
@@ -129,27 +139,40 @@ export default function AdminApplications() {
         <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar w-full sm:w-auto">
           <button
             onClick={() => setStageFilter("all")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap flex items-center gap-1.5 ${
               stageFilter === "all"
                 ? "bg-blue-600/30 text-blue-300 border border-blue-500/30"
                 : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
             }`}
           >
-            All Stages
+            <span>All Stages</span>
+            {getStatusCount("applications", "all") > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                [{getStatusCount("applications", "all")}]
+              </span>
+            )}
           </button>
-          {STAGES.map((st) => (
-            <button
-              key={st}
-              onClick={() => setStageFilter(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
-                stageFilter === st
-                  ? "bg-blue-600/30 text-blue-300 border border-blue-500/30"
-                  : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
-              }`}
-            >
-              {st}
-            </button>
-          ))}
+          {STAGES.map((st) => {
+            const count = getStatusCount("applications", st);
+            return (
+              <button
+                key={st}
+                onClick={() => setStageFilter(st)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                  stageFilter === st
+                    ? "bg-blue-600/30 text-blue-300 border border-blue-500/30"
+                    : "bg-white/4 text-slate-400 border border-white/8 hover:bg-white/8"
+                }`}
+              >
+                <span>{st}</span>
+                {count > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    [{count}]
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -184,11 +207,18 @@ export default function AdminApplications() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((app) => (
-                  <tr
-                    key={app._id}
-                    className="border-b border-white/4 hover:bg-white/2 transition-colors text-xs text-slate-300"
-                  >
+                filtered.map((app) => {
+                  const isUnseen = !app.isSeenByAdmin;
+                  return (
+                    <tr
+                      key={app._id}
+                      onClick={() => handleOpenApp(app)}
+                      className={`border-b border-white/4 transition-colors text-xs text-slate-300 cursor-pointer ${
+                        isUnseen
+                          ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                          : "hover:bg-white/2"
+                      }`}
+                    >
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center font-bold text-blue-300 text-xs flex-shrink-0">
@@ -259,8 +289,8 @@ export default function AdminApplications() {
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              }))}
             </tbody>
           </table>
         </div>

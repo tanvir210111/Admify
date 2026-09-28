@@ -16,6 +16,7 @@ import {
   Filter,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
 const fade = {
@@ -24,6 +25,7 @@ const fade = {
 };
 
 export default function AdminSupport() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [conversations, setConversations] = useState([]);
   const [selectedConv, setSelectedConv] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -58,6 +60,10 @@ export default function AdminSupport() {
     setSelectedConv(conv);
     const sid = conv.sessionId || conv.id || conv._id;
     if (!sid) return;
+    if (!conv.isSeenByAdmin) {
+      conv.isSeenByAdmin = true;
+      markEntityAsSeen("support", sid);
+    }
     try {
       setLoadingMessages(true);
       const res = await api.get(`/api/admin/support/conversations/${sid}`);
@@ -155,19 +161,27 @@ export default function AdminSupport() {
               />
             </div>
             <div className="flex items-center gap-1">
-              {["all", "needs_agent", "open", "resolved"].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition capitalize ${
-                    statusFilter === st
-                      ? "bg-violet-600 text-white"
-                      : "bg-slate-800/80 text-slate-400 hover:text-white"
-                  }`}
-                >
-                  {st.replace("_", " ")}
-                </button>
-              ))}
+              {["all", "needs_agent", "open", "resolved"].map((st) => {
+                const count = getStatusCount("supportInbox", st);
+                return (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st)}
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition capitalize flex items-center gap-1 ${
+                      statusFilter === st
+                        ? "bg-violet-600 text-white"
+                        : "bg-slate-800/80 text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <span>{st.replace("_", " ")}</span>
+                    {count > 0 && (
+                      <span className="px-1 py-0.1 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300">
+                        [{count}]
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -184,6 +198,7 @@ export default function AdminSupport() {
             ) : (
               filtered.map((c) => {
                 const isSelected = selectedConv?.id === c.id;
+                const isUnseen = !c.isSeenByAdmin;
                 return (
                   <div
                     key={c.id}
@@ -191,6 +206,8 @@ export default function AdminSupport() {
                     className={`p-3.5 cursor-pointer transition flex items-start gap-3 ${
                       isSelected
                         ? "bg-violet-900/20 border-l-4 border-violet-500"
+                        : isUnseen
+                        ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
                         : "hover:bg-slate-800/40"
                     }`}
                   >

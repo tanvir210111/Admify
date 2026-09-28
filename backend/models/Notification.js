@@ -17,7 +17,6 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['info', 'success', 'warning', 'alert'],
       default: 'info',
     },
     read: {
@@ -25,6 +24,20 @@ const notificationSchema = new mongoose.Schema(
       default: false,
     },
     link: {
+      type: String,
+      default: '',
+    },
+    relatedEntityType: {
+      type: String,
+      default: '',
+      index: true,
+    },
+    relatedEntityId: {
+      type: String,
+      default: '',
+      index: true,
+    },
+    actionUrl: {
       type: String,
       default: '',
     },

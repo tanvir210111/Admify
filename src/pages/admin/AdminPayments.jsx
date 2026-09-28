@@ -18,11 +18,12 @@ import {
 } from "lucide-react";
 import { formatBDT } from "../../utils/creditConstants";
 import { api } from "../../lib/api";
-import { triggerAdminBadgeRefresh } from "../../context/AdminBadgeContext";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 
 const fade = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
 
 export default function AdminPayments() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -217,19 +218,27 @@ export default function AdminPayments() {
 
         <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
           <Filter className="w-4 h-4 text-slate-500 shrink-0" />
-          {["all", "PENDING_VERIFICATION", "APPROVED", "REJECTED"].map(status => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                statusFilter === status
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-900/30"
-                  : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
-              }`}
-            >
-              {status === "all" ? "All Statuses" : status.replace("_", " ")}
-            </button>
-          ))}
+          {["all", "PENDING_VERIFICATION", "APPROVED", "REJECTED"].map(status => {
+            const count = getStatusCount("payments", status);
+            return (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  statusFilter === status
+                    ? "bg-purple-600 text-white shadow-md shadow-purple-900/30"
+                    : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
+                }`}
+              >
+                <span>{status === "all" ? "All Statuses" : status.replace("_", " ")}</span>
+                {count > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    [{count}]
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -269,9 +278,23 @@ export default function AdminPayments() {
                   const isPending = order.status === "PENDING_VERIFICATION";
                   const isApproved = order.status === "APPROVED";
                   const isRejected = order.status === "REJECTED";
+                  const isUnseen = !order.isSeenByAdmin;
 
                   return (
-                    <tr key={order._id} className="hover:bg-slate-900/30 transition-colors">
+                    <tr
+                      key={order._id}
+                      onClick={() => {
+                        if (!order.isSeenByAdmin) {
+                          order.isSeenByAdmin = true;
+                          markEntityAsSeen("payment", order._id);
+                        }
+                      }}
+                      className={`transition-colors cursor-pointer ${
+                        isUnseen
+                          ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                          : "hover:bg-slate-900/30"
+                      }`}
+                    >
                       <td className="px-4 py-3.5">
                         <div className="font-mono font-bold text-purple-300">{order.orderId}</div>
                         <div className="text-[11px] text-slate-500 mt-0.5">

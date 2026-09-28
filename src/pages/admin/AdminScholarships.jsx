@@ -6,13 +6,22 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { api } from "../../lib/api";
+import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 
 export default function AdminScholarships() {
+  const { getStatusCount, markEntityAsSeen } = useAdminBadges();
   const [scholarships, setScholarships] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null); // null or { isNew, data }
   const [formLoading, setFormLoading] = useState(false);
+
+  const handleOpenScholarship = (s) => {
+    if (s && !s.isSeenByAdmin) {
+      s.isSeenByAdmin = true;
+      markEntityAsSeen("scholarship", s._id || s.id);
+    }
+  };
 
   const [form, setForm] = useState({
     name: "",
@@ -197,46 +206,61 @@ export default function AdminScholarships() {
                   </td>
                 </tr>
               ) : (
-                scholarships.map((s) => (
-                  <tr
-                    key={s._id || s.id || s.name}
-                    className="border-b border-white/4 hover:bg-white/2 transition-colors text-xs text-slate-300"
-                  >
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <Award className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                        <div>
-                          <p className="font-bold text-white text-xs">{s.name}</p>
-                          <p className="text-[10px] text-slate-400">{s.studyLevel || "Undergraduate / Graduate"}</p>
+                scholarships.map((s) => {
+                  const isUnseen = !s.isSeenByAdmin;
+                  return (
+                    <tr
+                      key={s._id || s.id || s.name}
+                      onClick={() => handleOpenScholarship(s)}
+                      className={`border-b border-white/4 transition-colors text-xs text-slate-300 cursor-pointer ${
+                        isUnseen
+                          ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] hover:bg-violet-950/40"
+                          : "hover:bg-white/2"
+                      }`}
+                    >
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <Award className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                          <div>
+                            <p className="font-bold text-white text-xs">{s.name}</p>
+                            <p className="text-[10px] text-slate-400">{s.studyLevel || "Undergraduate / Graduate"}</p>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-200 font-medium">{s.university || s.provider || "Global"}</td>
-                    <td className="px-4 py-3.5">
-                      <span className="font-mono text-emerald-400 font-bold">{s.amount}</span>
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-400">{s.country || "Global"}</td>
-                    <td className="px-4 py-3.5 font-mono text-slate-300">{s.deadline || "Ongoing"}</td>
-                    <td className="px-4 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => openEditModal(s)}
-                          className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
-                          title="Edit Scholarship"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteScholarship(s._id || s.id, s.name)}
-                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors"
-                          title="Delete Scholarship"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-200 font-medium">{s.university || s.provider || "Global"}</td>
+                      <td className="px-4 py-3.5">
+                        <span className="font-mono text-emerald-400 font-bold">{s.amount}</span>
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-400">{s.country || "Global"}</td>
+                      <td className="px-4 py-3.5 font-mono text-slate-300">{s.deadline || "Ongoing"}</td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenScholarship(s);
+                              openEditModal(s);
+                            }}
+                            className="p-1.5 bg-white/4 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
+                            title="Edit Scholarship"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteScholarship(s._id || s.id, s.name);
+                            }}
+                            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors"
+                            title="Delete Scholarship"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

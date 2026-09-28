@@ -19,6 +19,7 @@ import adminRoutes from './routes/adminRoutes.js';
 import agencyRoutes from './routes/agencyRoutes.js';
 import agentRoutes from './routes/agentRoutes.js';
 import universityRepRoutes from './routes/universityRepRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
 
 // Middleware imports
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
@@ -140,6 +141,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/agency', agencyRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/university-rep', universityRepRoutes);
+app.use('/api/reports', reportRoutes);
 
 // ── Error Handling Middleware ────────────────────────────────────────────────
 app.use(notFound);
