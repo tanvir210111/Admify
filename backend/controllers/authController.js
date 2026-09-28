@@ -98,21 +98,26 @@ export const register = async (req, res, next) => {
           agencyVerificationStatus: 'PENDING',
         });
 
-        agencyProfile = await AgencyProfile.create({
-          user: agencyUser._id,
-          agencyName: cleanName,
-          officialBusinessEmail: cleanEmail,
-          authorizedPerson: {
-            phone: cleanPhone,
-            email: cleanEmail,
-          },
-          applicationId,
-          verificationStatus: 'PENDING',
-          isDraft: true,
-        });
+        try {
+          agencyProfile = await AgencyProfile.create({
+            user: agencyUser._id,
+            agencyName: cleanName,
+            officialBusinessEmail: cleanEmail,
+            authorizedPerson: {
+              phone: cleanPhone,
+              email: cleanEmail,
+            },
+            applicationId,
+            verificationStatus: 'PENDING',
+            isDraft: true,
+          });
 
-        agencyUser.agencyProfile = agencyProfile._id;
-        await agencyUser.save();
+          agencyUser.agencyProfile = agencyProfile._id;
+          await agencyUser.save();
+        } catch (profileErr) {
+          await User.findByIdAndDelete(agencyUser._id);
+          throw profileErr;
+        }
       } else {
         agencyUser = await devStore.createUser({
           name: cleanName,
@@ -127,22 +132,27 @@ export const register = async (req, res, next) => {
           agencyVerificationStatus: 'PENDING',
         });
 
-        agencyProfile = await devStore.saveAgencyProfile({
-          user: agencyUser._id,
-          agencyName: cleanName,
-          officialBusinessEmail: cleanEmail,
-          authorizedPerson: {
-            phone: cleanPhone,
-            email: cleanEmail,
-          },
-          applicationId,
-          verificationStatus: 'PENDING',
-          isDraft: true,
-        });
+        try {
+          agencyProfile = await devStore.saveAgencyProfile({
+            user: agencyUser._id,
+            agencyName: cleanName,
+            officialBusinessEmail: cleanEmail,
+            authorizedPerson: {
+              phone: cleanPhone,
+              email: cleanEmail,
+            },
+            applicationId,
+            verificationStatus: 'PENDING',
+            isDraft: true,
+          });
 
-        await devStore.updateUser(agencyUser._id, {
-          agencyProfile: agencyProfile._id,
-        });
+          await devStore.updateUser(agencyUser._id, {
+            agencyProfile: agencyProfile._id,
+          });
+        } catch (profileErr) {
+          await devStore.deleteUser(agencyUser._id);
+          throw profileErr;
+        }
       }
 
       // Generate temporary registration token for verification submission (valid 24h)
@@ -216,32 +226,37 @@ export const register = async (req, res, next) => {
           universityRepApplicationId: applicationId,
         });
 
-        uniRepApp = await UniversityRepresentativeApplication.create({
-          applicationId,
-          user: uniRepUser._id,
-          university: {
-            name: req.body.universityName?.trim() || '',
-            legalName: req.body.officialLegalName?.trim() || req.body.universityName?.trim() || '',
-            logo: '',
-            website: '',
-            country: '',
-            city: '',
-            type: 'Public',
-            domain: cleanEmail.includes('@') ? cleanEmail.split('@')[1] : '',
-            matchedUniversityId: null,
-          },
-          representative: {
-            fullName: cleanName,
-            designation: 'International Admissions Officer',
-            officialEmail: cleanEmail,
-            phone: cleanPhone,
-            employeeId: '',
-          },
-          status: 'PENDING',
-        });
+        try {
+          uniRepApp = await UniversityRepresentativeApplication.create({
+            applicationId,
+            user: uniRepUser._id,
+            university: {
+              name: req.body.universityName?.trim() || '',
+              legalName: req.body.officialLegalName?.trim() || req.body.universityName?.trim() || '',
+              logo: '',
+              website: '',
+              country: '',
+              city: '',
+              type: 'Public',
+              domain: cleanEmail.includes('@') ? cleanEmail.split('@')[1] : '',
+              matchedUniversityId: null,
+            },
+            representative: {
+              fullName: cleanName,
+              designation: 'International Admissions Officer',
+              officialEmail: cleanEmail,
+              phone: cleanPhone,
+              employeeId: '',
+            },
+            status: 'PENDING',
+          });
 
-        uniRepUser.universityRepApplication = uniRepApp._id;
-        await uniRepUser.save();
+          uniRepUser.universityRepApplication = uniRepApp._id;
+          await uniRepUser.save();
+        } catch (appErr) {
+          await User.findByIdAndDelete(uniRepUser._id);
+          throw appErr;
+        }
       } else {
         uniRepUser = await devStore.createUser({
           name: cleanName,
@@ -257,33 +272,38 @@ export const register = async (req, res, next) => {
           universityRepApplicationId: applicationId,
         });
 
-        uniRepApp = await devStore.createUniRepApplication({
-          applicationId,
-          user: uniRepUser._id,
-          university: {
-            name: req.body.universityName?.trim() || '',
-            legalName: req.body.officialLegalName?.trim() || req.body.universityName?.trim() || '',
-            logo: '',
-            website: '',
-            country: '',
-            city: '',
-            type: 'Public',
-            domain: cleanEmail.includes('@') ? cleanEmail.split('@')[1] : '',
-            matchedUniversityId: null,
-          },
-          representative: {
-            fullName: cleanName,
-            designation: 'International Admissions Officer',
-            officialEmail: cleanEmail,
-            phone: cleanPhone,
-            employeeId: '',
-          },
-          status: 'PENDING',
-        });
+        try {
+          uniRepApp = await devStore.createUniRepApplication({
+            applicationId,
+            user: uniRepUser._id,
+            university: {
+              name: req.body.universityName?.trim() || '',
+              legalName: req.body.officialLegalName?.trim() || req.body.universityName?.trim() || '',
+              logo: '',
+              website: '',
+              country: '',
+              city: '',
+              type: 'Public',
+              domain: cleanEmail.includes('@') ? cleanEmail.split('@')[1] : '',
+              matchedUniversityId: null,
+            },
+            representative: {
+              fullName: cleanName,
+              designation: 'International Admissions Officer',
+              officialEmail: cleanEmail,
+              phone: cleanPhone,
+              employeeId: '',
+            },
+            status: 'PENDING',
+          });
 
-        await devStore.updateUser(uniRepUser._id, {
-          universityRepApplication: uniRepApp._id,
-        });
+          await devStore.updateUser(uniRepUser._id, {
+            universityRepApplication: uniRepApp._id,
+          });
+        } catch (appErr) {
+          await devStore.deleteUser(uniRepUser._id);
+          throw appErr;
+        }
       }
 
       // Generate temporary registration token for verification submission (valid 24h)

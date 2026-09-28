@@ -10,6 +10,13 @@ const documentFileSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Verification fields are required once the application moves past initial PENDING creation
+// (i.e. when submitted for review, approved, or active in the final verified profile)
+const isVerificationSubmitted = function () {
+  const root = typeof this.ownerDocument === 'function' ? this.ownerDocument() : this;
+  return Boolean(root && root.status && root.status !== 'PENDING');
+};
+
 const universityRepresentativeApplicationSchema = new mongoose.Schema(
   {
     applicationId: {
@@ -28,19 +35,50 @@ const universityRepresentativeApplicationSchema = new mongoose.Schema(
 
     // ── SECTION A: UNIVERSITY INFORMATION ──────────────────────────────────
     university: {
-      name: { type: String, required: true, trim: true },
-      legalName: { type: String, required: true, trim: true },
+      name: {
+        type: String,
+        required: [isVerificationSubmitted, 'Path `university.name` is required.'],
+        default: '',
+        trim: true,
+      },
+      legalName: {
+        type: String,
+        required: [isVerificationSubmitted, 'Path `university.legalName` is required.'],
+        default: '',
+        trim: true,
+      },
       logo: { type: String, default: '' },
-      website: { type: String, required: true, trim: true },
-      country: { type: String, required: true, trim: true },
-      city: { type: String, required: true, trim: true },
+      website: {
+        type: String,
+        required: [isVerificationSubmitted, 'Path `university.website` is required.'],
+        default: '',
+        trim: true,
+      },
+      country: {
+        type: String,
+        required: [isVerificationSubmitted, 'Path `university.country` is required.'],
+        default: '',
+        trim: true,
+      },
+      city: {
+        type: String,
+        required: [isVerificationSubmitted, 'Path `university.city` is required.'],
+        default: '',
+        trim: true,
+      },
       type: {
         type: String,
         enum: ['Public', 'Private', 'Government', 'Other'],
         required: true,
         default: 'Public',
       },
-      domain: { type: String, required: true, lowercase: true, trim: true },
+      domain: {
+        type: String,
+        required: [isVerificationSubmitted, 'Path `university.domain` is required.'],
+        default: '',
+        lowercase: true,
+        trim: true,
+      },
       matchedUniversityId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'University',
@@ -65,8 +103,13 @@ const universityRepresentativeApplicationSchema = new mongoose.Schema(
         default: 'International Admissions Officer',
       },
       officialEmail: { type: String, required: true, lowercase: true, trim: true },
-      phone: { type: String, required: true, trim: true },
-      employeeId: { type: String, required: true, trim: true },
+      phone: { type: String, default: '', trim: true },
+      employeeId: {
+        type: String,
+        required: [isVerificationSubmitted, 'Path `representative.employeeId` is required.'],
+        default: '',
+        trim: true,
+      },
     },
 
     // ── SECTION C: AUTHORIZATION & DOCUMENTS ───────────────────────────────
