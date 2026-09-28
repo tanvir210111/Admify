@@ -11,6 +11,7 @@ function Login() {
   const { user, login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [password, setPassword] = useState("");
   
   const [email, setEmail] = useState(() => {
     try {
@@ -71,7 +72,9 @@ function Login() {
           localStorage.removeItem('admify_remembered_email');
           localStorage.removeItem('admify_remembered_role');
         }
-      } catch {}
+      } catch {
+        // Ignore localStorage access failures (e.g. private browsing restrictions)
+      }
 
       toast.success("Welcome back!");
 
