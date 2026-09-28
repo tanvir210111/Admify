@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Application from '../models/Application.js';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
+import StudentSeenItem from '../models/StudentSeenItem.js';
 import devStore from '../utils/devStore.js';
 
 // @desc    Get current user applications
@@ -11,13 +12,39 @@ export const getMyApplications = async (req, res, next) => {
   try {
     let applications;
     if (mongoose.connection.readyState === 1) {
-      applications = await Application.find({ user: req.user._id }).sort({ createdAt: -1 });
+      const rawApps = await Application.find({ user: req.user._id }).sort({ createdAt: -1 }).lean();
+      const seenItems = await StudentSeenItem.find({ user: req.user._id }).lean();
+      const seenMap = new Map();
+      for (const s of seenItems) {
+        seenMap.set(`${s.entityType}:${s.entityId}`, true);
+        seenMap.set(s.entityId, true);
+      }
+
+      applications = rawApps.map((a) => {
+        const docId = a._id?.toString();
+        const isSeen = a.isSeenByStudent !== false || seenMap.has(`application:${docId}`) || seenMap.has(docId);
+        return {
+          ...a,
+          isSeenByStudent: isSeen,
+        };
+      });
     } else {
-      applications = await devStore.findApplications({ user: req.user._id });
+      const rawApps = await devStore.findApplications({ user: req.user._id });
+      const db = devStore.read();
+      const seenList = (db.studentSeenItems || []).filter((s) => s.user === req.user._id.toString());
+      applications = rawApps.map((a) => {
+        const docId = a._id?.toString() || a.id?.toString();
+        const isSeen = a.isSeenByStudent !== false || seenList.some((s) => s.entityId === docId);
+        return {
+          ...a,
+          isSeenByStudent: isSeen,
+        };
+      });
     }
     return res.status(200).json({
       success: true,
       count: applications.length,
+      applications,
       data: { applications },
     });
   } catch (error) {
@@ -184,14 +211,25 @@ export const updateApplicationStatus = async (req, res, next) => {
       if (steps) application.steps = steps;
       if (notes) application.notes = notes;
 
+      application.isSeenByStudent = false;
       await application.save();
 
-      // Notify the applicant
+      // Clear student seen item for this updated application
+      await StudentSeenItem.deleteMany({
+        user: application.user,
+        entityId: application._id.toString(),
+      });
+
+      // Notify the applicant with rich relation metadata
       await Notification.create({
         user: application.user,
         title: 'Application Status Updated',
         message: `Your application for ${application.university} is now: ${application.stage}`,
         type: application.stage === 'Accepted' ? 'success' : 'info',
+        link: '/student/applications',
+        actionUrl: '/student/applications',
+        relatedEntityType: 'application',
+        relatedEntityId: application._id.toString(),
       });
     } else {
       application = await devStore.findApplicationById(req.params.id);
@@ -207,15 +245,26 @@ export const updateApplicationStatus = async (req, res, next) => {
       if (progress !== undefined) updates.progress = progress;
       if (steps) updates.steps = steps;
       if (notes) updates.notes = notes;
+      updates.isSeenByStudent = false;
 
       application = await devStore.updateApplication(req.params.id, updates);
 
-      // Notify the applicant
+      const db = devStore.read();
+      db.studentSeenItems = (db.studentSeenItems || []).filter(
+        (item) => !(item.user === application.user?.toString() && item.entityId === req.params.id.toString())
+      );
+      devStore.write(db);
+
+      // Notify the applicant with rich relation metadata
       await devStore.createNotification({
         userId: application.user,
         title: 'Application Status Updated',
         message: `Your application for ${application.university} is now: ${application.stage}`,
         type: application.stage === 'Accepted' ? 'success' : 'info',
+        link: '/student/applications',
+        actionUrl: '/student/applications',
+        relatedEntityType: 'application',
+        relatedEntityId: application._id ? application._id.toString() : req.params.id,
       });
     }
 

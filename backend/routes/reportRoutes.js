@@ -8,6 +8,8 @@ import User from '../models/User.js';
 
 const router = express.Router();
 
+import StudentSeenItem from '../models/StudentSeenItem.js';
+
 // @route   POST /api/reports
 // @desc    Submit a user report or complaint
 // @access  Private
@@ -38,6 +40,8 @@ router.post('/', protect, async (req, res, next) => {
       status: 'OPEN',
       isSeenByAdmin: false,
       adminSeenAt: null,
+      isSeenByStudent: true,
+      studentSeenAt: new Date(),
       createdAt: new Date(),
     };
 
@@ -98,10 +102,25 @@ router.get('/', protect, async (req, res, next) => {
   try {
     let reports = [];
     if (mongoose.connection.readyState === 1) {
-      reports = await Report.find({ reportedBy: req.user._id }).sort({ createdAt: -1 });
+      const raw = await Report.find({ reportedBy: req.user._id }).sort({ createdAt: -1 });
+      const seenItems = await StudentSeenItem.find({
+        user: req.user._id,
+        entityType: 'report',
+      });
+      const seenMap = new Map(seenItems.map((s) => [s.entityId.toString(), true]));
+      reports = raw.map((r) => {
+        const obj = r.toObject ? r.toObject() : { ...r };
+        obj.isSeenByStudent = seenMap.has(obj._id?.toString()) ? true : (obj.isSeenByStudent !== false);
+        return obj;
+      });
     } else {
       const all = await devStore.findReports();
-      reports = all.filter((r) => r.reportedBy?.toString() === req.user._id.toString());
+      reports = all
+        .filter((r) => r.reportedBy?.toString() === req.user._id.toString())
+        .map((r) => ({
+          ...r,
+          isSeenByStudent: devStore.isStudentEntitySeen(req.user._id, 'report', r._id) ?? (r.isSeenByStudent !== false),
+        }));
     }
 
     return res.status(200).json({

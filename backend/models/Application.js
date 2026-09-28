@@ -98,6 +98,15 @@ const applicationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    isSeenByStudent: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    studentSeenAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,

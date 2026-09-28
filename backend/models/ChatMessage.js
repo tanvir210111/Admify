@@ -38,6 +38,15 @@ const chatMessageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    isSeenByStudent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    studentSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

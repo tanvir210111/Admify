@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { studentService } from "../../services/studentService";
+import { api } from "../../lib/api";
+import { useStudentBadges } from "../../context/StudentBadgeContext";
 import {
   AlertTriangle,
   Flag,
@@ -14,6 +16,7 @@ import {
 import toast from "react-hot-toast";
 
 function StudentReportsPage() {
+  const { markEntityAsSeen, refreshSidebarCounts } = useStudentBadges();
   const [reports, setReports] = useState(() => studentService.getReports());
   const [showModal, setShowModal] = useState(false);
 
@@ -23,21 +26,73 @@ function StudentReportsPage() {
   const [reason, setReason] = useState("Unresponsive communication or delayed filing");
   const [description, setDescription] = useState("");
 
-  const handleSubmit = (e) => {
+  const loadReports = async () => {
+    try {
+      const res = await api.get("/api/reports");
+      if (res?.data?.data?.reports) {
+        const mapped = res.data.data.reports.map((r) => ({
+          _id: r._id,
+          id: r.reportId || r._id,
+          targetType: r.targetType || "Issue",
+          targetName: r.targetName || "Admify Platform",
+          reason: r.title || r.category || "General Inquiry",
+          description: r.description,
+          status: r.status === "RESOLVED" ? "Resolved" : r.status === "IN_REVIEW" ? "Under Review" : "Submitted",
+          date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }) : "Recent",
+          resolutionNote: r.resolutionNote || (r.adminNotes ? r.adminNotes : null),
+          isSeenByStudent: r.isSeenByStudent !== false,
+        }));
+        setReports(mapped);
+        return;
+      }
+    } catch {
+      // Local fallback
+    }
+    const local = studentService.getReports();
+    setReports(local);
+  };
+
+  useEffect(() => {
+    loadReports();
+  }, []);
+
+  const handleReportClick = (rep) => {
+    if (rep.isSeenByStudent === false) {
+      const rId = rep._id || rep.id;
+      markEntityAsSeen("report", rId);
+      setReports((prev) =>
+        prev.map((r) => ((r._id || r.id) === rId ? { ...r, isSeenByStudent: true } : r))
+      );
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!targetName.trim() || !description.trim()) {
       toast.error("Please fill in target name and description.");
       return;
     }
 
-    const updated = studentService.submitReport({
-      targetType,
-      targetName,
-      reason,
-      description,
-    });
+    try {
+      await api.post("/api/reports", {
+        title: reason,
+        description: description.trim(),
+        targetType,
+        targetName: targetName.trim(),
+        category: reason,
+      });
+      await loadReports();
+    } catch {
+      const updated = studentService.submitReport({
+        targetType,
+        targetName,
+        reason,
+        description,
+      });
+      setReports(updated);
+    }
 
-    setReports(updated);
+    refreshSidebarCounts();
     setShowModal(false);
     setTargetName("");
     setDescription("");
@@ -97,55 +152,68 @@ function StudentReportsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {reports.map((rep) => (
-              <div
-                key={rep.id}
-                className="p-6 rounded-3xl bg-[#0B1228] border border-slate-800 space-y-4 shadow-lg"
-              >
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-800">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
-                      <ShieldAlert className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-white">Report #{rep.id}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                          {rep.targetType}: {rep.targetName}
-                        </span>
+            {reports.map((rep) => {
+              const isUnseen = rep.isSeenByStudent === false;
+              return (
+                <div
+                  key={rep.id || rep._id}
+                  onClick={() => handleReportClick(rep)}
+                  className={`p-6 rounded-3xl transition-all space-y-4 cursor-pointer ${
+                    isUnseen
+                      ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] border border-violet-500/40 hover:border-violet-400/60"
+                      : "bg-[#0B1228] border border-slate-800 shadow-lg hover:border-slate-700"
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
+                        <ShieldAlert className="w-4 h-4" />
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5 font-medium">{rep.reason}</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white">Report #{rep.id}</span>
+                          {isUnseen && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40 animate-pulse">
+                              NEW UPDATE
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            {rep.targetType}: {rep.targetName}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5 font-medium">{rep.reason}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">{rep.date}</span>
+                      <span
+                        className={`px-3 py-1 rounded-xl text-xs font-bold border ${
+                          rep.status === "Resolved"
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                            : rep.status === "Under Review"
+                            ? "bg-blue-500/15 text-blue-400 border-blue-500/30"
+                            : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                        }`}
+                      >
+                        {rep.status}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">{rep.date}</span>
-                    <span
-                      className={`px-3 py-1 rounded-xl text-xs font-bold border ${
-                        rep.status === "Resolved"
-                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                          : rep.status === "Under Review"
-                          ? "bg-blue-500/15 text-blue-400 border-blue-500/30"
-                          : "bg-amber-500/15 text-amber-400 border-amber-500/30"
-                      }`}
-                    >
-                      {rep.status}
-                    </span>
-                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">{rep.description}</p>
+
+                  {rep.resolutionNote && (
+                    <div className="p-3.5 rounded-2xl bg-[#07142D] border border-slate-800/80 text-xs">
+                      <span className="text-[10px] uppercase font-bold text-emerald-400 block mb-1">
+                        Admin Resolution Feedback
+                      </span>
+                      <p className="text-slate-300">{rep.resolutionNote}</p>
+                    </div>
+                  )}
                 </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed">{rep.description}</p>
-
-                {rep.resolutionNote && (
-                  <div className="p-3.5 rounded-2xl bg-[#07142D] border border-slate-800/80 text-xs">
-                    <span className="text-[10px] uppercase font-bold text-emerald-400 block mb-1">
-                      Admin Resolution Feedback
-                    </span>
-                    <p className="text-slate-300">{rep.resolutionNote}</p>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useStudentBadges } from "../../context/StudentBadgeContext";
 import { api } from "../../lib/api";
 import { studentService, REGISTERED_AGENCIES } from "../../services/studentService";
 import {
@@ -28,6 +29,7 @@ import toast from "react-hot-toast";
 
 function AgencyAssistancePage() {
   const { user, updateUser } = useAuth();
+  const { sidebarCounts, markEntityAsSeen } = useStudentBadges();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const targetUniPrefill = searchParams.get("targetUni") || "";
@@ -204,7 +206,18 @@ function AgencyAssistancePage() {
 
       {/* ── Active Service Order View (If Student Activated Agency Service) ── */}
       {agencyState?.hasActiveRequest ? (
-        <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#0B1228] via-[#07142D] to-[#0B1228] border border-cyan-500/40 space-y-6 shadow-xl">
+        <div
+          onClick={() => {
+            if ((sidebarCounts?.agencyAssistance || 0) > 0) {
+              markEntityAsSeen("agency_order", activeRequest?.id || "active");
+            }
+          }}
+          className={`p-6 sm:p-8 rounded-3xl space-y-6 shadow-xl transition-all cursor-pointer ${
+            (sidebarCounts?.agencyAssistance || 0) > 0
+              ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] border border-violet-500/40"
+              : "bg-gradient-to-br from-[#0B1228] via-[#07142D] to-[#0B1228] border border-cyan-500/40"
+          }`}
+        >
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-5">
             <div>
               <div className="flex items-center gap-2">
@@ -213,6 +226,11 @@ function AgencyAssistancePage() {
                     ? "Full Agency Managed Service (1,500 CR)"
                     : "Agency Assistance (800 CR)"}
                 </span>
+                {(sidebarCounts?.agencyAssistance || 0) > 0 && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40 animate-pulse">
+                    NEW UPDATE
+                  </span>
+                )}
                 <span className="text-xs text-slate-400">Order ID: <strong className="text-white font-mono">{activeRequest?.id}</strong></span>
               </div>
               <h2 className="text-xl font-extrabold text-white mt-2">

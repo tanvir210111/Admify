@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { studentService } from "../../services/studentService";
+import { useStudentBadges } from "../../context/StudentBadgeContext";
 import {
   FileCheck2,
   Clock,
@@ -21,6 +22,7 @@ function ApplicationTrackingPage() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
+  const { markEntityAsSeen, getStatusCount, sidebarCounts } = useStudentBadges();
 
   useEffect(() => {
     let isMounted = true;
@@ -40,6 +42,15 @@ function ApplicationTrackingPage() {
       isMounted = false;
     };
   }, []);
+
+  const handleCardClick = (app) => {
+    if (app.isSeenByStudent === false) {
+      markEntityAsSeen('application', app._id || app.id);
+      setApplications((prev) =>
+        prev.map((a) => (a._id === app._id || a.id === app.id ? { ...a, isSeenByStudent: true } : a))
+      );
+    }
+  };
 
   const filtered = applications.filter((app) => {
     if (activeTab === "direct") return app.applicationType === "direct" || !app.applicationType;
@@ -82,37 +93,52 @@ function ApplicationTrackingPage() {
         </div>
       </div>
 
-      {/* Filter Tabs */}
+      {/* Filter Tabs with Unseen Badges */}
       <div className="flex items-center gap-2">
         <button
           onClick={() => setActiveTab("all")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
             activeTab === "all"
               ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
               : "bg-[#0B1228] text-slate-400 border-slate-800 hover:text-white"
           }`}
         >
-          All Applications ({applications.length})
+          <span>All Applications ({applications.length})</span>
+          {sidebarCounts.applications > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-violet-500/20 text-violet-300 font-extrabold border border-violet-500/30">
+              [{sidebarCounts.applications}]
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab("direct")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
             activeTab === "direct"
               ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
               : "bg-[#0B1228] text-slate-400 border-slate-800 hover:text-white"
           }`}
         >
-          Direct Applications
+          <span>Direct Applications</span>
+          {sidebarCounts.directApplications > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-violet-500/20 text-violet-300 font-extrabold border border-violet-500/30">
+              [{sidebarCounts.directApplications}]
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab("agency")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
             activeTab === "agency"
               ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
               : "bg-[#0B1228] text-slate-400 border-slate-800 hover:text-white"
           }`}
         >
-          Agency Handled Applications
+          <span>Agency Handled Applications</span>
+          {getStatusCount('applications', 'agency') > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-violet-500/20 text-violet-300 font-extrabold border border-violet-500/30">
+              [{getStatusCount('applications', 'agency')}]
+            </span>
+          )}
         </button>
       </div>
 
@@ -157,10 +183,17 @@ function ApplicationTrackingPage() {
       ) : (
         /* Applications List with Timeline */
         <div className="space-y-6">
-        {filtered.map((app) => (
+        {filtered.map((app) => {
+          const isUnseen = app.isSeenByStudent === false;
+          return (
           <div
             key={app._id || app.id}
-            className="p-6 sm:p-8 rounded-3xl bg-[#0B1228] border border-slate-800 space-y-6 shadow-xl"
+            onClick={() => handleCardClick(app)}
+            className={`p-6 sm:p-8 rounded-3xl border space-y-6 shadow-xl transition-all cursor-pointer ${
+              isUnseen
+                ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] border-violet-500/40"
+                : "bg-[#0B1228] border-slate-800"
+            }`}
           >
             {/* Top row */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-800">
@@ -277,7 +310,8 @@ function ApplicationTrackingPage() {
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       )}
     </div>

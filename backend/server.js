@@ -20,6 +20,7 @@ import agencyRoutes from './routes/agencyRoutes.js';
 import agentRoutes from './routes/agentRoutes.js';
 import universityRepRoutes from './routes/universityRepRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
+import studentRoutes from './routes/studentRoutes.js';
 
 // Middleware imports
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
@@ -142,6 +143,7 @@ app.use('/api/agency', agencyRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/university-rep', universityRepRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/student', studentRoutes);
 
 // ── Error Handling Middleware ────────────────────────────────────────────────
 app.use(notFound);

@@ -310,6 +310,7 @@ class DevStore {
           'auditLogs',
           'chatMessages',
           'adminSeenItems',
+          'studentSeenItems',
         ];
 
         for (const k of arraysToCheck) {
@@ -2280,6 +2281,7 @@ class DevStore {
     if (!Array.isArray(db.chatMessages)) db.chatMessages = [];
     const newMsg = {
       _id: new mongoose.Types.ObjectId().toString(),
+      isSeenByStudent: data.sender === 'user' ? true : Boolean(data.isSeenByStudent),
       ...data,
       user: data.user?.toString(),
       createdAt: new Date().toISOString(),
@@ -2689,6 +2691,101 @@ class DevStore {
           (n.relatedEntityType && n.relatedEntityType.toLowerCase() === entityType.toLowerCase() && n.link?.includes(idStr))
         ) {
           n.read = true;
+        }
+      }
+    }
+
+    this.write(db);
+    return true;
+  }
+
+  // ── Student Seen Tracking Methods ─────────────────────────────────────────
+  async isStudentEntitySeen(userId, entityType, entityId) {
+    if (!userId || !entityType || !entityId) return false;
+    const db = this.read();
+    const items = db.studentSeenItems || [];
+    const uidStr = userId.toString();
+    const idStr = entityId.toString();
+    return items.some(
+      (item) => item.user === uidStr && item.entityType === entityType && item.entityId === idStr
+    );
+  }
+
+  async markStudentEntitySeen(userId, entityType, entityId) {
+    if (!userId || !entityType || !entityId) return false;
+    const db = this.read();
+    db.studentSeenItems = db.studentSeenItems || [];
+    const uidStr = userId.toString();
+    const idStr = entityId.toString();
+    const nowIso = new Date().toISOString();
+
+    const existing = db.studentSeenItems.find(
+      (item) => item.user === uidStr && item.entityType === entityType && item.entityId === idStr
+    );
+    if (!existing) {
+      db.studentSeenItems.push({
+        _id: new mongoose.Types.ObjectId().toString(),
+        user: uidStr,
+        entityType,
+        entityId: idStr,
+        seenAt: nowIso,
+        createdAt: nowIso,
+      });
+    }
+
+    const collectionMap = {
+      applications: 'applications',
+      application: 'applications',
+      direct_application: 'applications',
+      directApplications: 'applications',
+      agency_order: 'agencyServiceOrders',
+      agency_service_order: 'agencyServiceOrders',
+      agencyAssistance: 'agencyServiceOrders',
+      reports: 'reports',
+      report: 'reports',
+      support: 'chatMessages',
+      message: 'chatMessages',
+      chat_message: 'chatMessages',
+      messages: 'chatMessages',
+      scholarships: 'scholarships',
+      scholarship: 'scholarships',
+      notifications: 'notifications',
+      notification: 'notifications',
+    };
+
+    const collName = collectionMap[entityType];
+    if (collName && Array.isArray(db[collName])) {
+      if (collName === 'chatMessages') {
+        for (const msg of db.chatMessages) {
+          if ((msg.sessionId === idStr || msg._id === idStr) && (msg.user?.toString() === uidStr || !msg.user)) {
+            msg.isSeenByStudent = true;
+            msg.studentSeenAt = nowIso;
+          }
+        }
+      } else {
+        const doc = db[collName].find(
+          (d) =>
+            (d._id === idStr || d.id === idStr || d.applicationId === idStr || d.orderId === idStr || d.reportId === idStr) &&
+            (d.user?.toString() === uidStr || d.reportedBy?.toString() === uidStr || !d.user)
+        );
+        if (doc) {
+          doc.isSeenByStudent = true;
+          doc.studentSeenAt = nowIso;
+        }
+      }
+    }
+
+    // Automatically mark any matching student notification as read
+    if (Array.isArray(db.notifications)) {
+      for (const n of db.notifications) {
+        const notifUserId = (n.user || n.userId)?.toString();
+        if (notifUserId === uidStr) {
+          if (
+            n.relatedEntityId === idStr ||
+            (n.relatedEntityType && n.relatedEntityType.toLowerCase() === entityType.toLowerCase() && n.link?.includes(idStr))
+          ) {
+            n.read = true;
+          }
         }
       }
     }

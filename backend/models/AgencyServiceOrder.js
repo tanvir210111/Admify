@@ -63,6 +63,15 @@ const agencyServiceOrderSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isSeenByStudent: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    studentSeenAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,

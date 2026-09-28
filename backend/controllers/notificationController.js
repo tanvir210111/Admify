@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Notification from '../models/Notification.js';
 import devStore from '../utils/devStore.js';
 import { markEntityAsSeenHelper } from './adminController.js';
+import { markStudentEntityAsSeenHelper } from './studentController.js';
 
 // @desc    Get user notifications
 // @route   GET /api/notifications
@@ -59,6 +60,8 @@ export const markAsRead = async (req, res, next) => {
 
       if (req.user.role === 'admin' && notification.relatedEntityType && notification.relatedEntityId) {
         await markEntityAsSeenHelper(notification.relatedEntityType, notification.relatedEntityId, req.user._id);
+      } else if (req.user.role === 'student' && notification.relatedEntityType && notification.relatedEntityId) {
+        await markStudentEntityAsSeenHelper(req.user._id, notification.relatedEntityType, notification.relatedEntityId);
       }
 
       return res.status(200).json({
@@ -77,6 +80,8 @@ export const markAsRead = async (req, res, next) => {
 
       if (req.user.role === 'admin' && notification.relatedEntityType && notification.relatedEntityId) {
         await markEntityAsSeenHelper(notification.relatedEntityType, notification.relatedEntityId, req.user._id);
+      } else if (req.user.role === 'student' && notification.relatedEntityType && notification.relatedEntityId) {
+        await devStore.markStudentEntitySeen(req.user._id, notification.relatedEntityType, notification.relatedEntityId);
       }
 
       return res.status(200).json({

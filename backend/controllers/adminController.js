@@ -3130,8 +3130,24 @@ export const updateAdminReport = async (req, res, next) => {
       if (adminNotes !== undefined) report.adminNotes = adminNotes;
       if (resolutionDetails !== undefined) report.resolutionDetails = resolutionDetails;
       if (assignedReviewer !== undefined) report.assignedReviewer = assignedReviewer;
+      report.isSeenByStudent = false;
 
       await report.save();
+
+      if (report.reportedBy) {
+        try {
+          await Notification.create({
+            user: report.reportedBy,
+            title: `Report Update: ${report.reportId}`,
+            message: `Your report has been updated to ${report.status}.`,
+            type: 'info',
+            link: '/student/reports',
+            actionUrl: '/student/reports',
+            relatedEntityType: 'report',
+            relatedEntityId: report._id ? report._id.toString() : id,
+          });
+        } catch {}
+      }
     } else {
       report = await devStore.findReportById(id);
       if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
@@ -3153,8 +3169,23 @@ export const updateAdminReport = async (req, res, next) => {
       if (adminNotes !== undefined) updates.adminNotes = adminNotes;
       if (resolutionDetails !== undefined) updates.resolutionDetails = resolutionDetails;
       if (assignedReviewer !== undefined) updates.assignedReviewer = assignedReviewer;
+      updates.isSeenByStudent = false;
 
       report = await devStore.updateReport(id, updates);
+      if (report?.reportedBy) {
+        try {
+          await devStore.createNotification({
+            userId: report.reportedBy,
+            title: `Report Update: ${report.reportId}`,
+            message: `Your report has been updated to ${report.status}.`,
+            type: 'info',
+            link: '/student/reports',
+            actionUrl: '/student/reports',
+            relatedEntityType: 'report',
+            relatedEntityId: report._id ? report._id.toString() : id,
+          });
+        } catch {}
+      }
     }
 
     await recordAuditLog({

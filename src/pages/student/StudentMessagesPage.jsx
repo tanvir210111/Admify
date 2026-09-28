@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useStudentBadges } from "../../context/StudentBadgeContext";
 import { studentService, REGISTERED_AGENCIES } from "../../services/studentService";
 import {
   MessageSquare,
@@ -48,6 +49,14 @@ function renderCleanFormattedText(text) {
 export default function StudentMessagesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { sidebarCounts, markEntityAsSeen } = useStudentBadges();
+  const hasUnseenMessages = (sidebarCounts?.messages || 0) > 0;
+
+  useEffect(() => {
+    if (hasUnseenMessages) {
+      markEntityAsSeen("messages", "all");
+    }
+  }, [hasUnseenMessages, markEntityAsSeen]);
 
   // Active agency service state
   const [agencyState, setAgencyState] = useState(() => studentService.getAgencyAssistanceState(user));
@@ -292,7 +301,13 @@ export default function StudentMessagesPage() {
           </div>
 
           {/* Right Column: Chat Window */}
-          <div className="lg:col-span-3 flex flex-col h-[650px] rounded-3xl bg-[#0B1228] border border-slate-800 shadow-xl overflow-hidden">
+          <div
+            className={`lg:col-span-3 flex flex-col h-[650px] rounded-3xl bg-[#0B1228] transition-all shadow-xl overflow-hidden ${
+              hasUnseenMessages
+                ? "border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] border border-violet-500/40"
+                : "border border-slate-800"
+            }`}
+          >
             {/* Chat Header */}
             <div className="p-4 px-6 bg-[#07142D] border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">

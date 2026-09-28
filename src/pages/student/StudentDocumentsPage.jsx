@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { studentService } from "../../services/studentService";
+import { useStudentBadges } from "../../context/StudentBadgeContext";
 import {
   FolderOpen,
   UploadCloud,
@@ -19,9 +20,19 @@ import {
 import toast from "react-hot-toast";
 
 function StudentDocumentsPage() {
+  const { markEntityAsSeen } = useStudentBadges();
   const [documents, setDocuments] = useState(() => studentService.getDocuments());
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
+
+  const handleDocClick = (doc) => {
+    if (doc.isSeenByStudent === false) {
+      markEntityAsSeen("document", doc.id);
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, isSeenByStudent: true } : d))
+      );
+    }
+  };
 
   // Form states for document upload
   const [title, setTitle] = useState("");
@@ -137,26 +148,40 @@ function StudentDocumentsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filtered.map((doc) => (
-            <div
-              key={doc.id}
-              className="p-5 rounded-3xl bg-[#0B1228] border border-slate-800 hover:border-cyan-500/30 transition-all flex flex-col justify-between group"
-            >
-              <div className="space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
-                    <FileText className="w-5 h-5" />
+          {filtered.map((doc) => {
+            const isUnseen = doc.isSeenByStudent === false;
+            return (
+              <div
+                key={doc.id}
+                onClick={() => handleDocClick(doc)}
+                className={`p-5 rounded-3xl transition-all flex flex-col justify-between group cursor-pointer ${
+                  isUnseen
+                    ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] border border-violet-500/40 hover:border-violet-400/60"
+                    : "bg-[#0B1228] border border-slate-800 hover:border-cyan-500/30"
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {isUnseen && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40 animate-pulse">
+                          NEW
+                        </span>
+                      )}
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                          doc.status === "Verified"
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                        }`}
+                      >
+                        {doc.status}
+                      </span>
+                    </div>
                   </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                      doc.status === "Verified"
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                        : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                    }`}
-                  >
-                    {doc.status}
-                  </span>
-                </div>
 
                 <div>
                   <h3 className="text-sm font-bold text-white leading-tight line-clamp-1 group-hover:text-cyan-300 transition-colors">
@@ -200,7 +225,8 @@ function StudentDocumentsPage() {
                 </button>
               </div>
             </div>
-          ))}
+          );
+        })}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useStudentBadges } from "../../context/StudentBadgeContext";
 import { api } from "../../lib/api";
 import { studentService } from "../../services/studentService";
 import {
@@ -51,6 +52,7 @@ const POPULAR_UNIVERSITIES = [
 
 function DirectApplicationsPage() {
   const { user } = useAuth();
+  const { markEntityAsSeen } = useStudentBadges();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const prefillUni = searchParams.get("uni") || "";
@@ -59,6 +61,16 @@ function DirectApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [freeAppStatus, setFreeAppStatus] = useState({ freeAvailable: true, usedCount: 0 });
   const [showApplyModal, setShowApplyModal] = useState(Boolean(prefillUni));
+
+  const handleItemView = (appItem) => {
+    if (appItem && appItem.isSeenByStudent === false) {
+      const appId = appItem._id || appItem.id;
+      markEntityAsSeen("application", appId);
+      setApplications((prev) =>
+        prev.map((a) => ((a._id || a.id) === appId ? { ...a, isSeenByStudent: true } : a))
+      );
+    }
+  };
 
   // Application form fields
   const [university, setUniversity] = useState(prefillUni || "Coventry University");
@@ -324,23 +336,35 @@ function DirectApplicationsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {applications.map((app) => (
-              <div
-                key={app._id || app.id}
-                className="p-6 rounded-3xl bg-[#0B1228] border border-slate-800 hover:border-cyan-500/30 transition-all space-y-5 shadow-lg"
-              >
-                {/* Header row */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-800">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-[#07142D] border border-slate-700 flex items-center justify-center text-2xl shadow-inner shrink-0">
-                      {app.logo || "🎓"}
-                    </div>
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-extrabold text-white">{app.university}</h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
-                          Direct App
-                        </span>
+            {applications.map((app) => {
+              const isUnseen = app.isSeenByStudent === false;
+              return (
+                <div
+                  key={app._id || app.id}
+                  onClick={() => handleItemView(app)}
+                  className={`p-6 rounded-3xl transition-all space-y-5 cursor-pointer ${
+                    isUnseen
+                      ? "bg-violet-950/30 border-l-4 border-l-violet-500 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)] border border-violet-500/40 hover:border-violet-400/60"
+                      : "bg-[#0B1228] border border-slate-800 hover:border-cyan-500/30 shadow-lg"
+                  }`}
+                >
+                  {/* Header row */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-800">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-[#07142D] border border-slate-700 flex items-center justify-center text-2xl shadow-inner shrink-0">
+                        {app.logo || "🎓"}
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-extrabold text-white">{app.university}</h3>
+                          {isUnseen && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40 animate-pulse">
+                              NEW UPDATE
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
+                            Direct App
+                          </span>
                         {app.isFreeApplication && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
                             Free Tier Submission
@@ -434,7 +458,8 @@ function DirectApplicationsPage() {
                   </Link>
                 </div>
               </div>
-            ))}
+            );
+          })}
           </div>
         )}
       </div>

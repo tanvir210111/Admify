@@ -27,34 +27,35 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
+import { useStudentBadges, formatBadgeCount } from "../../context/StudentBadgeContext";
 
 // Clean, uncluttered navigation items
 const navigationItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/student/dashboard" },
-  { icon: Sparkles, label: "AI Recommendations", path: "/student/recommendations" },
+  { icon: Sparkles, label: "AI Recommendations", path: "/student/recommendations", countKey: "recommendations" },
   { icon: Building2, label: "Universities", path: "/student/universities" },
   { icon: GitCompare, label: "Compare Universities", path: "/student/compare" },
-  { icon: Award, label: "Scholarships", path: "/student/scholarships" },
+  { icon: Award, label: "Scholarships", path: "/student/scholarships", countKey: "scholarships" },
   { icon: Calculator, label: "Admission Probability", path: "/student/probability" },
   { icon: DollarSign, label: "Cost Estimator", path: "/student/cost-estimator" },
-  { icon: Send, label: "Direct Applications", path: "/student/direct-applications" },
-  { icon: Users2, label: "Agency Assistance", path: "/student/agency-assistance" },
-  { icon: FileCheck2, label: "Application Tracking", path: "/student/applications" },
+  { icon: Send, label: "Direct Applications", path: "/student/direct-applications", countKey: "directApplications" },
+  { icon: Users2, label: "Agency Assistance", path: "/student/agency-assistance", countKey: "agencyAssistance" },
+  { icon: FileCheck2, label: "Application Tracking", path: "/student/applications", countKey: "applications" },
   { icon: FileEdit, label: "SOP Generator", path: "/student/sop-generator" },
   { icon: ScrollText, label: "LOR Generator", path: "/student/lor-generator" },
   { icon: Bot, label: "Chatbot", path: "/student/chatbot" },
-  { icon: MessageSquare, label: "Messages", path: "/student/messages" },
-  { icon: FolderOpen, label: "Documents", path: "/student/documents" },
+  { icon: MessageSquare, label: "Messages", path: "/student/messages", countKey: "messages" },
+  { icon: FolderOpen, label: "Documents", path: "/student/documents", countKey: "documents" },
   { icon: User, label: "Profile", path: "/student/profile" },
   { icon: GraduationCap, label: "Academic Profile", path: "/student/academic-profile" },
-  { icon: Bell, label: "Notifications", path: "/student/notifications" },
+  { icon: Bell, label: "Notifications", path: "/student/notifications", countKey: "notifications" },
   { 
     icon: Wallet, 
     label: "Wallet & Credits", 
     path: "/student/wallet",
     altPaths: ["/student/credits"]
   },
-  { icon: AlertTriangle, label: "Reports & Complaints", path: "/student/reports" },
+  { icon: AlertTriangle, label: "Reports & Complaints", path: "/student/reports", countKey: "reports" },
   { icon: Settings, label: "Settings", path: "/student/settings" },
 ];
 
@@ -62,6 +63,7 @@ export default function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { sidebarCounts } = useStudentBadges();
 
   const handleLogout = async () => {
     await signOut();
@@ -127,6 +129,8 @@ export default function Sidebar({ isOpen, onClose }) {
               (item.altPaths && item.altPaths.some((p) => location.pathname === p));
 
             const Icon = item.icon;
+            const rawCount = item.countKey ? sidebarCounts[item.countKey] : 0;
+            const badgeText = formatBadgeCount(rawCount);
 
             return (
               <Link
@@ -149,6 +153,11 @@ export default function Sidebar({ isOpen, onClose }) {
                   }`}
                 />
                 <span className="truncate whitespace-nowrap">{item.label}</span>
+                {badgeText && (
+                  <span className="ml-auto px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30 shadow-[0_0_10px_rgba(139,92,246,0.2)]">
+                    {badgeText}
+                  </span>
+                )}
               </Link>
             );
           })}

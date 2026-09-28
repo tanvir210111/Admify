@@ -6,8 +6,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
+import { StudentBadgeProvider, useStudentBadges, triggerStudentBadgeRefresh } from "../../context/StudentBadgeContext";
 
-function DashboardLayout() {
+function DashboardLayoutContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -20,6 +21,7 @@ function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { sidebarCounts, markEntityAsSeen } = useStudentBadges();
   
   const fullName = user?.user_metadata?.full_name || user?.name || "Student";
   const roleName = user?.user_metadata?.role || user?.role || "student";
@@ -39,6 +41,10 @@ function DashboardLayout() {
             time: "Recently",
             icon: "🔔",
             color: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+            read: n.read || false,
+            relatedEntityType: n.relatedEntityType,
+            relatedEntityId: n.relatedEntityId,
+            actionUrl: n.actionUrl || n.link,
           })));
           setUnreadCount(res.unreadCount || 0);
         }
@@ -114,14 +120,13 @@ function DashboardLayout() {
                 onClick={() => {
                   setShowNotifications(!showNotifications);
                   setProfileOpen(false);
-                  if (unreadCount > 0) setUnreadCount(0);
                 }}
                 className="relative p-2.5 text-slate-400 hover:text-white rounded-xl bg-[#0B1228] border border-slate-800 hover:border-slate-700 transition-all"
                 aria-label="View notifications"
               >
                 <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse" />
+                {(sidebarCounts.notifications > 0 || unreadCount > 0) && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-violet-400 rounded-full shadow-[0_0_8px_rgba(139,92,246,0.8)] animate-pulse" />
                 )}
               </button>
 
@@ -162,7 +167,22 @@ function DashboardLayout() {
                           notifications.map((notif) => (
                             <div
                               key={notif.id}
-                              className="p-3.5 hover:bg-[#0B1228] transition-colors cursor-pointer flex gap-3 items-start"
+                              onClick={async () => {
+                                setShowNotifications(false);
+                                try {
+                                  await api.put(`/api/notifications/${notif.id}/read`);
+                                  if (notif.relatedEntityType && notif.relatedEntityId) {
+                                    await markEntityAsSeen(notif.relatedEntityType, notif.relatedEntityId);
+                                  }
+                                  triggerStudentBadgeRefresh();
+                                  if (notif.actionUrl) {
+                                    navigate(notif.actionUrl);
+                                  }
+                                } catch {}
+                              }}
+                              className={`p-3.5 transition-colors cursor-pointer flex gap-3 items-start ${
+                                !notif.read ? 'bg-violet-950/20 border-l-2 border-l-violet-400' : 'hover:bg-[#0B1228]'
+                              }`}
                             >
                               <div
                                 className={`w-8 h-8 rounded-xl ${notif.color} border flex items-center justify-center shrink-0 text-sm`}
@@ -312,4 +332,10 @@ function DashboardLayout() {
   );
 }
 
-export default DashboardLayout;
+export default function DashboardLayout() {
+  return (
+    <StudentBadgeProvider>
+      <DashboardLayoutContent />
+    </StudentBadgeProvider>
+  );
+}
