@@ -2,7 +2,7 @@
  * Admify API Client Configuration
  * 
  * Provides environment-based API base URL using Vite environment variables (VITE_API_URL).
- * Automatically attaches JWT authentication tokens from localStorage to protected requests.
+ * Automatically attaches JWT authentication tokens from tab-isolated sessionStorage to protected requests.
  */
 
 // Automatically use local proxy or local backend when running on localhost / dev
@@ -52,7 +52,11 @@ export async function apiRequest(endpoint, options = {}) {
   }
 
   const url = getApiUrl(targetEndpoint);
-  const token = localStorage.getItem('admify_token') || localStorage.getItem('token');
+  // Read active auth token strictly from tab-isolated sessionStorage
+  const token =
+    (typeof sessionStorage !== 'undefined' &&
+      (sessionStorage.getItem('admify_token') || sessionStorage.getItem('token'))) ||
+    null;
 
   const headers = {
     'Content-Type': 'application/json',

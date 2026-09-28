@@ -10,17 +10,34 @@ import toast from "react-hot-toast";
 function Login() {
   const { user, login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState("student");
   const [isLoading, setIsLoading] = useState(false);
   
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [email, setEmail] = useState(() => {
+    try {
+      return localStorage.getItem('admify_remembered_email') || "";
+    } catch {
+      return "";
+    }
+  });
+  const [role, setRole] = useState(() => {
+    try {
+      return localStorage.getItem('admify_remembered_role') || "student";
+    } catch {
+      return "student";
+    }
+  });
+  const [rememberMe, setRememberMe] = useState(() => {
+    try {
+      return Boolean(localStorage.getItem('admify_remembered_email'));
+    } catch {
+      return false;
+    }
+  });
   
   const navigate = useNavigate();
   const location = useLocation();
 
-  // If already authenticated with a valid role, redirect to appropriate role dashboard
+  // If already authenticated with a valid role in this tab, redirect to appropriate role dashboard
   React.useEffect(() => {
     if (user) {
       const canonicalRole = (user.role || user.user_metadata?.role || '').toLowerCase().trim();
@@ -44,6 +61,17 @@ function Login() {
       if (!token || !canonicalRole) {
         throw new Error(res?.message || "Invalid email or password.");
       }
+
+      // Safe Remember Me: Persist remembered login email/role preference only (no active auth tokens in localStorage)
+      try {
+        if (rememberMe) {
+          localStorage.setItem('admify_remembered_email', email.trim());
+          localStorage.setItem('admify_remembered_role', role);
+        } else {
+          localStorage.removeItem('admify_remembered_email');
+          localStorage.removeItem('admify_remembered_role');
+        }
+      } catch {}
 
       toast.success("Welcome back!");
 
@@ -169,10 +197,10 @@ function Login() {
 
         {/* Submit */}
         <motion.button
-          whileHover={rememberMe ? { scale: 1.01 } : {}}
-          whileTap={rememberMe ? { scale: 0.98 } : {}}
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.98 }}
           type="submit"
-          disabled={isLoading || !rememberMe}
+          disabled={isLoading}
           className="w-full py-3.5 mt-2 bg-gradient-to-r from-primary-600 to-blue-600 hover:from-primary-500 hover:to-blue-500 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden relative border border-primary-500/30"
         >
           <AnimatePresence mode="wait">

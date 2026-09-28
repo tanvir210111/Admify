@@ -6,6 +6,7 @@ const AuthContext = createContext();
 export const AUTH_STORAGE_KEYS = [
   'admify_token',
   'admify_user',
+  'admify_role',
   'admify_admin_token',
   'token',
   'auth_token',
@@ -16,18 +17,32 @@ export const AUTH_STORAGE_KEYS = [
 
 /**
  * Completely clears all authentication tokens, cached user objects,
- * and session state from both localStorage and sessionStorage.
+ * and session state from THIS TAB ONLY (sessionStorage).
+ * Does NOT clear localStorage so other tabs' preferences are unaffected,
+ * and does NOT broadcast logout to other tabs.
  */
 export const clearAuthStorage = () => {
   try {
-    AUTH_STORAGE_KEYS.forEach((key) => {
-      localStorage.removeItem(key);
-      sessionStorage.removeItem(key);
-    });
+    if (typeof sessionStorage !== 'undefined') {
+      AUTH_STORAGE_KEYS.forEach((key) => {
+        sessionStorage.removeItem(key);
+      });
+    }
   } catch (e) {
-    console.error('Error clearing auth storage:', e);
+    console.error('Error clearing tab auth storage:', e);
   }
 };
+
+// Purge any legacy auth tokens from localStorage once on load so they cannot bleed across tabs
+try {
+  if (typeof localStorage !== 'undefined') {
+    AUTH_STORAGE_KEYS.forEach((key) => {
+      localStorage.removeItem(key);
+    });
+  }
+} catch {
+  // Ignore
+}
 
 /**
  * Checks if a JWT string is well-formed and unexpired.
@@ -96,12 +111,13 @@ export const formatUser = (rawUser, token = null) => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     try {
-      const token = localStorage.getItem('admify_token');
+      if (typeof sessionStorage === 'undefined') return null;
+      const token = sessionStorage.getItem('admify_token') || sessionStorage.getItem('token');
       if (!token || !isTokenValid(token)) {
         clearAuthStorage();
         return null;
       }
-      const cached = localStorage.getItem('admify_user');
+      const cached = sessionStorage.getItem('admify_user');
       return cached ? formatUser(JSON.parse(cached), token) : null;
     } catch {
       clearAuthStorage();
@@ -112,7 +128,11 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const initAuth = async () => {
-      const token = localStorage.getItem('admify_token');
+      if (typeof sessionStorage === 'undefined') {
+        setLoading(false);
+        return;
+      }
+      const token = sessionStorage.getItem('admify_token') || sessionStorage.getItem('token');
       if (!token || !isTokenValid(token)) {
         clearAuthStorage();
         setUser(null);
@@ -125,14 +145,15 @@ export const AuthProvider = ({ children }) => {
         if (res?.data?.user) {
           const formatted = formatUser(res.data.user, token);
           setUser(formatted);
-          localStorage.setItem('admify_user', JSON.stringify(formatted));
+          sessionStorage.setItem('admify_user', JSON.stringify(formatted));
+          sessionStorage.setItem('admify_role', formatted.role);
         } else {
           throw new Error('User profile could not be loaded');
         }
       } catch (err) {
-        // If token is expired, unauthorized, or invalid, clear session
+        // If token is expired, unauthorized, or invalid, clear session for this tab only
         if (err.status === 401 || err.status === 403 || err.message?.includes('token') || !isTokenValid(token)) {
-          console.warn('Session expired or unauthorized. Logging out.');
+          console.warn('[Tab Auth] Session expired or unauthorized for this tab. Logging out.');
           clearAuthStorage();
           setUser(null);
         }
@@ -174,11 +195,12 @@ export const AuthProvider = ({ children }) => {
 
     if (token && rawUser) {
       clearAuthStorage();
-      localStorage.setItem('admify_token', token);
-      localStorage.setItem('token', token);
+      sessionStorage.setItem('admify_token', token);
+      sessionStorage.setItem('token', token);
       const formatted = formatUser(rawUser, token);
       if (formatted) {
-        localStorage.setItem('admify_user', JSON.stringify(formatted));
+        sessionStorage.setItem('admify_user', JSON.stringify(formatted));
+        sessionStorage.setItem('admify_role', formatted.role);
       }
       setUser(formatted);
     }
@@ -188,7 +210,7 @@ export const AuthProvider = ({ children }) => {
 
   // Standard login method
   const login = async (email, password, role) => {
-    // Purge any stale tokens, cached user objects, and session data before authenticating
+    // Purge previous auth session for THIS TAB ONLY
     clearAuthStorage();
     setUser(null);
 
@@ -208,11 +230,13 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
 
+    // Tab-scoped storage: save active authentication session in sessionStorage ONLY
     clearAuthStorage();
-    localStorage.setItem('admify_token', token);
-    localStorage.setItem('token', token);
+    sessionStorage.setItem('admify_token', token);
+    sessionStorage.setItem('token', token);
     const formatted = formatUser(rawUser, token);
-    localStorage.setItem('admify_user', JSON.stringify(formatted));
+    sessionStorage.setItem('admify_user', JSON.stringify(formatted));
+    sessionStorage.setItem('admify_role', formatted.role);
     setUser(formatted);
 
     return { ...res, user: formatted, role: formatted.role };
@@ -238,11 +262,13 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
 
+    // Tab-scoped storage: save active authentication session in sessionStorage ONLY
     clearAuthStorage();
-    localStorage.setItem('admify_token', token);
-    localStorage.setItem('token', token);
+    sessionStorage.setItem('admify_token', token);
+    sessionStorage.setItem('token', token);
     const formatted = formatUser(rawUser, token);
-    localStorage.setItem('admify_user', JSON.stringify(formatted));
+    sessionStorage.setItem('admify_user', JSON.stringify(formatted));
+    sessionStorage.setItem('admify_role', formatted.role);
     setUser(formatted);
 
     return { ...res, user: formatted, role: formatted.role };
@@ -259,7 +285,10 @@ export const AuthProvider = ({ children }) => {
     setUser((prev) => {
       if (!prev) return null;
       const updated = formatUser({ ...prev, ...updatedFields });
-      localStorage.setItem('admify_user', JSON.stringify(updated));
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('admify_user', JSON.stringify(updated));
+        sessionStorage.setItem('admify_role', updated.role);
+      }
       return updated;
     });
   };

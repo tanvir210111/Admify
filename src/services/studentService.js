@@ -175,7 +175,7 @@ export const studentService = {
     } catch {
       // Fallback to local session user
     }
-    const cached = localStorage.getItem('admify_user');
+    const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('admify_user') : null;
     return cached ? JSON.parse(cached) : null;
   },
 
@@ -185,10 +185,12 @@ export const studentService = {
       return res?.data?.user || profileData;
     } catch (err) {
       console.warn('[StudentService] Remote update failed, persisting locally', err.message);
-      const cached = localStorage.getItem('admify_user');
+      const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('admify_user') : null;
       const user = cached ? JSON.parse(cached) : {};
       const updated = { ...user, ...profileData };
-      localStorage.setItem('admify_user', JSON.stringify(updated));
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('admify_user', JSON.stringify(updated));
+      }
       return updated;
     }
   },
