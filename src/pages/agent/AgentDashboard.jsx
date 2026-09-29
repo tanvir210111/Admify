@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 import {
   LayoutDashboard,
   Users,
@@ -25,6 +26,7 @@ export default function AgentDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { sidebarCounts, markEntityAsSeen } = useAgentBadges();
   const navigate = useNavigate();
 
   const fetchDashboard = async () => {
@@ -259,23 +261,39 @@ export default function AgentDashboard() {
               </div>
             ) : (
               <div className="divide-y divide-white/5">
-                {data.recentApplications.map((app) => (
-                  <div key={app._id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-white text-xs font-semibold truncate">
-                        {app.university} — {app.program}
-                      </p>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        Student: {app.user?.name || "Student"} • {app.country || "Global"}
-                      </p>
+                {data.recentApplications.map((app) => {
+                  const isUnseen = app.isSeenByAgent === false;
+                  return (
+                    <div
+                      key={app._id}
+                      onClick={() => {
+                        if (isUnseen) {
+                          markEntityAsSeen('application', app._id);
+                        }
+                        navigate('/agent/applications');
+                      }}
+                      className={`py-3 px-2.5 rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                        isUnseen
+                          ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-white text-xs font-semibold truncate">
+                          {app.university} — {app.program}
+                        </p>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          Student: {app.user?.name || "Student"} • {app.country || "Global"}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                          {app.stage || "Submitted"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                        {app.stage || "Submitted"}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

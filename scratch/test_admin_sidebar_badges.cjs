@@ -127,6 +127,8 @@ async function runTests() {
       password: testPassword,
       role: 'university_rep',
       accountStatus: 'ACTIVE',
+      uniRepVerificationStatus: 'VERIFIED',
+      verificationStatus: 'VERIFIED',
       status: 'active',
       isActive: true,
     });

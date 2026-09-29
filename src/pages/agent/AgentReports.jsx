@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -31,6 +32,17 @@ export default function AgentReports() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { sidebarCounts, markEntityAsSeen } = useAgentBadges();
+
+  const handleViewReport = (r) => {
+    if (r && r.isSeenByAgent === false) {
+      r.isSeenByAgent = true;
+      markEntityAsSeen("report", r._id);
+      setReports((prev) =>
+        prev.map((rep) => (rep._id === r._id ? { ...rep, isSeenByAgent: true } : rep))
+      );
+    }
+  };
 
   // Form state
   const [targetType, setTargetType] = useState("student_issue");
@@ -161,8 +173,18 @@ export default function AgentReports() {
                 {reports.map((r) => {
                   const statusClass =
                     STATUS_COLOR[r.status] || STATUS_COLOR.OPEN;
+                  const isUnseen = r.isSeenByAgent === false;
+
                   return (
-                    <tr key={r._id} className="hover:bg-white/[0.02] transition-colors">
+                    <tr
+                      key={r._id}
+                      onClick={() => handleViewReport(r)}
+                      className={`transition-colors cursor-pointer ${
+                        isUnseen
+                          ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
                       <td className="py-3 px-4 font-mono font-bold text-slate-400">
                         {r._id?.slice(-8).toUpperCase()}
                       </td>

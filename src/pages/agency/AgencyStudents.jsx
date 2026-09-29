@@ -21,7 +21,10 @@ import {
   UserCheck,
 } from "lucide-react";
 
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+
 export default function AgencyStudents() {
+  const { markEntityAsSeen } = useAgencyBadges();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -45,6 +48,25 @@ export default function AgencyStudents() {
   useEffect(() => {
     fetchStudents();
   }, [search]);
+
+  const handleRowClick = (st) => {
+    if (!st.isSeenByAgency) {
+      markEntityAsSeen("student", st._id);
+      setStudents((prev) =>
+        prev.map((item) => (item._id === st._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
+
+  const handleViewProfile = (st) => {
+    setSelectedStudent(st);
+    if (!st.isSeenByAgency) {
+      markEntityAsSeen("student", st._id);
+      setStudents((prev) =>
+        prev.map((item) => (item._id === st._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -117,87 +139,110 @@ export default function AgencyStudents() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-xs">
-                {students.map((st) => (
-                  <tr key={st._id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600/30 to-blue-600/30 border border-cyan-500/30 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                          {st.name?.charAt(0) || "S"}
+                {students.map((st) => {
+                  const isUnseen = st.isSeenByAgency === false;
+                  return (
+                    <tr
+                      key={st._id}
+                      onClick={() => handleRowClick(st)}
+                      className={`transition-all cursor-pointer ${
+                        isUnseen
+                          ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600/30 to-blue-600/30 border border-cyan-500/30 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                            {st.name?.charAt(0) || "S"}
+                          </div>
+                          <div>
+                            {isUnseen && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider mb-1">
+                                NEW UPDATE
+                              </span>
+                            )}
+                            <p className="text-white font-semibold">{st.name}</p>
+                            <p className="text-slate-400 text-[11px]">
+                              Joined {new Date(st.createdAt || Date.now()).toLocaleDateString()}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-white font-semibold">{st.name}</p>
-                          <p className="text-slate-400 text-[11px]">
-                            Joined {new Date(st.createdAt || Date.now()).toLocaleDateString()}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-slate-300">
+                            <Mail className="w-3 h-3 text-slate-500" />
+                            <span>{st.email}</span>
+                          </div>
+                          {st.phone && (
+                            <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
+                              <Phone className="w-3 h-3 text-slate-500" />
+                              <span>{st.phone}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-0.5">
+                          <p className="text-white font-medium">{st.targetCountry || "Country Pending"}</p>
+                          <p className="text-slate-400 text-[11px] truncate max-w-[160px]">
+                            {st.targetCourse || "General Studies"}
                           </p>
                         </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-slate-300">
-                          <Mail className="w-3 h-3 text-slate-500" />
-                          <span>{st.email}</span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-0.5 text-slate-300">
+                          <p>GPA: {st.gpa || "N/A"}</p>
+                          <p className="text-slate-400 text-[11px]">IELTS: {st.ielts || "N/A"}</p>
                         </div>
-                        {st.phone && (
-                          <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
-                            <Phone className="w-3 h-3 text-slate-500" />
-                            <span>{st.phone}</span>
-                          </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center gap-1 text-slate-300">
+                          <UserCheck className="w-3.5 h-3.5 text-violet-400" />
+                          <span>{typeof st.assignedAgent === "object" ? st.assignedAgent?.name : st.assignedAgent}</span>
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {st.activeApplication ? (
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                            App: {st.activeApplication.stage || "Submitted"}
+                          </span>
+                        ) : st.activeService ? (
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            Service: {st.activeService.status || "Active"}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 text-[11px]">Consultation</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-0.5">
-                        <p className="text-white font-medium">{st.targetCountry || "Country Pending"}</p>
-                        <p className="text-slate-400 text-[11px] truncate max-w-[160px]">
-                          {st.targetCourse || "General Studies"}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-0.5 text-slate-300">
-                        <p>GPA: {st.gpa || "N/A"}</p>
-                        <p className="text-slate-400 text-[11px]">IELTS: {st.ielts || "N/A"}</p>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="inline-flex items-center gap-1 text-slate-300">
-                        <UserCheck className="w-3.5 h-3.5 text-violet-400" />
-                        <span>{typeof st.assignedAgent === "object" ? st.assignedAgent?.name : st.assignedAgent}</span>
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      {st.activeApplication ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20">
-                          App: {st.activeApplication.stage || "Submitted"}
-                        </span>
-                      ) : st.activeService ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                          Service: {st.activeService.status || "Active"}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500 text-[11px]">Consultation</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setSelectedStudent(st)}
-                          className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors"
-                        >
-                          View Profile
-                        </button>
-                        <button
-                          onClick={() => navigate(`/agency/messages?recipient=${st._id}`)}
-                          className="p-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-colors"
-                          title="Contact Student"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewProfile(st);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors"
+                          >
+                            View Profile
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRowClick(st);
+                              navigate(`/agency/messages?recipient=${st._id}`);
+                            }}
+                            className="p-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 transition-colors"
+                            title="Contact Student"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

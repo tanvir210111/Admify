@@ -10,6 +10,7 @@ import Announcement from '../models/Announcement.js';
 import Report from '../models/Report.js';
 import ChatMessage from '../models/ChatMessage.js';
 import AuditLog from '../models/AuditLog.js';
+import UniRepSeenItem from '../models/UniRepSeenItem.js';
 import bcrypt from 'bcryptjs';
 import devStore from '../utils/devStore.js';
 
@@ -129,6 +130,545 @@ const resolveUniversityForUser = async (user) => {
   }
 
   return university;
+};
+
+// Regex escape helper for safe matching
+const escapeRegex = (string) => {
+  if (typeof string !== 'string') return '';
+  return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+};
+
+// Application ownership check helper
+export const doesAppBelongToUniversity = (app, university) => {
+  if (!app || !university) return false;
+  if (app.universityId && university._id && app.universityId.toString() === university._id.toString()) {
+    return true;
+  }
+  if (app.university && university.name) {
+    return app.university.toLowerCase().trim() === university.name.toLowerCase().trim();
+  }
+  return false;
+};
+
+// Seen map helper for University Representative
+export const getUniRepSeenMap = async (repId) => {
+  const seenMap = new Set();
+  const ridStr = repId.toString();
+
+  if (mongoose.connection.readyState === 1) {
+    const seenItems = await UniRepSeenItem.find({
+      $or: [{ universityRep: repId }, { user: repId }]
+    }).lean();
+    seenItems.forEach((item) => {
+      seenMap.add(`${item.entityType}:${item.entityId}`);
+    });
+  } else {
+    const db = devStore.read();
+    const seenItems = db.uniRepSeenItems || [];
+    seenItems.forEach((item) => {
+      if (item.universityRep?.toString() === ridStr || item.user?.toString() === ridStr) {
+        seenMap.add(`${item.entityType}:${item.entityId}`);
+      }
+    });
+  }
+  return seenMap;
+};
+
+export const isUniRepDocSeen = (entityType, entityId, seenMap) => {
+  if (!entityId) return false;
+  return seenMap.has(`${entityType}:${entityId.toString()}`);
+};
+
+// Calculate unseen counts engine
+export const calculateUniRepUnseenCounts = async (repUser, university) => {
+  const repId = repUser._id;
+  const ridStr = repId.toString();
+  const seenMap = await getUniRepSeenMap(repId);
+
+  let connections = [];
+  let applications = [];
+  let messages = [];
+  let notifications = [];
+  let reports = [];
+
+  if (mongoose.connection.readyState === 1) {
+    const uniClauses = [];
+    if (university?._id) uniClauses.push({ universityId: university._id });
+    if (university?.name) {
+      uniClauses.push({ university: new RegExp(`^${escapeRegex(university.name.trim())}$`, 'i') });
+    }
+    const uniQuery = uniClauses.length > 0 ? (uniClauses.length > 1 ? { $or: uniClauses } : uniClauses[0]) : null;
+
+    [connections, applications, messages, notifications, reports] = await Promise.all([
+      UniversityAgencyConnection.find({
+        $or: [
+          { universityRepresentativeId: repId },
+          ...(university?._id ? [{ universityId: university._id }] : []),
+        ]
+      }).lean(),
+      uniQuery ? Application.find(uniQuery).lean() : Promise.resolve([]),
+      ChatMessage.find({
+        receiver: repId,
+        sender: { $nin: ['agent', 'university_rep'] }
+      }).lean(),
+      Notification.find({ user: repId, read: false }).lean(),
+      Report.find({
+        $or: [
+          { reportedBy: repId },
+          ...(university?._id ? [{ targetId: university._id.toString() }] : [])
+        ]
+      }).lean(),
+    ]);
+  } else {
+    const db = devStore.read();
+    connections = (db.universityAgencyConnections || []).filter(
+      (c) =>
+        c.universityRepresentativeId?.toString() === ridStr ||
+        (university?._id && c.universityId?.toString() === university._id.toString())
+    );
+    applications = (db.applications || []).filter((a) =>
+      doesAppBelongToUniversity(a, university)
+    );
+    const allMsgs = [...(db.chatMessages || []), ...(db.messages || [])];
+    messages = allMsgs.filter(
+      (m) =>
+        (m.receiver?.toString() === ridStr || m.recipient?.toString() === ridStr) &&
+        m.sender !== 'agent' &&
+        m.sender !== 'university_rep' &&
+        m.senderRole !== 'agent' &&
+        m.senderRole !== 'university_rep' &&
+        !m.read
+    );
+    notifications = (db.notifications || []).filter(
+      (n) => (n.user || n.userId)?.toString() === ridStr && !n.read && !n.isRead
+    );
+    reports = (db.reports || []).filter(
+      (r) =>
+        r.reportedBy?.toString() === ridStr ||
+        (university?._id && r.targetId?.toString() === university._id.toString())
+    );
+  }
+
+  // 1. Partnerships unseen
+  const unseenConnections = connections.filter(
+    (c) => !isUniRepDocSeen('partnership', c._id, seenMap)
+  );
+
+  const partnershipStatusCounts = {
+    all: unseenConnections.length,
+    'All Partnerships': unseenConnections.length,
+    PENDING: 0,
+    'Pending Requests': 0,
+    ACCEPTED: 0,
+    Accepted: 0,
+    REJECTED: 0,
+    Declined: 0,
+    BLOCKED: 0,
+    Blocked: 0,
+  };
+
+  unseenConnections.forEach((c) => {
+    const st = c.status || 'PENDING';
+    if (partnershipStatusCounts[st] !== undefined) {
+      partnershipStatusCounts[st] += 1;
+    }
+    if (st === 'PENDING') partnershipStatusCounts['Pending Requests'] += 1;
+    if (st === 'ACCEPTED') partnershipStatusCounts['Accepted'] += 1;
+    if (st === 'REJECTED') partnershipStatusCounts['Declined'] += 1;
+    if (st === 'BLOCKED') partnershipStatusCounts['Blocked'] += 1;
+  });
+
+  // 2. Applications unseen
+  const unseenApplications = applications.filter(
+    (a) => !isUniRepDocSeen('application', a._id, seenMap)
+  );
+
+  const applicationStatusCounts = {
+    all: unseenApplications.length,
+    'All Stages': unseenApplications.length,
+    Submitted: 0,
+    'Documents Pending': 0,
+    'In Review': 0,
+    Accepted: 0,
+    Rejected: 0,
+  };
+
+  unseenApplications.forEach((a) => {
+    const stg = a.stage;
+    if (applicationStatusCounts[stg] !== undefined) {
+      applicationStatusCounts[stg] += 1;
+    }
+  });
+
+  // 3. Documents unseen
+  let allDocuments = [];
+  applications.forEach((app) => {
+    const docs = Array.isArray(app.documents) ? app.documents : [];
+    docs.forEach((doc, idx) => {
+      const docId = doc._id ? doc._id.toString() : `${app._id}-${idx}`;
+      allDocuments.push({
+        id: docId,
+        doc,
+        appId: app._id,
+      });
+    });
+  });
+
+  const unseenDocs = allDocuments.filter(
+    (d) => !isUniRepDocSeen('document', d.id, seenMap)
+  );
+
+  const documentFilterCounts = {
+    all: unseenDocs.length,
+    'All Types': unseenDocs.length,
+    Passport: 0,
+    Transcript: 0,
+    'Academic Certificate': 0,
+    'IELTS/PTE': 0,
+    SOP: 0,
+    LOR: 0,
+  };
+
+  unseenDocs.forEach((d) => {
+    const rawType = (d.doc.type || d.doc.documentType || d.doc.name || '').toLowerCase();
+    if (rawType.includes('passport')) documentFilterCounts.Passport += 1;
+    if (rawType.includes('transcript')) documentFilterCounts.Transcript += 1;
+    if (rawType.includes('certificate') || rawType.includes('academic')) documentFilterCounts['Academic Certificate'] += 1;
+    if (rawType.includes('ielts') || rawType.includes('pte') || rawType.includes('toefl')) documentFilterCounts['IELTS/PTE'] += 1;
+    if (rawType.includes('sop') || rawType.includes('statement') || rawType.includes('purpose')) documentFilterCounts.SOP += 1;
+    if (rawType.includes('lor') || rawType.includes('recommendation')) documentFilterCounts.LOR += 1;
+  });
+
+  // 4. Messages unseen
+  const unseenMessages = messages.filter(
+    (m) =>
+      !m.read &&
+      !isUniRepDocSeen('message', m._id, seenMap) &&
+      !isUniRepDocSeen('message', m.sessionId, seenMap)
+  );
+  const messageCount = unseenMessages.length;
+
+  // 5. Notifications unread
+  const notificationCount = notifications.length;
+
+  // 6. Reports unseen (meaningful admin updates/resolutions)
+  const unseenReports = reports.filter((r) => {
+    if (isUniRepDocSeen('report', r._id, seenMap) || isUniRepDocSeen('report', r.reportId, seenMap)) {
+      return false;
+    }
+    return r.status && r.status !== 'PENDING';
+  });
+
+  const sidebarCounts = {
+    partnerships: unseenConnections.length,
+    applications: unseenApplications.length,
+    documents: unseenDocs.length,
+    messages: messageCount,
+    notifications: notificationCount,
+    reports: unseenReports.length,
+  };
+
+  const statusCounts = {
+    partnerships: partnershipStatusCounts,
+    applications: applicationStatusCounts,
+    documents: documentFilterCounts,
+  };
+
+  return { sidebarCounts, statusCounts };
+};
+
+// Strict IDOR and ownership verification
+export const verifyUniRepEntityOwnership = async (repUser, university, entityType, entityId) => {
+  if (!repUser || !entityType || !entityId) return false;
+  const ridStr = repUser._id.toString();
+  const eidStr = entityId.toString();
+
+  switch (entityType) {
+    case 'partnership':
+    case 'partnerships':
+    case 'universityAgencyConnection': {
+      if (mongoose.connection.readyState === 1) {
+        const conn = await UniversityAgencyConnection.findById(eidStr);
+        if (!conn) return false;
+        return (
+          conn.universityRepresentativeId?.toString() === ridStr ||
+          (university?._id && conn.universityId?.toString() === university._id.toString())
+        );
+      } else {
+        const db = devStore.read();
+        const conn = (db.universityAgencyConnections || []).find((c) => c._id?.toString() === eidStr || c.id?.toString() === eidStr);
+        if (!conn) return false;
+        return (
+          conn.universityRepresentativeId?.toString() === ridStr ||
+          (university?._id && conn.universityId?.toString() === university._id.toString())
+        );
+      }
+    }
+
+    case 'application':
+    case 'applications': {
+      if (!university) return false;
+      if (mongoose.connection.readyState === 1) {
+        const app = await Application.findOne({
+          $or: [
+            { _id: mongoose.isValidObjectId(eidStr) ? eidStr : null },
+            { applicationId: eidStr }
+          ]
+        });
+        if (!app) return false;
+        return doesAppBelongToUniversity(app, university);
+      } else {
+        const db = devStore.read();
+        const app = (db.applications || []).find((a) => a._id?.toString() === eidStr || a.applicationId?.toString() === eidStr);
+        if (!app) return false;
+        return doesAppBelongToUniversity(app, university);
+      }
+    }
+
+    case 'document':
+    case 'documents': {
+      if (!university) return false;
+      // Handle synthetic id: `${appId}-${docIdx}` or mongo ObjectId
+      if (eidStr.includes('-')) {
+        const lastDash = eidStr.lastIndexOf('-');
+        const appId = eidStr.slice(0, lastDash);
+        const docIdxStr = eidStr.slice(lastDash + 1);
+        const docIdx = parseInt(docIdxStr, 10);
+
+        let app = null;
+        if (mongoose.connection.readyState === 1) {
+          app = await Application.findOne({
+            $or: [
+              { _id: mongoose.isValidObjectId(appId) ? appId : null },
+              { applicationId: appId }
+            ]
+          });
+        } else {
+          const db = devStore.read();
+          app = (db.applications || []).find((a) => a._id?.toString() === appId || a.applicationId?.toString() === appId);
+        }
+
+        if (!app) return false;
+        if (!doesAppBelongToUniversity(app, university)) return false;
+        const docs = Array.isArray(app.documents) ? app.documents : [];
+        if (isNaN(docIdx) || docIdx < 0 || docIdx >= docs.length) return false;
+        return true;
+      } else {
+        // Direct doc _id
+        let app = null;
+        if (mongoose.connection.readyState === 1) {
+          app = await Application.findOne({ 'documents._id': eidStr });
+        } else {
+          const db = devStore.read();
+          app = (db.applications || []).find((a) => (a.documents || []).some(d => d._id?.toString() === eidStr));
+        }
+        if (!app) return false;
+        return doesAppBelongToUniversity(app, university);
+      }
+    }
+
+    case 'message':
+    case 'messages':
+    case 'chatMessage': {
+      if (mongoose.connection.readyState === 1) {
+        const msg = await ChatMessage.findOne({
+          $or: [
+            { _id: mongoose.isValidObjectId(eidStr) ? eidStr : null },
+            { sessionId: eidStr }
+          ]
+        });
+        if (!msg) return false;
+        return (
+          msg.receiver?.toString() === ridStr ||
+          msg.user?.toString() === ridStr ||
+          (typeof msg.sessionId === 'string' && msg.sessionId.includes(ridStr))
+        );
+      } else {
+        const db = devStore.read();
+        const msg = (db.chatMessages || []).find(
+          (m) => m._id?.toString() === eidStr || m.sessionId === eidStr
+        );
+        if (!msg) return false;
+        return (
+          msg.receiver?.toString() === ridStr ||
+          msg.user?.toString() === ridStr ||
+          (typeof msg.sessionId === 'string' && msg.sessionId.includes(ridStr))
+        );
+      }
+    }
+
+    case 'report':
+    case 'reports': {
+      if (mongoose.connection.readyState === 1) {
+        const rep = await Report.findOne({
+          $or: [
+            { _id: mongoose.isValidObjectId(eidStr) ? eidStr : null },
+            { reportId: eidStr }
+          ]
+        });
+        if (!rep) return false;
+        return (
+          rep.reportedBy?.toString() === ridStr ||
+          (university?._id && rep.targetId?.toString() === university._id.toString())
+        );
+      } else {
+        const db = devStore.read();
+        const rep = (db.reports || []).find(
+          (r) => r._id?.toString() === eidStr || r.reportId === eidStr
+        );
+        if (!rep) return false;
+        return (
+          rep.reportedBy?.toString() === ridStr ||
+          (university?._id && rep.targetId?.toString() === university._id.toString())
+        );
+      }
+    }
+
+    case 'notification':
+    case 'notifications': {
+      if (mongoose.connection.readyState === 1) {
+        const notif = await Notification.findById(eidStr);
+        if (!notif) return false;
+        return notif.user?.toString() === ridStr;
+      } else {
+        const db = devStore.read();
+        const notif = (db.notifications || []).find((n) => n._id?.toString() === eidStr || n.id?.toString() === eidStr);
+        if (!notif) return false;
+        return (notif.user || notif.userId)?.toString() === ridStr;
+      }
+    }
+
+    default:
+      return false;
+  }
+};
+
+export const markUniRepEntityAsSeenHelper = async (repUser, university, entityType, entityId) => {
+  const repId = repUser._id;
+  const eidStr = entityId.toString();
+  const now = new Date();
+
+  let alreadySeen = false;
+  if (mongoose.connection.readyState === 1) {
+    const existing = await UniRepSeenItem.findOne({
+      universityRep: repId,
+      entityType,
+      entityId: eidStr,
+    });
+    if (existing) {
+      alreadySeen = true;
+    } else {
+      try {
+        await UniRepSeenItem.create({
+          universityRep: repId,
+          user: repId,
+          universityId: university?._id || null,
+          entityType,
+          entityId: eidStr,
+          seenAt: now,
+        });
+      } catch (err) {
+        alreadySeen = true;
+      }
+    }
+
+    try {
+      await Notification.updateMany(
+        {
+          user: repId,
+          $or: [
+            { relatedEntityId: eidStr },
+            { relatedEntityType: entityType, link: new RegExp(escapeRegex(eidStr), 'i') }
+          ]
+        },
+        { read: true, isRead: true }
+      );
+    } catch {}
+  } else {
+    alreadySeen = await devStore.isUniRepEntitySeen(repId, entityType, eidStr);
+    await devStore.markUniRepEntitySeen(repId, entityType, eidStr);
+  }
+
+  return { success: true, alreadySeen };
+};
+
+// ── NEW CONTROLLER ENDPOINTS FOR SEEN / COUNTS ────────────────────────────────
+export const getUniRepSidebarCounts = async (req, res, next) => {
+  try {
+    const university = await resolveUniversityForUser(req.user);
+    const { sidebarCounts, statusCounts } = await calculateUniRepUnseenCounts(req.user, university);
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...sidebarCounts,
+        statusCounts,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getUniRepStatusCounts = async (req, res, next) => {
+  try {
+    const university = await resolveUniversityForUser(req.user);
+    const { statusCounts } = await calculateUniRepUnseenCounts(req.user, university);
+    return res.status(200).json({
+      success: true,
+      data: statusCounts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const markUniRepEntityAsSeen = async (req, res, next) => {
+  try {
+    const { entityType, entityId } = req.params;
+    const university = await resolveUniversityForUser(req.user);
+
+    // IDOR Protection: Verify ownership BEFORE marking seen
+    const isAuthorized = await verifyUniRepEntityOwnership(req.user, university, entityType, entityId);
+    if (!isAuthorized) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: You do not have authorization to view or mark this entity as seen.',
+      });
+    }
+
+    const result = await markUniRepEntityAsSeenHelper(req.user, university, entityType, entityId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Entity marked as seen',
+      isSeenByUniRep: true,
+      alreadySeen: !!result.alreadySeen,
+      entityType,
+      entityId,
+      data: {
+        isSeen: true,
+        isSeenByUniRep: true,
+        alreadySeen: !!result.alreadySeen,
+        entityType,
+        entityId,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const markUniRepEntityAsSeenPost = async (req, res, next) => {
+  try {
+    const { entityType, entityId } = req.body;
+    if (!entityType || !entityId) {
+      return res.status(400).json({ success: false, message: 'entityType and entityId are required.' });
+    }
+    req.params = { entityType, entityId };
+    return markUniRepEntityAsSeen(req, res, next);
+  } catch (error) {
+    next(error);
+  }
 };
 
 // Document validation helper (MIME check + size limit 3.5MB)
@@ -712,11 +1252,18 @@ export const getUniRepConnections = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getUniRepSeenMap(userId);
+    const enriched = connections.map((conn) => {
+      const c = conn.toObject ? conn.toObject() : { ...conn };
+      c.isSeenByUniRep = isUniRepDocSeen('partnership', c._id, seenMap);
+      return c;
+    });
+
     return res.status(200).json({
       success: true,
-      count: connections.length,
+      count: enriched.length,
       data: {
-        connections,
+        connections: enriched,
       },
     });
   } catch (error) {
@@ -1476,21 +2023,19 @@ export const getUniRepApplications = async (req, res, next) => {
     let applications = [];
 
     if (mongoose.connection.readyState === 1) {
-      applications = await Application.find({
-        $or: [
-          { university: new RegExp(`^${university.name}$`, 'i') },
-          { universityId: university._id },
-        ],
-      })
+      const orClauses = [];
+      if (university._id) orClauses.push({ universityId: university._id });
+      if (university.name) {
+        orClauses.push({ university: new RegExp(`^${escapeRegex(university.name.trim())}$`, 'i') });
+      }
+      applications = await Application.find(orClauses.length > 1 ? { $or: orClauses } : (orClauses[0] || {}))
         .populate('user', 'name email phone country gpa ielts')
         .populate('assignedAgency', 'name email phone')
         .populate('assignedAgent', 'name email phone');
     } else {
       const db = devStore.read();
       applications = (db.applications || []).filter(
-        (a) =>
-          a.university?.toLowerCase().trim() === university.name?.toLowerCase().trim() ||
-          a.universityId?.toString() === university._id?.toString()
+        (a) => doesAppBelongToUniversity(a, university)
       );
       // Attach sanitized user information
       for (const app of applications) {
@@ -1511,6 +2056,8 @@ export const getUniRepApplications = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getUniRepSeenMap(req.user._id);
+
     // STRICT SANITIZATION: Never expose student wallets, credits, or payment histories
     const sanitizedApps = applications.map((app) => {
       const a = app.toObject ? app.toObject() : { ...app };
@@ -1524,6 +2071,7 @@ export const getUniRepApplications = async (req, res, next) => {
 
       return {
         _id: a._id,
+        isSeenByUniRep: isUniRepDocSeen('application', a._id, seenMap),
         applicationId: a.applicationId || `APP-${a._id?.toString().slice(-6).toUpperCase()}`,
         student: {
           _id: student._id,
@@ -1666,30 +2214,32 @@ export const getUniRepDocuments = async (req, res, next) => {
 
     let applications = [];
     if (mongoose.connection.readyState === 1) {
-      applications = await Application.find({
-        $or: [
-          { university: new RegExp(`^${university.name}$`, 'i') },
-          { universityId: university._id },
-        ],
-      }).populate('user', 'name email');
+      const orClauses = [];
+      if (university._id) orClauses.push({ universityId: university._id });
+      if (university.name) {
+        orClauses.push({ university: new RegExp(`^${escapeRegex(university.name.trim())}$`, 'i') });
+      }
+      applications = await Application.find(orClauses.length > 1 ? { $or: orClauses } : (orClauses[0] || {}))
+        .populate('user', 'name email');
     } else {
       const db = devStore.read();
       applications = (db.applications || []).filter(
-        (a) =>
-          a.university?.toLowerCase().trim() === university.name?.toLowerCase().trim() ||
-          a.universityId?.toString() === university._id?.toString()
+        (a) => doesAppBelongToUniversity(a, university)
       );
       for (const a of applications) {
         if (a.user) a.user = await devStore.findUserById(a.user);
       }
     }
 
+    const seenMap = await getUniRepSeenMap(req.user._id);
     const documentRepository = [];
     applications.forEach((app) => {
       const docs = Array.isArray(app.documents) ? app.documents : [];
       docs.forEach((doc, idx) => {
+        const docId = doc._id ? doc._id.toString() : `${app._id}-${idx}`;
         documentRepository.push({
-          id: `${app._id}-${idx}`,
+          id: docId,
+          isSeenByUniRep: isUniRepDocSeen('document', docId, seenMap),
           applicationId: app.applicationId || app._id,
           studentName: app.user?.name || 'Applicant',
           studentEmail: app.user?.email || '',
@@ -1733,10 +2283,17 @@ export const getUniRepMessages = async (req, res, next) => {
       );
     }
 
+    const seenMap = await getUniRepSeenMap(req.user._id);
+    const enrichedMessages = messages.map((m) => {
+      const msg = m.toObject ? m.toObject() : { ...m };
+      msg.isSeenByUniRep = isUniRepDocSeen('message', msg._id, seenMap) || isUniRepDocSeen('message', msg.sessionId, seenMap);
+      return msg;
+    });
+
     return res.status(200).json({
       success: true,
-      count: messages.length,
-      data: { messages },
+      count: enrichedMessages.length,
+      data: { messages: enrichedMessages },
     });
   } catch (error) {
     next(error);
@@ -1753,6 +2310,45 @@ export const sendUniRepMessage = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Message text is required.' });
     }
 
+    const university = await resolveUniversityForUser(req.user);
+    if (!university) {
+      return res.status(404).json({ success: false, message: 'University profile not found.' });
+    }
+
+    // MESSAGE SECURITY CHECK: Verify receiver is an authorized partner agency with an ACCEPTED connection
+    if (receiverId) {
+      const recIdStr = receiverId.toString();
+      let isAuthorizedPartner = false;
+      if (mongoose.connection.readyState === 1) {
+        const conn = await UniversityAgencyConnection.findOne({
+          status: 'ACCEPTED',
+          agencyId: receiverId,
+          $or: [
+            { universityRepresentativeId: req.user._id },
+            ...(university._id ? [{ universityId: university._id }] : []),
+          ],
+        });
+        if (conn) isAuthorizedPartner = true;
+      } else {
+        const db = devStore.read();
+        const conn = (db.universityAgencyConnections || []).find(
+          (c) =>
+            c.status === 'ACCEPTED' &&
+            c.agencyId?.toString() === recIdStr &&
+            (c.universityRepresentativeId?.toString() === req.user._id.toString() ||
+              (university._id && c.universityId?.toString() === university._id.toString()))
+        );
+        if (conn) isAuthorizedPartner = true;
+      }
+
+      if (!isAuthorizedPartner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access Denied: You can only communicate with authorized partner agencies with an active, accepted connection.',
+        });
+      }
+    }
+
     const payload = {
       user: req.user._id,
       sender: 'agent', // ChatMessage schema enum: ['user', 'ai', 'agent']
@@ -1767,6 +2363,44 @@ export const sendUniRepMessage = async (req, res, next) => {
       newMsg = await ChatMessage.create(payload);
     } else {
       newMsg = await devStore.addChatMessage(payload);
+    }
+
+    if (receiverId) {
+      try {
+        if (mongoose.connection.readyState === 1) {
+          const rxUser = await User.findById(receiverId);
+          if (rxUser && rxUser.role === 'agency') {
+            await Notification.create({
+              user: rxUser._id,
+              title: `New Message from ${req.user.name || 'University Representative'}`,
+              message: text.trim().slice(0, 100),
+              type: 'info',
+              link: '/agency/messages',
+              actionUrl: '/agency/messages',
+              relatedEntityType: 'message',
+              relatedEntityId: payload.sessionId,
+              read: false,
+            });
+          }
+        } else {
+          const rxUser = await devStore.findUserById(receiverId);
+          if (rxUser && rxUser.role === 'agency') {
+            await devStore.createNotification({
+              userId: rxUser._id,
+              title: `New Message from ${req.user.name || 'University Representative'}`,
+              message: text.trim().slice(0, 100),
+              type: 'info',
+              link: '/agency/messages',
+              actionUrl: '/agency/messages',
+              relatedEntityType: 'message',
+              relatedEntityId: payload.sessionId,
+              read: false,
+            });
+          }
+        }
+      } catch (notifErr) {
+        console.warn('[UniRep message notif warning]:', notifErr.message);
+      }
     }
 
     return res.status(201).json({
@@ -2425,10 +3059,27 @@ export const getUniRepNotifications = async (req, res, next) => {
 export const markUniRepNotificationRead = async (req, res, next) => {
   try {
     const { id } = req.params;
+    let notif = null;
     if (mongoose.connection.readyState === 1) {
-      await Notification.findOneAndUpdate({ _id: id, user: req.user._id }, { read: true, isRead: true });
+      notif = await Notification.findOneAndUpdate({ _id: id, user: req.user._id }, { read: true, isRead: true });
     } else {
-      await devStore.markNotificationRead(id);
+      const db = devStore.read();
+      notif = (db.notifications || []).find((n) => n._id?.toString() === id.toString() && n.user?.toString() === req.user._id.toString());
+      if (notif) {
+        notif.read = true;
+        notif.isRead = true;
+        devStore.write(db);
+      }
+    }
+
+    // Synchronize: If notification has a related entity, mark it seen for this Uni Rep
+    if (notif && notif.relatedEntityType && notif.relatedEntityId) {
+      try {
+        const uniForSync = await resolveUniversityForUser(req.user);
+        await markUniRepEntityAsSeenHelper(req.user, uniForSync, notif.relatedEntityType, notif.relatedEntityId);
+      } catch {
+        // Ignore if entity ownership verification fails
+      }
     }
 
     return res.status(200).json({ success: true, message: 'Notification marked as read.' });
@@ -2479,10 +3130,17 @@ export const getUniRepReports = async (req, res, next) => {
       reports = (db.reports || []).filter((r) => r.reportedBy?.toString() === userId);
     }
 
+    const seenMap = await getUniRepSeenMap(req.user._id);
+    const enrichedReports = reports.map((r) => {
+      const rep = r.toObject ? r.toObject() : { ...r };
+      rep.isSeenByUniRep = isUniRepDocSeen('report', rep._id, seenMap) || isUniRepDocSeen('report', rep.reportId, seenMap);
+      return rep;
+    });
+
     return res.status(200).json({
       success: true,
-      count: reports.length,
-      data: { reports },
+      count: enrichedReports.length,
+      data: { reports: enrichedReports },
     });
   } catch (error) {
     next(error);

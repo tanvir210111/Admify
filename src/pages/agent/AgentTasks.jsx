@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -45,6 +46,17 @@ export default function AgentTasks() {
   const [priority, setPriority] = useState("MEDIUM");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const { sidebarCounts, getStatusCount, markEntityAsSeen } = useAgentBadges();
+
+  const handleViewTask = (t) => {
+    if (t && t.isSeenByAgent === false) {
+      t.isSeenByAgent = true;
+      markEntityAsSeen("task", t._id);
+      setTasks((prev) =>
+        prev.map((task) => (task._id === t._id ? { ...task, isSeenByAgent: true } : task))
+      );
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -211,6 +223,34 @@ export default function AgentTasks() {
         ))}
       </motion.div>
 
+      {/* Status Filter Tabs with Unseen Badges */}
+      <motion.div variants={fade} className="flex flex-wrap items-center gap-2">
+        {[
+          { key: "all", label: "All Statuses", count: getStatusCount('tasks', 'all') },
+          { key: "PENDING", label: "Pending", count: getStatusCount('tasks', 'PENDING') },
+          { key: "IN_PROGRESS", label: "In Progress", count: getStatusCount('tasks', 'IN_PROGRESS') },
+          { key: "COMPLETED", label: "Completed", count: getStatusCount('tasks', 'COMPLETED') },
+          { key: "CANCELLED", label: "Cancelled", count: getStatusCount('tasks', 'CANCELLED') },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setStatusFilter(tab.key)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+              statusFilter.toLowerCase() === tab.key.toLowerCase()
+                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                : "bg-[#0B1228] text-slate-400 border-white/5 hover:text-white"
+            }`}
+          >
+            <span>{tab.label}</span>
+            {tab.count > 0 && (
+              <span className="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/30 text-cyan-200 font-extrabold border border-cyan-400/40">
+                [{tab.count}]
+              </span>
+            )}
+          </button>
+        ))}
+      </motion.div>
+
       {/* Filter / Search Bar */}
       <motion.div
         variants={fade}
@@ -268,12 +308,18 @@ export default function AgentTasks() {
               const isCompleted = t.status === "COMPLETED";
               const priorityClass =
                 PRIORITY_BADGES[t.priority] || PRIORITY_BADGES.MEDIUM;
+              const isUnseen = t.isSeenByAgent === false;
 
               return (
                 <div
                   key={t._id}
-                  className={`p-4 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                    isCompleted ? "opacity-60 bg-white/[0.01]" : "hover:bg-white/[0.02]"
+                  onClick={() => handleViewTask(t)}
+                  className={`p-4 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer ${
+                    isUnseen
+                      ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
+                      : isCompleted
+                      ? "opacity-60 bg-white/[0.01]"
+                      : "hover:bg-white/[0.02]"
                   }`}
                 >
                   <div className="flex items-start gap-3">

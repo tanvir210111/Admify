@@ -16,9 +16,11 @@ import { api } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import toast from "react-hot-toast";
 import { useSearchParams } from "react-router-dom";
+import { useUniRepBadges, formatBadgeCount } from "../../context/UniRepBadgeContext";
 
 export default function UniRepMessages() {
   const { user } = useAuth();
+  const { markEntityAsSeen } = useUniRepBadges();
   const [searchParams] = useSearchParams();
   const initialPartner = searchParams.get("partner");
 
@@ -88,6 +90,28 @@ export default function UniRepMessages() {
       if (match) setActivePartner(match);
     }
   }, [selectedPartnerId, partners]);
+
+  useEffect(() => {
+    if (!selectedPartnerId || !user?._id) return;
+    const unseenMsgs = messages.filter(
+      (m) =>
+        (m.user?._id || m.user) === selectedPartnerId &&
+        m.isSeenByUniRep === false
+    );
+    if (unseenMsgs.length > 0) {
+      unseenMsgs.forEach((m) => {
+        markEntityAsSeen("message", m._id);
+        m.isSeenByUniRep = true;
+      });
+      setMessages((prev) =>
+        prev.map((m) =>
+          (m.user?._id || m.user) === selectedPartnerId
+            ? { ...m, isSeenByUniRep: true }
+            : m
+        )
+      );
+    }
+  }, [selectedPartnerId, messages, user?._id, markEntityAsSeen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -187,6 +211,11 @@ export default function UniRepMessages() {
             ) : (
               partners.map((partner) => {
                 const isSelected = selectedPartnerId === partner.id;
+                const unreadCount = messages.filter(
+                  (m) =>
+                    (m.user?._id || m.user) === partner.id &&
+                    m.isSeenByUniRep === false
+                ).length;
                 return (
                   <button
                     key={partner.id}
@@ -197,6 +226,8 @@ export default function UniRepMessages() {
                     className={`w-full p-4 flex items-center gap-3 text-left transition ${
                       isSelected
                         ? "bg-purple-600/15 border-l-2 border-purple-500 text-white"
+                        : unreadCount > 0
+                        ? "bg-gradient-to-r from-purple-500/[0.08] to-blue-500/[0.04] border-l-4 border-l-purple-500 text-white"
                         : "hover:bg-white/[0.03] text-slate-300"
                     }`}
                   >
@@ -210,7 +241,14 @@ export default function UniRepMessages() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
                         <p className="text-xs font-bold text-white truncate">{partner.name}</p>
-                        <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {unreadCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500 text-white shadow-sm shadow-purple-500/40">
+                              {unreadCount}
+                            </span>
+                          )}
+                          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        </div>
                       </div>
                       <p className="text-[11px] text-slate-400 truncate mt-0.5">
                         {partner.country || "International Partner"}

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -70,6 +71,7 @@ export default function AgentApplications() {
   const [newStepLabel, setNewStepLabel] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const { sidebarCounts, getStatusCount, markEntityAsSeen } = useAgentBadges();
 
   const fetchApplications = async () => {
     try {
@@ -90,12 +92,30 @@ export default function AgentApplications() {
     fetchApplications();
   }, []);
 
+  const handleSelectApp = (app) => {
+    setSelectedApp(app);
+    if (app && app.isSeenByAgent === false) {
+      app.isSeenByAgent = true;
+      markEntityAsSeen("application", app._id);
+      setApplications((prev) =>
+        prev.map((a) => (a._id === app._id ? { ...a, isSeenByAgent: true } : a))
+      );
+    }
+  };
+
   const openUpdateModal = (app) => {
     setEditingApp(app);
     setNewStage(app.stage || "Submitted");
     setNewProgress(app.progress || 0);
     setNewNotes(app.notes || "");
     setNewStepLabel("");
+    if (app && app.isSeenByAgent === false) {
+      app.isSeenByAgent = true;
+      markEntityAsSeen("application", app._id);
+      setApplications((prev) =>
+        prev.map((a) => (a._id === app._id ? { ...a, isSeenByAgent: true } : a))
+      );
+    }
   };
 
   const handleSaveUpdate = async (e) => {
@@ -210,6 +230,36 @@ export default function AgentApplications() {
         ))}
       </motion.div>
 
+      {/* Stage Filter Tabs with Unseen Badges */}
+      <motion.div variants={fade} className="flex flex-wrap items-center gap-2">
+        {[
+          { key: "all", label: "All Stages", count: getStatusCount('applications', 'all') },
+          { key: "Submitted", label: "Submitted", count: getStatusCount('applications', 'Submitted') },
+          { key: "Documents Pending", label: "Documents Pending", count: getStatusCount('applications', 'Documents Pending') },
+          { key: "Under Review", label: "In Review", count: getStatusCount('applications', 'In Review') },
+          { key: "Accepted", label: "Accepted", count: getStatusCount('applications', 'Accepted') },
+          { key: "Completed", label: "Completed", count: getStatusCount('applications', 'Completed') },
+          { key: "Rejected", label: "Rejected", count: getStatusCount('applications', 'Rejected') },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setStageFilter(tab.key)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+              stageFilter.toLowerCase() === tab.key.toLowerCase()
+                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                : "bg-[#0B1228] text-slate-400 border-white/5 hover:text-white"
+            }`}
+          >
+            <span>{tab.label}</span>
+            {tab.count > 0 && (
+              <span className="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/30 text-cyan-200 font-extrabold border border-cyan-400/40">
+                [{tab.count}]
+              </span>
+            )}
+          </button>
+        ))}
+      </motion.div>
+
       {/* Search and Filter Bar */}
       <motion.div
         variants={fade}
@@ -285,11 +335,17 @@ export default function AgentApplications() {
                     STATUS_COLOR[app.stage] ||
                     "text-slate-300 bg-slate-500/10 border-slate-500/20";
 
+                  const isUnseen = app.isSeenByAgent === false;
+
                   return (
                     <tr
                       key={app._id}
-                      className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
-                      onClick={() => setSelectedApp(app)}
+                      className={`transition-colors group cursor-pointer border-b border-white/5 ${
+                        isUnseen
+                          ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                      onClick={() => handleSelectApp(app)}
                     >
                       <td className="py-3 px-4">
                         <div className="font-bold text-white group-hover:text-violet-400 transition-colors">

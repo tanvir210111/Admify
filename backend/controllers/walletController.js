@@ -740,6 +740,46 @@ export const activateAgencyService = async (req, res, next) => {
       link: '/student/agency-assistance',
     });
 
+    // Notify agencies of new Agency Assistance / Full Managed Service order
+    try {
+      if (mongoose.connection.readyState === 1) {
+        const agencies = await User.find({ role: 'agency' });
+        for (const ag of agencies) {
+          await Notification.create({
+            user: ag._id,
+            title: `New Service Request: ${serviceName}`,
+            message: `A student has submitted a new ${serviceName} order (${orderId}). Review details in Service Requests.`,
+            type: 'info',
+            link: '/agency/service-requests',
+            relatedEntityType: 'serviceRequest',
+            relatedEntityId: agencyOrder._id.toString(),
+            read: false,
+          });
+        }
+      } else {
+        const db = devStore.read();
+        const agencies = (db.users || []).filter((u) => u.role === 'agency');
+        for (const ag of agencies) {
+          if (!Array.isArray(db.notifications)) db.notifications = [];
+          db.notifications.push({
+            _id: new mongoose.Types.ObjectId().toString(),
+            user: ag._id,
+            title: `New Service Request: ${serviceName}`,
+            message: `A student has submitted a new ${serviceName} order (${orderId}). Review details in Service Requests.`,
+            type: 'info',
+            link: '/agency/service-requests',
+            relatedEntityType: 'serviceRequest',
+            relatedEntityId: (agencyOrder._id || agencyOrder.id || orderId).toString(),
+            read: false,
+            createdAt: new Date().toISOString(),
+          });
+        }
+        devStore.write(db);
+      }
+    } catch (notifErr) {
+      console.warn('[Agency Service Notif Warning]:', notifErr.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: `${serviceName} activated successfully!`,

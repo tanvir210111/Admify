@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
 import { api } from "../../lib/api";
 import {
   UserCheck,
@@ -22,6 +23,8 @@ import {
 
 export default function AgencyDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { markEntitySeen, refreshCounts } = useAgencyBadges();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -41,6 +44,17 @@ export default function AgencyDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEntityClick = async (entityType, entityId, link) => {
+    if (entityType && entityId) {
+      try {
+        await markEntitySeen(entityType, entityId);
+      } catch (e) {
+        console.error("Failed marking seen:", e);
+      }
+    }
+    if (link) navigate(link);
   };
 
   useEffect(() => {
@@ -261,23 +275,41 @@ export default function AgencyDashboard() {
               </div>
             ) : (
               <div className="divide-y divide-white/5">
-                {data.recentApplications.map((app) => (
-                  <div key={app._id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-white text-xs font-semibold truncate">
-                        {app.university} — {app.program}
-                      </p>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        Student: {app.user?.name || "Student"} • {app.country || "Global"}
-                      </p>
+                {data.recentApplications.map((app) => {
+                  const isUnseen = app.isSeenByAgency === false;
+                  return (
+                    <div
+                      key={app._id}
+                      onClick={() => handleEntityClick("application", app._id, "/agency/applications")}
+                      className={`py-3 px-3 rounded-lg flex items-center justify-between gap-3 cursor-pointer transition-colors hover:bg-white/[0.04] ${
+                        isUnseen
+                          ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                          : ""
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-white text-xs font-semibold truncate">
+                            {app.university} — {app.program}
+                          </p>
+                          {isUnseen && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 animate-pulse shrink-0">
+                              NEW UPDATE
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          Student: {app.user?.name || "Student"} • {app.country || "Global"}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                          {app.stage || "Submitted"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/10 text-violet-300 border border-violet-500/20">
-                        {app.stage || "Submitted"}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -320,23 +352,41 @@ export default function AgencyDashboard() {
               </div>
             ) : (
               <div className="divide-y divide-white/5">
-                {data.recentServiceRequests.map((ord) => (
-                  <div key={ord._id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-white text-xs font-semibold truncate">
-                        {ord.serviceName || "Agency Service"}
-                      </p>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        Student: {ord.user?.name || "Student"} • {ord.creditsCharged || 0} Credits
-                      </p>
+                {data.recentServiceRequests.map((ord) => {
+                  const isUnseen = ord.isSeenByAgency === false;
+                  return (
+                    <div
+                      key={ord._id}
+                      onClick={() => handleEntityClick("serviceRequest", ord._id, "/agency/service-requests")}
+                      className={`py-3 px-3 rounded-lg flex items-center justify-between gap-3 cursor-pointer transition-colors hover:bg-white/[0.04] ${
+                        isUnseen
+                          ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                          : ""
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-white text-xs font-semibold truncate">
+                            {ord.serviceName || "Agency Service"}
+                          </p>
+                          {isUnseen && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 animate-pulse shrink-0">
+                              NEW UPDATE
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          Student: {ord.user?.name || "Student"} • {ord.creditsCharged || 0} Credits
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {ord.status || "ACTIVE"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        {ord.status || "ACTIVE"}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -381,29 +431,47 @@ export default function AgencyDashboard() {
             </div>
           ) : (
             <div className="divide-y divide-white/5">
-              {data.recentPartnerships.map((conn) => (
-                <div key={conn._id} className="py-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-white text-xs font-semibold truncate">
-                      {conn.university?.name || "University Partner"}
-                    </p>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      Representative: {conn.universityRepresentative?.name || "Official Rep"}
-                    </p>
-                  </div>
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                      conn.status === "ACCEPTED"
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                        : conn.status === "PENDING"
-                        ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                        : "bg-slate-500/10 text-slate-400 border-slate-500/20"
+              {data.recentPartnerships.map((conn) => {
+                const isUnseen = conn.isSeenByAgency === false;
+                return (
+                  <div
+                    key={conn._id}
+                    onClick={() => handleEntityClick("universityPartnership", conn._id, "/agency/university-partnerships")}
+                    className={`py-3 px-3 rounded-lg flex items-center justify-between gap-3 cursor-pointer transition-colors hover:bg-white/[0.04] ${
+                      isUnseen
+                        ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                        : ""
                     }`}
                   >
-                    {conn.status}
-                  </span>
-                </div>
-              ))}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-white text-xs font-semibold truncate">
+                          {conn.university?.name || "University Partner"}
+                        </p>
+                        {isUnseen && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 animate-pulse shrink-0">
+                            NEW UPDATE
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        Representative: {conn.universityRepresentative?.name || "Official Rep"}
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        conn.status === "ACCEPTED"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : conn.status === "PENDING"
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                          : "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                      }`}
+                    >
+                      {conn.status}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -444,15 +512,33 @@ export default function AgencyDashboard() {
             </div>
           ) : (
             <div className="divide-y divide-white/5">
-              {data.recentNotifications.map((notif) => (
-                <div key={notif._id} className="py-3 flex items-start gap-3">
-                  <div className="w-2 h-2 rounded-full bg-violet-400 mt-1.5 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white text-xs font-semibold">{notif.title || "Notification"}</p>
-                    <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">{notif.message}</p>
+              {data.recentNotifications.map((notif) => {
+                const isUnread = !notif.read;
+                return (
+                  <div
+                    key={notif._id}
+                    onClick={() => handleEntityClick(notif.relatedEntityType, notif.relatedEntityId, notif.actionUrl || notif.link || "/agency/notifications")}
+                    className={`py-3 px-3 rounded-lg flex items-start gap-3 cursor-pointer transition-colors hover:bg-white/[0.04] ${
+                      isUnread
+                        ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                        : ""
+                    }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${isUnread ? "bg-violet-400" : "bg-slate-600"}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-white text-xs font-semibold">{notif.title || "Notification"}</p>
+                        {isUnread && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 shrink-0">
+                            UNREAD
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">{notif.message}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -22,7 +22,17 @@ import {
   Send,
 } from "lucide-react";
 
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+
+const AGENT_STATUS_TABS = [
+  { key: "all", label: "All Agents" },
+  { key: "active", label: "Active" },
+  { key: "inactive", label: "Inactive" },
+  { key: "suspended", label: "Suspended" },
+];
+
 export default function AgencyAgents() {
+  const { getStatusCount, markEntityAsSeen } = useAgencyBadges();
   const [agents, setAgents] = useState([]);
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +73,34 @@ export default function AgencyAgents() {
   useEffect(() => {
     fetchAgents();
   }, []);
+
+  const handleRowClick = (ag) => {
+    if (!ag.isSeenByAgency) {
+      markEntityAsSeen("agent", ag._id);
+      setAgents((prev) =>
+        prev.map((item) => (item._id === ag._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
+
+  const handleOpenDetail = (ag) => {
+    setSelectedAgent(ag);
+    if (!ag.isSeenByAgency) {
+      markEntityAsSeen("agent", ag._id);
+      setAgents((prev) =>
+        prev.map((item) => (item._id === ag._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
+
+  const handleAppClick = (app) => {
+    if (!app.isSeenByAgency) {
+      markEntityAsSeen("agentApplication", app._id);
+      setApplications((prev) =>
+        prev.map((item) => (item._id === app._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
 
   const handleStatusChange = async (agentId, newStatus) => {
     try {
@@ -141,7 +179,7 @@ export default function AgencyAgents() {
           <button
             onClick={fetchAgents}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold border border-white/10 transition-colors"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold border border-white/10 transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             <span>Refresh</span>
@@ -168,7 +206,34 @@ export default function AgencyAgents() {
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Status Filter Tabs */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+        {AGENT_STATUS_TABS.map((st) => {
+          const unseenCount = st.key === "all" ? getStatusCount("agents", "all") : getStatusCount("agents", st.key);
+          return (
+            <button
+              key={st.key}
+              onClick={() => setStatusFilter(st.key)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                statusFilter === st.key
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30 font-bold"
+                  : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <span>{st.label}</span>
+              {unseenCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  statusFilter === st.key ? "bg-white text-violet-700" : "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+                }`}>
+                  [{unseenCount}]
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search Bar */}
       <div className="p-4 rounded-2xl border flex flex-col md:flex-row items-center justify-between gap-3"
         style={{ background: "#0B1228", borderColor: "rgba(255, 255, 255, 0.07)" }}>
         <div className="relative w-full md:w-80">
@@ -181,20 +246,9 @@ export default function AgencyAgents() {
             className="w-full pl-9 pr-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
           />
         </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <Filter className="w-3.5 h-3.5 text-slate-400" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-violet-500"
-          >
-            <option value="all">All Statuses</option>
-            <option value="active">Active Only</option>
-            <option value="inactive">Inactive</option>
-            <option value="suspended">Suspended</option>
-          </select>
-        </div>
+        <span className="text-xs text-slate-400 font-medium">
+          {filteredAgents.length} counselor{filteredAgents.length !== 1 ? "s" : ""}
+        </span>
       </div>
 
       {/* Agents Table */}
@@ -231,91 +285,119 @@ export default function AgencyAgents() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-xs">
-                {filteredAgents.map((ag) => (
-                  <tr key={ag._id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600/30 to-indigo-600/30 border border-violet-500/30 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                          {ag.name?.charAt(0) || "A"}
-                        </div>
-                        <div>
-                          <p className="text-white font-semibold">{ag.name}</p>
-                          <p className="text-slate-400 text-[11px]">Member since {new Date(ag.createdAt || Date.now()).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300">
-                      {ag.designation || "Admissions Counselor"}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-slate-300">
-                          <Mail className="w-3 h-3 text-slate-500" />
-                          <span>{ag.email}</span>
-                        </div>
-                        {ag.phone && (
-                          <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
-                            <Phone className="w-3 h-3 text-slate-500" />
-                            <span>{ag.phone}</span>
+                {filteredAgents.map((ag) => {
+                  const isUnseen = ag.isSeenByAgency === false;
+                  return (
+                    <tr
+                      key={ag._id}
+                      onClick={() => handleRowClick(ag)}
+                      className={`transition-all cursor-pointer ${
+                        isUnseen
+                          ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600/30 to-indigo-600/30 border border-violet-500/30 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                            {ag.name?.charAt(0) || "A"}
                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300">
-                      {ag.countrySpecialization || "Global"}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                          ag.status === "active"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : ag.status === "suspended"
-                            ? "bg-red-500/10 text-red-400 border-red-500/20"
-                            : "bg-slate-500/10 text-slate-400 border-slate-500/20"
-                        }`}
-                      >
-                        {ag.status === "active" && <CheckCircle2 className="w-3 h-3" />}
-                        {ag.status === "suspended" && <XCircle className="w-3 h-3" />}
-                        {ag.status?.toUpperCase() || "ACTIVE"}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setSelectedAgent(ag)}
-                          className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors"
+                          <div>
+                            {isUnseen && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider mb-1">
+                                NEW UPDATE
+                              </span>
+                            )}
+                            <p className="text-white font-semibold">{ag.name}</p>
+                            <p className="text-slate-400 text-[11px]">Member since {new Date(ag.createdAt || Date.now()).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-300">
+                        {ag.designation || "Admissions Counselor"}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-slate-300">
+                            <Mail className="w-3 h-3 text-slate-500" />
+                            <span>{ag.email}</span>
+                          </div>
+                          {ag.phone && (
+                            <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
+                              <Phone className="w-3 h-3 text-slate-500" />
+                              <span>{ag.phone}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-300">
+                        {ag.countrySpecialization || "Global"}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                            ag.status === "active"
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              : ag.status === "suspended"
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                          }`}
                         >
-                          View
-                        </button>
+                          {ag.status === "active" && <CheckCircle2 className="w-3 h-3" />}
+                          {ag.status === "suspended" && <XCircle className="w-3 h-3" />}
+                          {ag.status?.toUpperCase() || "ACTIVE"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDetail(ag);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors"
+                          >
+                            View
+                          </button>
 
-                        {ag.status !== "active" ? (
-                          <button
-                            onClick={() => handleStatusChange(ag._id, "active")}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-semibold border border-emerald-500/20 transition-colors"
-                          >
-                            Activate
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleStatusChange(ag._id, "inactive")}
-                            className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[11px] font-semibold border border-amber-500/20 transition-colors"
-                          >
-                            Deactivate
-                          </button>
-                        )}
+                          {ag.status !== "active" ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStatusChange(ag._id, "active");
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-semibold border border-emerald-500/20 transition-colors"
+                            >
+                              Activate
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStatusChange(ag._id, "inactive");
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[11px] font-semibold border border-amber-500/20 transition-colors"
+                            >
+                              Deactivate
+                            </button>
+                          )}
 
-                        {ag.status !== "suspended" && (
-                          <button
-                            onClick={() => handleStatusChange(ag._id, "suspended")}
-                            className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[11px] font-semibold border border-red-500/20 transition-colors"
-                          >
-                            Suspend
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {ag.status !== "suspended" && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStatusChange(ag._id, "suspended");
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[11px] font-semibold border border-red-500/20 transition-colors"
+                            >
+                              Suspend
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -332,41 +414,54 @@ export default function AgencyAgents() {
             </span>
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {applications.map((app) => (
-              <div
-                key={app._id}
-                className="p-4 rounded-xl border"
-                style={{ background: "#0B1228", borderColor: "rgba(255, 255, 255, 0.07)" }}
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-white font-bold text-xs">{app.name}</p>
-                    <p className="text-slate-400 text-[11px]">{app.email}</p>
+            {applications.map((app) => {
+              const isAppUnseen = app.isSeenByAgency === false;
+              return (
+                <div
+                  key={app._id}
+                  onClick={() => handleAppClick(app)}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                    isAppUnseen
+                      ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                      : "hover:border-white/20"
+                  }`}
+                  style={{ background: isAppUnseen ? undefined : "#0B1228", borderColor: isAppUnseen ? undefined : "rgba(255, 255, 255, 0.07)" }}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      {isAppUnseen && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider mb-1">
+                          NEW UPDATE
+                        </span>
+                      )}
+                      <p className="text-white font-bold text-xs">{app.name}</p>
+                      <p className="text-slate-400 text-[11px]">{app.email}</p>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                        app.status === "approved"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : app.status === "rejected"
+                          ? "bg-red-500/10 text-red-400 border-red-500/20"
+                          : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                      }`}
+                    >
+                      {app.status?.toUpperCase() || "PENDING"}
+                    </span>
                   </div>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                      app.status === "approved"
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                        : app.status === "rejected"
-                        ? "bg-red-500/10 text-red-400 border-red-500/20"
-                        : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                    }`}
-                  >
-                    {app.status?.toUpperCase() || "PENDING"}
-                  </span>
-                </div>
-                <div className="mt-3 pt-2.5 border-t border-white/5 text-[11px] text-slate-400 flex justify-between">
-                  <span>{app.designation || "Counselor"}</span>
-                  <span>Submitted {new Date(app.createdAt || Date.now()).toLocaleDateString()}</span>
-                </div>
-                {app.activationCode && (
-                  <div className="mt-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300 flex justify-between items-center">
-                    <span>Activation Code:</span>
-                    <span className="font-mono font-bold tracking-wider">{app.activationCode}</span>
+                  <div className="mt-3 pt-2.5 border-t border-white/5 text-[11px] text-slate-400 flex justify-between">
+                    <span>{app.designation || "Counselor"}</span>
+                    <span>Submitted {new Date(app.createdAt || Date.now()).toLocaleDateString()}</span>
                   </div>
-                )}
-              </div>
-            ))}
+                  {app.activationCode && (
+                    <div className="mt-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300 flex justify-between items-center">
+                      <span>Activation Code:</span>
+                      <span className="font-mono font-bold tracking-wider">{app.activationCode}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -3,6 +3,9 @@ import Application from '../models/Application.js';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import StudentSeenItem from '../models/StudentSeenItem.js';
+import AgencySeenItem from '../models/AgencySeenItem.js';
+import UniRepSeenItem from '../models/UniRepSeenItem.js';
+import University from '../models/University.js';
 import devStore from '../utils/devStore.js';
 
 // @desc    Get current user applications
@@ -142,6 +145,56 @@ export const createApplication = async (req, res, next) => {
           });
         }
       } catch {}
+
+      // Notify assigned agency if applicable
+      if (req.body.assignedAgency) {
+        try {
+          application.assignedAgency = req.body.assignedAgency;
+          await application.save();
+          await Notification.create({
+            user: req.body.assignedAgency,
+            title: 'New Student Application Assigned',
+            message: `A new application for ${university} (${program}) was submitted by ${req.user.name || 'Student'} and assigned to your agency.`,
+            type: 'info',
+            link: '/agency/applications',
+            actionUrl: '/agency/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id ? application._id.toString() : '',
+          });
+        } catch {}
+      }
+
+      // Notify University Representative
+      try {
+        let uniRepUsers = [];
+        if (application.universityId) {
+          uniRepUsers = await User.find({
+            role: { $in: ['university_rep', 'university representative', 'university'] },
+            universityId: application.universityId,
+          });
+        }
+        if (uniRepUsers.length === 0 && application.university) {
+          const u = await University.findOne({ name: new RegExp(`^${application.university.trim()}$`, 'i') });
+          if (u) {
+            uniRepUsers = await User.find({
+              role: { $in: ['university_rep', 'university representative', 'university'] },
+              universityId: u._id,
+            });
+          }
+        }
+        for (const rep of uniRepUsers) {
+          await Notification.create({
+            user: rep._id,
+            title: 'New Candidate Application Received',
+            message: `A new application for ${application.program} was submitted by ${req.user.name || 'Student'}.`,
+            type: 'info',
+            link: '/university-rep/applications',
+            actionUrl: '/university-rep/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id ? application._id.toString() : '',
+          });
+        }
+      } catch {}
     } else {
       application = await devStore.createApplication({
         user: req.user._id,
@@ -151,6 +204,7 @@ export const createApplication = async (req, res, next) => {
         logo: logo || '🎓',
         stage: 'Submitted',
         progress: 25,
+        assignedAgency: req.body.assignedAgency || undefined,
       });
 
       // Notify user
@@ -172,6 +226,51 @@ export const createApplication = async (req, res, next) => {
             type: 'info',
             link: '/admin/applications',
             actionUrl: '/admin/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id ? application._id.toString() : '',
+          });
+        }
+      } catch {}
+
+      // Notify assigned agency if applicable
+      if (req.body.assignedAgency) {
+        try {
+          await devStore.createNotification({
+            userId: req.body.assignedAgency,
+            title: 'New Student Application Assigned',
+            message: `A new application for ${university} (${program}) was submitted by ${req.user.name || 'Student'} and assigned to your agency.`,
+            type: 'info',
+            link: '/agency/applications',
+            actionUrl: '/agency/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id ? application._id.toString() : '',
+          });
+        } catch {}
+      }
+
+      // Notify target University Representative in devStore
+      try {
+        const db = devStore.read();
+        let targetUniId = application.universityId;
+        if (!targetUniId && application.university) {
+          const matchUni = (db.universities || []).find(
+            (u) => u.name && u.name.toLowerCase() === application.university.toLowerCase()
+          );
+          if (matchUni) targetUniId = matchUni._id;
+        }
+        const uniReps = (db.users || []).filter(
+          (u) =>
+            ['university_rep', 'university representative', 'university'].includes(u.role) &&
+            (targetUniId ? u.universityId?.toString() === targetUniId.toString() : false)
+        );
+        for (const rep of uniReps) {
+          await devStore.createNotification({
+            userId: rep._id,
+            title: 'New Candidate Application Received',
+            message: `A new application for ${application.program} was submitted by ${req.user.name || 'Student'}.`,
+            type: 'info',
+            link: '/university-rep/applications',
+            actionUrl: '/university-rep/applications',
             relatedEntityType: 'application',
             relatedEntityId: application._id ? application._id.toString() : '',
           });
@@ -231,6 +330,63 @@ export const updateApplicationStatus = async (req, res, next) => {
         relatedEntityType: 'application',
         relatedEntityId: application._id.toString(),
       });
+
+      // If application is assigned to an agency, reset seen and notify
+      if (application.assignedAgency) {
+        try {
+          await AgencySeenItem.deleteMany({
+            agency: application.assignedAgency,
+            entityId: application._id.toString(),
+          });
+          await Notification.create({
+            user: application.assignedAgency,
+            title: 'Application Status Updated',
+            message: `Application for ${application.university} is now: ${application.stage}`,
+            type: 'info',
+            link: '/agency/applications',
+            actionUrl: '/agency/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id.toString(),
+          });
+        } catch {}
+      }
+
+      // Reset Uni Rep seen item for this updated application and notify Uni Rep
+      try {
+        await UniRepSeenItem.deleteMany({
+          entityType: 'application',
+          entityId: application._id.toString(),
+        });
+
+        let uniRepUsers = [];
+        if (application.universityId) {
+          uniRepUsers = await User.find({
+            role: { $in: ['university_rep', 'university representative', 'university'] },
+            universityId: application.universityId,
+          });
+        }
+        if (uniRepUsers.length === 0 && application.university) {
+          const u = await University.findOne({ name: new RegExp(`^${application.university.trim()}$`, 'i') });
+          if (u) {
+            uniRepUsers = await User.find({
+              role: { $in: ['university_rep', 'university representative', 'university'] },
+              universityId: u._id,
+            });
+          }
+        }
+        for (const rep of uniRepUsers) {
+          await Notification.create({
+            user: rep._id,
+            title: 'Application Stage Updated',
+            message: `Application for ${application.studentName || application.program || 'applicant'} stage changed to: ${application.stage}`,
+            type: 'info',
+            link: '/university-rep/applications',
+            actionUrl: '/university-rep/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id.toString(),
+          });
+        }
+      } catch {}
     } else {
       application = await devStore.findApplicationById(req.params.id);
       if (!application) {
@@ -253,6 +409,14 @@ export const updateApplicationStatus = async (req, res, next) => {
       db.studentSeenItems = (db.studentSeenItems || []).filter(
         (item) => !(item.user === application.user?.toString() && item.entityId === req.params.id.toString())
       );
+      if (application.assignedAgency) {
+        db.agencySeenItems = (db.agencySeenItems || []).filter(
+          (item) => !(item.agency?.toString() === application.assignedAgency?.toString() && item.entityId === req.params.id.toString())
+        );
+      }
+      db.uniRepSeenItems = (db.uniRepSeenItems || []).filter(
+        (item) => !(item.entityType === 'application' && item.entityId === req.params.id.toString())
+      );
       devStore.write(db);
 
       // Notify the applicant with rich relation metadata
@@ -266,6 +430,49 @@ export const updateApplicationStatus = async (req, res, next) => {
         relatedEntityType: 'application',
         relatedEntityId: application._id ? application._id.toString() : req.params.id,
       });
+
+      if (application.assignedAgency) {
+        try {
+          await devStore.createNotification({
+            userId: application.assignedAgency,
+            title: 'Application Status Updated',
+            message: `Application for ${application.university} is now: ${application.stage}`,
+            type: 'info',
+            link: '/agency/applications',
+            actionUrl: '/agency/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id ? application._id.toString() : req.params.id,
+          });
+        } catch {}
+      }
+
+      // Notify Uni Rep in devStore
+      try {
+        let targetUniId = application.universityId;
+        if (!targetUniId && application.university) {
+          const matchUni = (db.universities || []).find(
+            (u) => u.name && u.name.toLowerCase() === application.university.toLowerCase()
+          );
+          if (matchUni) targetUniId = matchUni._id;
+        }
+        const uniReps = (db.users || []).filter(
+          (u) =>
+            ['university_rep', 'university representative', 'university'].includes(u.role) &&
+            (targetUniId ? u.universityId?.toString() === targetUniId.toString() : false)
+        );
+        for (const rep of uniReps) {
+          await devStore.createNotification({
+            userId: rep._id,
+            title: 'Application Stage Updated',
+            message: `Application for ${application.studentName || application.program || 'applicant'} stage changed to: ${application.stage}`,
+            type: 'info',
+            link: '/university-rep/applications',
+            actionUrl: '/university-rep/applications',
+            relatedEntityType: 'application',
+            relatedEntityId: application._id ? application._id.toString() : req.params.id,
+          });
+        }
+      } catch {}
     }
 
     return res.status(200).json({

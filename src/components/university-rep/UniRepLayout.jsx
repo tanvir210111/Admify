@@ -4,6 +4,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
 import {
+  UniRepBadgeProvider,
+  useUniRepBadges,
+  formatBadgeCount,
+} from "../../context/UniRepBadgeContext";
+import {
   LayoutDashboard,
   Building2,
   GraduationCap,
@@ -35,23 +40,24 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard",                path: "/university-rep/dashboard" },
   { icon: Building2,       label: "My University",            path: "/university-rep/university" },
   { icon: GraduationCap,   label: "Programs & Departments",   path: "/university-rep/programs" },
-  { icon: Handshake,       label: "Agency Partnerships",      path: "/university-rep/partnerships" },
+  { icon: Handshake,       label: "Agency Partnerships",      path: "/university-rep/partnerships", countKey: "partnerships" },
   { icon: Users2,          label: "Connected Agencies",       path: "/university-rep/agencies" },
-  { icon: FileCheck2,      label: "Applications / Inquiries", path: "/university-rep/applications" },
-  { icon: FolderOpen,      label: "Application Documents",    path: "/university-rep/documents" },
-  { icon: MessageSquare,   label: "Messages",                 path: "/university-rep/messages" },
+  { icon: FileCheck2,      label: "Applications / Inquiries", path: "/university-rep/applications", countKey: "applications" },
+  { icon: FolderOpen,      label: "Application Documents",    path: "/university-rep/documents",    countKey: "documents" },
+  { icon: MessageSquare,   label: "Messages",                 path: "/university-rep/messages",     countKey: "messages" },
   { icon: Megaphone,       label: "Announcements",            path: "/university-rep/announcements" },
   { icon: Award,           label: "Scholarships",             path: "/university-rep/scholarships" },
   { icon: Calendar,        label: "Intakes & Deadlines",      path: "/university-rep/intakes" },
   { icon: BarChart3,       label: "Analytics",                path: "/university-rep/analytics" },
-  { icon: Bell,            label: "Notifications",            path: "/university-rep/notifications" },
-  { icon: AlertCircle,     label: "Reports / Issues",         path: "/university-rep/reports" },
+  { icon: Bell,            label: "Notifications",            path: "/university-rep/notifications", countKey: "notifications" },
+  { icon: AlertCircle,     label: "Reports / Issues",         path: "/university-rep/reports",       countKey: "reports" },
   { icon: User,            label: "My Profile",               path: "/university-rep/profile" },
   { icon: Settings,        label: "Settings",                 path: "/university-rep/settings" },
 ];
 
-export default function UniRepLayout() {
+function UniRepLayoutContent() {
   const { user, signOut } = useAuth();
+  const { sidebarCounts } = useUniRepBadges();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [universityInfo, setUniversityInfo] = useState(null);
@@ -171,7 +177,8 @@ export default function UniRepLayout() {
         <nav className="flex-1 overflow-y-auto px-3 py-1 space-y-0.5 custom-scrollbar">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+            const badgeCount = item.countKey ? sidebarCounts[item.countKey] || 0 : 0;
+            const formatted = formatBadgeCount(badgeCount);
 
             return (
               <NavLink
@@ -188,9 +195,9 @@ export default function UniRepLayout() {
               >
                 <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-purple-400" : "text-slate-400"}`} />
                 <span className="truncate">{item.label}</span>
-                {item.label === "Notifications" && unreadCount > 0 && (
+                {formatted && (
                   <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold bg-purple-500/30 text-purple-300 rounded-full border border-purple-500/40">
-                    {unreadCount}
+                    {formatted}
                   </span>
                 )}
               </NavLink>
@@ -257,7 +264,7 @@ export default function UniRepLayout() {
               className="relative p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition"
             >
               <Bell className="w-4 h-4" />
-              {unreadCount > 0 && (
+              {(sidebarCounts?.notifications > 0 || unreadCount > 0) && (
                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
               )}
             </Link>
@@ -331,5 +338,13 @@ export default function UniRepLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function UniRepLayout() {
+  return (
+    <UniRepBadgeProvider>
+      <UniRepLayoutContent />
+    </UniRepBadgeProvider>
   );
 }

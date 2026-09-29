@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { api } from "../../lib/api";
+import { useAgencyBadges, triggerAgencyBadgeRefresh } from "../../context/AgencyBadgeContext";
 import toast from "react-hot-toast";
 import {
   Bell,
@@ -12,9 +14,12 @@ import {
   FileCheck,
   Handshake,
   Briefcase,
+  ExternalLink,
 } from "lucide-react";
 
 export default function AgencyNotifications() {
+  const { markEntityAsSeen } = useAgencyBadges();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,9 +48,23 @@ export default function AgencyNotifications() {
         setNotifications((prev) =>
           prev.map((n) => (n._id === notifId ? { ...n, read: true } : n))
         );
+        triggerAgencyBadgeRefresh();
       }
     } catch (err) {
       toast.error("Failed to mark as read");
+    }
+  };
+
+  const handleNotificationClick = async (n) => {
+    if (!n.read) {
+      await handleMarkAsRead(n._id);
+    }
+    if (n.relatedEntityType && n.relatedEntityId) {
+      await markEntityAsSeen(n.relatedEntityType, n.relatedEntityId);
+    }
+    const targetUrl = n.actionUrl || n.link;
+    if (targetUrl) {
+      navigate(targetUrl);
     }
   };
 
@@ -86,50 +105,64 @@ export default function AgencyNotifications() {
             </p>
           </div>
         ) : (
-          notifications.map((n) => (
-            <div
-              key={n._id}
-              className={`p-4 flex items-start justify-between gap-4 transition-colors ${
-                n.read ? "bg-transparent opacity-75" : "bg-white/[0.02]"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                    n.read
-                      ? "bg-white/5 border-white/10 text-slate-400"
-                      : "bg-violet-600/20 border-violet-500/30 text-violet-400"
-                  }`}
-                >
-                  <Bell className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className={`text-xs font-bold ${n.read ? "text-slate-300" : "text-white"}`}>
-                      {n.title || "Notification"}
-                    </p>
-                    {!n.read && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-                    )}
+          notifications.map((n) => {
+            const isUnread = !n.read;
+            return (
+              <div
+                key={n._id}
+                onClick={() => handleNotificationClick(n)}
+                className={`p-4 flex items-start justify-between gap-4 transition-all cursor-pointer ${
+                  isUnread
+                    ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                    : "bg-transparent opacity-75 hover:bg-white/[0.02]"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                      isUnread
+                        ? "bg-violet-600/20 border-violet-500/30 text-violet-400"
+                        : "bg-white/5 border-white/10 text-slate-400"
+                    }`}
+                  >
+                    <Bell className="w-4 h-4" />
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    {new Date(n.createdAt || Date.now()).toLocaleString()}
-                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      {isUnread && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider">
+                          UNREAD
+                        </span>
+                      )}
+                      <p className={`text-xs font-bold ${isUnread ? "text-white" : "text-slate-300"}`}>
+                        {n.title || "Notification"}
+                      </p>
+                      {isUnread && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{n.message}</p>
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      {new Date(n.createdAt || Date.now()).toLocaleString()}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {!n.read && (
-                <button
-                  onClick={() => handleMarkAsRead(n._id)}
-                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors shrink-0 flex items-center gap-1"
-                >
-                  <Check className="w-3 h-3 text-slate-400" />
-                  <span>Mark Read</span>
-                </button>
-              )}
-            </div>
-          ))
+                {isUnread && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMarkAsRead(n._id);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors shrink-0 flex items-center gap-1"
+                  >
+                    <Check className="w-3 h-3 text-slate-400" />
+                    <span>Mark Read</span>
+                  </button>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>

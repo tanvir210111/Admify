@@ -4,6 +4,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
 import {
+  AgencyBadgeProvider,
+  useAgencyBadges,
+  formatBadgeCount,
+} from "../../context/AgencyBadgeContext";
+import {
   LayoutDashboard,
   UserCheck,
   Users,
@@ -29,23 +34,24 @@ import {
 
 const NAV = [
   { icon: LayoutDashboard, label: "Dashboard",                path: "/agency/dashboard" },
-  { icon: UserCheck,       label: "My Agents",                path: "/agency/agents" },
-  { icon: Users,           label: "Students",                 path: "/agency/students" },
-  { icon: FileCheck,       label: "Applications",             path: "/agency/applications" },
-  { icon: Briefcase,       label: "Service Requests",         path: "/agency/service-requests" },
-  { icon: Handshake,       label: "University Partnerships",  path: "/agency/university-partnerships" },
-  { icon: MessageSquare,   label: "Messages",                 path: "/agency/messages" },
+  { icon: UserCheck,       label: "My Agents",                path: "/agency/agents",                countKey: "agents" },
+  { icon: Users,           label: "Students",                 path: "/agency/students",              countKey: "students" },
+  { icon: FileCheck,       label: "Applications",             path: "/agency/applications",          countKey: "applications" },
+  { icon: Briefcase,       label: "Service Requests",         path: "/agency/service-requests",      countKey: "serviceRequests" },
+  { icon: Handshake,       label: "University Partnerships",  path: "/agency/university-partnerships", countKey: "universityPartnerships" },
+  { icon: MessageSquare,   label: "Messages",                 path: "/agency/messages",              countKey: "messages" },
   { icon: FileText,        label: "Documents",                path: "/agency/documents" },
   { icon: BarChart3,       label: "Performance",              path: "/agency/performance" },
-  { icon: Bell,            label: "Notifications",            path: "/agency/notifications" },
-  { icon: AlertCircle,     label: "Reports / Issues",         path: "/agency/reports" },
+  { icon: Bell,            label: "Notifications",            path: "/agency/notifications",         countKey: "notifications" },
+  { icon: AlertCircle,     label: "Reports / Issues",         path: "/agency/reports",               countKey: "reports" },
   { icon: History,         label: "Service History",          path: "/agency/service-history" },
   { icon: ShieldCheck,     label: "Agency Profile",           path: "/agency/profile" },
   { icon: Settings,        label: "Settings",                 path: "/agency/settings" },
 ];
 
-export default function AgencyLayout() {
+function AgencyLayoutContent() {
   const { user, signOut } = useAuth();
+  const { sidebarCounts } = useAgencyBadges();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -170,11 +176,22 @@ export default function AgencyLayout() {
                     style={{ width: 16, height: 16 }}
                   />
                   <span className="truncate">{item.label}</span>
-                  {item.label === "Notifications" && unreadCount > 0 && (
-                    <span className="ml-auto px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
-                      {unreadCount}
-                    </span>
-                  )}
+                  {(() => {
+                    const count = item.countKey ? sidebarCounts[item.countKey] || 0 : 0;
+                    const badgeText = formatBadgeCount(count);
+                    if (!badgeText) return null;
+                    return (
+                      <span
+                        className={`ml-auto px-1.5 py-0.5 text-[9px] font-bold rounded-full ${
+                          item.countKey === "notifications"
+                            ? "bg-red-500/20 text-red-300 border border-red-500/30"
+                            : "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                        }`}
+                      >
+                        {badgeText}
+                      </span>
+                    );
+                  })()}
                 </>
               )}
             </NavLink>
@@ -235,10 +252,13 @@ export default function AgencyLayout() {
             {/* Quick Messages */}
             <Link
               to="/agency/messages"
-              className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+              className="relative p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
               title="Inbox"
             >
               <MessageSquare className="w-4 h-4" />
+              {sidebarCounts.messages > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+              )}
             </Link>
 
             {/* Quick Notifications */}
@@ -248,7 +268,7 @@ export default function AgencyLayout() {
               title="Notifications"
             >
               <Bell className="w-4 h-4" />
-              {unreadCount > 0 && (
+              {(sidebarCounts.notifications > 0 || unreadCount > 0) && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               )}
             </Link>
@@ -321,5 +341,13 @@ export default function AgencyLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function AgencyLayout() {
+  return (
+    <AgencyBadgeProvider>
+      <AgencyLayoutContent />
+    </AgencyBadgeProvider>
   );
 }

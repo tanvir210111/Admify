@@ -14,6 +14,7 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -30,6 +31,7 @@ export default function AgentMessages() {
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
+  const { sidebarCounts, markEntityAsSeen } = useAgentBadges();
 
   const chatEndRef = useRef(null);
 
@@ -66,6 +68,12 @@ export default function AgentMessages() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeContact]);
+
+  useEffect(() => {
+    if (activeContact) {
+      markEntityAsSeen("message", activeContact._id);
+    }
+  }, [activeContact, markEntityAsSeen]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -178,12 +186,24 @@ export default function AgentMessages() {
             ) : (
               filteredContacts.map((contact) => {
                 const isSelected = activeContact?._id === contact._id;
+                const contactId = contact._id?.toString();
+                const hasUnseen = messages.some(
+                  (m) =>
+                    (m.user?._id || m.user)?.toString() === contactId &&
+                    m.isSeenByAgent === false
+                );
+
                 return (
                   <div
                     key={contact._id}
-                    onClick={() => setActiveContact(contact)}
+                    onClick={() => {
+                      setActiveContact(contact);
+                      markEntityAsSeen("message", contact._id);
+                    }}
                     className={`p-3.5 cursor-pointer transition-colors flex items-center gap-3 ${
-                      isSelected
+                      hasUnseen
+                        ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)]"
+                        : isSelected
                         ? "bg-violet-600/20 border-l-2 border-violet-500"
                         : "hover:bg-white/[0.02]"
                     }`}
@@ -192,7 +212,12 @@ export default function AgentMessages() {
                       {contact.name ? contact.name.charAt(0) : "S"}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-bold text-xs text-white truncate">{contact.name}</div>
+                      <div className="font-bold text-xs text-white truncate flex items-center justify-between">
+                        <span>{contact.name}</span>
+                        {hasUnseen && (
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        )}
+                      </div>
                       <div className="text-[10px] text-slate-400 truncate">
                         {contact.targetCountry ? `Target: ${contact.targetCountry}` : contact.email}
                       </div>

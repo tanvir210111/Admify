@@ -1,4 +1,7 @@
 import ChatMessage from '../models/ChatMessage.js';
+import User from '../models/User.js';
+import Notification from '../models/Notification.js';
+import devStore from '../utils/devStore.js';
 
 // Knowledge replies for chat engine
 const KNOWLEDGE_RESPONSES = [
@@ -54,6 +57,43 @@ export const sendMessage = async (req, res, next) => {
 
     if (isLiveAgentRequest) {
       replyText = 'Connecting you to a certified study abroad counselor... An agent has been alerted and will join shortly.';
+      try {
+        const agencies = await User.find({ role: 'agency' });
+        for (const ag of agencies) {
+          await Notification.create({
+            user: ag._id,
+            title: 'Incoming Student Live Chat Request',
+            message: `Student inquiry: "${text.slice(0, 80)}..."`,
+            type: 'info',
+            link: '/agency/messages',
+            actionUrl: '/agency/messages',
+            relatedEntityType: 'message',
+            relatedEntityId: sessionId,
+          });
+        }
+      } catch {
+        try {
+          const db = devStore.read();
+          const agencies = (db.users || []).filter((u) => u.role === 'agency');
+          for (const ag of agencies) {
+            if (!Array.isArray(db.notifications)) db.notifications = [];
+            db.notifications.push({
+              _id: `notif-${Date.now()}-${Math.random()}`,
+              user: ag._id,
+              title: 'Incoming Student Live Chat Request',
+              message: `Student inquiry: "${text.slice(0, 80)}..."`,
+              type: 'info',
+              link: '/agency/messages',
+              actionUrl: '/agency/messages',
+              relatedEntityType: 'message',
+              relatedEntityId: sessionId,
+              read: false,
+              createdAt: new Date().toISOString(),
+            });
+          }
+          devStore.write(db);
+        } catch {}
+      }
     } else {
       const lower = text.toLowerCase();
       for (const item of KNOWLEDGE_RESPONSES) {

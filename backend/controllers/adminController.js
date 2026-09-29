@@ -4338,6 +4338,18 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           agencyName: verification.agencyName,
           applicationId: verification.applicationId || 'ADM-AGY-2026',
         });
+
+        await Notification.create({
+          user: agencyUser._id,
+          title: 'Agency Verification Approved! 🎉',
+          message: `Congratulations! Your agency registration for "${verification.agencyName}" has been approved by the Admin team. You now have full operational access.`,
+          type: 'success',
+          link: '/agency/dashboard',
+          actionUrl: '/agency/dashboard',
+          relatedEntityType: 'agency',
+          relatedEntityId: verification._id.toString(),
+          read: false,
+        });
       } else if (canonicalStatus === 'REJECTED') {
         verification.rejectionReason = rejectionReason.trim();
         verification.statusHistory.push({
@@ -4448,6 +4460,18 @@ export const updateAgencyVerificationStatus = async (req, res, next) => {
           to: verification.officialBusinessEmail || agencyUser.email,
           agencyName: verification.agencyName,
           applicationId: verification.applicationId || 'ADM-AGY-2026',
+        });
+
+        await devStore.createNotification({
+          userId: agencyUser._id,
+          title: 'Agency Verification Approved! 🎉',
+          message: `Congratulations! Your agency registration for "${verification.agencyName}" has been approved by the Admin team. You now have full operational access.`,
+          type: 'success',
+          link: '/agency/dashboard',
+          actionUrl: '/agency/dashboard',
+          relatedEntityType: 'agency',
+          relatedEntityId: (verification._id || verification.id).toString(),
+          read: false,
         });
       } else if (canonicalStatus === 'REJECTED') {
         userUpdates = {

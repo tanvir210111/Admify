@@ -21,6 +21,8 @@ import {
   FileText,
 } from "lucide-react";
 
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+
 const STAGES = [
   "all",
   "Submitted",
@@ -32,6 +34,7 @@ const STAGES = [
 ];
 
 export default function AgencyApplications() {
+  const { getStatusCount, markEntityAsSeen } = useAgencyBadges();
   const [applications, setApplications] = useState([]);
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -76,12 +79,28 @@ export default function AgencyApplications() {
     fetchAgents();
   }, [stageFilter, search]);
 
+  const handleRowClick = (app) => {
+    if (!app.isSeenByAgency) {
+      markEntityAsSeen("application", app._id);
+      setApplications((prev) =>
+        prev.map((item) => (item._id === app._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
+
   const handleOpenUpdate = (app) => {
     setSelectedApp(app);
     setUpdateStage(app.stage || "Submitted");
     setUpdateProgress(app.progress || 20);
     setAssignAgentId(app.assignedAgent?._id || app.assignedAgent || "");
     setStepNote("");
+
+    if (!app.isSeenByAgency) {
+      markEntityAsSeen("application", app._id);
+      setApplications((prev) =>
+        prev.map((item) => (item._id === app._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
   };
 
   const handleSaveUpdate = async (e) => {
@@ -134,19 +153,30 @@ export default function AgencyApplications() {
 
       {/* Stage Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-        {STAGES.map((st) => (
-          <button
-            key={st}
-            onClick={() => setStageFilter(st)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-              stageFilter === st
-                ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30 font-bold"
-                : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
-            }`}
-          >
-            {st === "all" ? "All Stages" : st}
-          </button>
-        ))}
+        {STAGES.map((st) => {
+          const unseenCount = st === "all" ? getStatusCount("applications", "all") : getStatusCount("applications", st);
+          const label = st === "all" ? "All Stages" : st;
+          return (
+            <button
+              key={st}
+              onClick={() => setStageFilter(st)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                stageFilter === st
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30 font-bold"
+                  : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <span>{label}</span>
+              {unseenCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  stageFilter === st ? "bg-white text-violet-700" : "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+                }`}>
+                  [{unseenCount}]
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Search and Filters */}
@@ -198,56 +228,75 @@ export default function AgencyApplications() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-xs">
-                {applications.map((app) => (
-                  <tr key={app._id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div>
-                        <p className="text-white font-semibold">{app.university}</p>
-                        <p className="text-slate-400 text-[11px]">{app.program}</p>
-                        {app.applicationId && (
-                          <span className="inline-block mt-0.5 text-[9px] font-mono text-violet-400">
-                            ID: {app.applicationId}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <p className="text-white font-medium">{app.user?.name || "Student"}</p>
-                      <p className="text-slate-400 text-[11px]">{app.user?.email}</p>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300">
-                      {app.country || "Global"}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-1.5 text-slate-300">
-                        <UserCheck className="w-3.5 h-3.5 text-violet-400 shrink-0" />
-                        <span>{app.assignedAgent?.name || "Unassigned"}</span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-1.5 w-32">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="font-semibold text-violet-300">{app.stage || "Submitted"}</span>
-                          <span className="text-slate-500">{app.progress || 0}%</span>
+                {applications.map((app) => {
+                  const isUnseen = app.isSeenByAgency === false;
+                  return (
+                    <tr
+                      key={app._id}
+                      onClick={() => handleRowClick(app)}
+                      className={`transition-all cursor-pointer ${
+                        isUnseen
+                          ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <td className="py-3.5 px-4">
+                        <div>
+                          {isUnseen && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider mb-1">
+                              NEW UPDATE
+                            </span>
+                          )}
+                          <p className="text-white font-semibold">{app.university}</p>
+                          <p className="text-slate-400 text-[11px]">{app.program}</p>
+                          {app.applicationId && (
+                            <span className="inline-block mt-0.5 text-[9px] font-mono text-violet-400">
+                              ID: {app.applicationId}
+                            </span>
+                          )}
                         </div>
-                        <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full"
-                            style={{ width: `${app.progress || 20}%` }}
-                          />
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <p className="text-white font-medium">{app.user?.name || "Student"}</p>
+                        <p className="text-slate-400 text-[11px]">{app.user?.email}</p>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-300">
+                        {app.country || "Global"}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-1.5 text-slate-300">
+                          <UserCheck className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+                          <span>{app.assignedAgent?.name || "Unassigned"}</span>
                         </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => handleOpenUpdate(app)}
-                        className="px-3 py-1 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-[11px] font-semibold transition-colors"
-                      >
-                        Manage & Update
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-1.5 w-32">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="font-semibold text-violet-300">{app.stage || "Submitted"}</span>
+                            <span className="text-slate-500">{app.progress || 0}%</span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-white/5 overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full"
+                              style={{ width: `${app.progress || 20}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenUpdate(app);
+                          }}
+                          className="px-3 py-1 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-[11px] font-semibold transition-colors"
+                        >
+                          Manage & Update
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -37,6 +38,18 @@ export default function AgentDocuments() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [reviewNote, setReviewNote] = useState("");
+  const { sidebarCounts, getStatusCount, markEntityAsSeen } = useAgentBadges();
+
+  const handleSelectDoc = (doc) => {
+    setSelectedDoc(doc);
+    if (doc && doc.isSeenByAgent === false) {
+      doc.isSeenByAgent = true;
+      markEntityAsSeen("document", doc.id || doc._id);
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, isSeenByAgent: true } : d))
+      );
+    }
+  };
 
   const fetchDocuments = async () => {
     try {
@@ -135,6 +148,34 @@ export default function AgentDocuments() {
         ))}
       </motion.div>
 
+      {/* Status Filter Tabs with Unseen Badges */}
+      <motion.div variants={fade} className="flex flex-wrap items-center gap-2">
+        {[
+          { key: "all", label: "All Statuses", count: getStatusCount('documents', 'all') },
+          { key: "PENDING", label: "Pending Review", count: getStatusCount('documents', 'PENDING') },
+          { key: "VERIFIED", label: "Verified", count: getStatusCount('documents', 'VERIFIED') },
+          { key: "REVIEWED", label: "Reviewed", count: getStatusCount('documents', 'REVIEWED') },
+          { key: "REJECTED", label: "Rejected", count: getStatusCount('documents', 'REJECTED') },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setStatusFilter(tab.key)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+              statusFilter.toLowerCase() === tab.key.toLowerCase()
+                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                : "bg-[#0B1228] text-slate-400 border-white/5 hover:text-white"
+            }`}
+          >
+            <span>{tab.label}</span>
+            {tab.count > 0 && (
+              <span className="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/30 text-cyan-200 font-extrabold border border-cyan-400/40">
+                [{tab.count}]
+              </span>
+            )}
+          </button>
+        ))}
+      </motion.div>
+
       {/* Filter / Search Bar */}
       <motion.div
         variants={fade}
@@ -206,11 +247,17 @@ export default function AgentDocuments() {
                     STATUS_COLOR[doc.status] ||
                     "text-yellow-400 bg-yellow-500/10 border-yellow-500/20";
 
+                  const isUnseen = doc.isSeenByAgent === false;
+
                   return (
                     <tr
                       key={doc.id}
-                      className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
-                      onClick={() => setSelectedDoc(doc)}
+                      className={`transition-colors group cursor-pointer border-b border-white/5 ${
+                        isUnseen
+                          ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                      onClick={() => handleSelectDoc(doc)}
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">

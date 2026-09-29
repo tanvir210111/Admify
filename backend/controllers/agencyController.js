@@ -10,6 +10,7 @@ import AgencyServiceOrder from '../models/AgencyServiceOrder.js';
 import AuditLog from '../models/AuditLog.js';
 import Report from '../models/Report.js';
 import ChatMessage from '../models/ChatMessage.js';
+import AgencySeenItem from '../models/AgencySeenItem.js';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import devStore from '../utils/devStore.js';
@@ -21,6 +22,556 @@ const getResolvedAgencyContext = async (req) => {
   const ctx = await resolveAuthenticatedAgency(req.user);
   if (ctx) req.agencyContext = ctx;
   return ctx;
+};
+
+// ── Agency Seen / Unseen Tracking Architecture ─────────────────────────────
+export const isAgencyDocSeen = (entityType, doc, seenItems) => {
+  if (!doc) return true;
+  if (doc.isSeenByAgency === true) return true;
+
+  const docId = (doc._id || doc.id || doc.applicationId || doc.orderId || doc.reportId)?.toString();
+  if (!docId && !doc.sessionId && !doc.sender) return true;
+
+  if (entityType === 'message') {
+    const senderId = (doc.sender?._id || doc.sender || doc.user?._id || doc.user)?.toString();
+    const sessionId = doc.sessionId?.toString();
+    const ids = [docId, senderId, sessionId].filter(Boolean);
+
+    if (Array.isArray(seenItems)) {
+      return seenItems.some(
+        (item) => item.entityType === 'message' && ids.includes(item.entityId)
+      );
+    }
+    if (seenItems instanceof Map) {
+      return ids.some((id) => seenItems.has(`message:${id}`) || seenItems.has(id));
+    }
+  }
+
+  if (Array.isArray(seenItems)) {
+    return seenItems.some(
+      (item) => item.entityType === entityType && item.entityId === docId
+    );
+  }
+
+  if (seenItems instanceof Map) {
+    return seenItems.has(`${entityType}:${docId}`) || seenItems.has(docId);
+  }
+
+  return false;
+};
+
+export const getAgencySeenMap = async (agencyIds) => {
+  const ids = Array.isArray(agencyIds) ? agencyIds : [agencyIds];
+  const idStrs = ids.map((id) => id.toString());
+  const seenMap = new Map();
+
+  if (mongoose.connection.readyState === 1) {
+    const items = await AgencySeenItem.find({
+      $or: [{ agency: { $in: ids } }, { user: { $in: ids } }],
+    }).lean();
+    for (const item of items) {
+      seenMap.set(`${item.entityType}:${item.entityId}`, true);
+      seenMap.set(item.entityId, true);
+    }
+  } else {
+    const db = devStore.read();
+    const items = (db.agencySeenItems || []).filter((item) =>
+      idStrs.includes((item.agency || item.user)?.toString())
+    );
+    for (const item of items) {
+      seenMap.set(`${item.entityType}:${item.entityId}`, true);
+      seenMap.set(item.entityId, true);
+    }
+  }
+  return seenMap;
+};
+
+export const verifyAgencyEntityOwnership = async (agencyIds, agencyIdStrs, primaryUserId, entityType, entityId) => {
+  const normType = (entityType || '').toLowerCase();
+  const idStr = entityId.toString();
+
+  if (mongoose.connection.readyState === 1) {
+    if (normType === 'application' || normType === 'applications') {
+      const app = await Application.findOne({ _id: idStr, assignedAgency: { $in: agencyIds } });
+      return !!app;
+    }
+    if (normType === 'servicerequest' || normType === 'servicerequests' || normType === 'serviceorder' || normType === 'serviceorders') {
+      const ord = await AgencyServiceOrder.findById(idStr);
+      if (!ord) return false;
+      const belongs = agencyIdStrs.includes(ord.assignedAgency?.agencyId?.toString());
+      const isOpen = ord.status === 'ACTIVE' && !ord.assignedAgency?.agencyId;
+      return belongs || isOpen;
+    }
+    if (normType === 'agent' || normType === 'agents') {
+      const ag = await User.findOne({ _id: idStr, role: 'agent', agencyId: { $in: agencyIds } });
+      return !!ag;
+    }
+    if (normType === 'agentapplication' || normType === 'agentapplications') {
+      const app = await AgentApplication.findOne({ _id: idStr, agency: { $in: agencyIds } });
+      return !!app;
+    }
+    if (normType === 'student' || normType === 'students') {
+      const hasApp = await Application.findOne({ user: idStr, assignedAgency: { $in: agencyIds } });
+      if (hasApp) return true;
+      const hasOrder = await AgencyServiceOrder.findOne({ user: idStr, 'assignedAgency.agencyId': { $in: agencyIdStrs } });
+      return !!hasOrder;
+    }
+    if (normType === 'universitypartnership' || normType === 'university_connection' || normType === 'university_connections') {
+      const conn = await UniversityAgencyConnection.findOne({ _id: idStr, agencyId: { $in: agencyIds } });
+      return !!conn;
+    }
+    if (normType === 'message' || normType === 'messages' || normType === 'chat_message') {
+      const msg = await ChatMessage.findOne({
+        $or: [{ sessionId: idStr }, { _id: idStr }],
+        $or: [{ receiver: primaryUserId }, { user: primaryUserId }],
+      });
+      return !!msg;
+    }
+    if (normType === 'report' || normType === 'reports') {
+      const rep = await Report.findOne({
+        $or: [{ _id: idStr }, { reportId: idStr }],
+        $or: [
+          { targetId: { $in: agencyIdStrs } },
+          { targetAgencyId: { $in: agencyIdStrs } },
+          { agencyId: { $in: agencyIdStrs } },
+          { targetType: 'agency' },
+        ],
+      });
+      return !!rep;
+    }
+    if (normType === 'notification' || normType === 'notifications') {
+      const notif = await Notification.findOne({ _id: idStr, user: primaryUserId });
+      return !!notif;
+    }
+    return true;
+  } else {
+    const db = devStore.read();
+    if (normType === 'application' || normType === 'applications') {
+      const app = (db.applications || []).find((a) => (a._id === idStr || a.id === idStr) && agencyIdStrs.includes(a.assignedAgency?.toString()));
+      return !!app;
+    }
+    if (normType === 'servicerequest' || normType === 'servicerequests' || normType === 'serviceorder' || normType === 'serviceorders') {
+      const ord = (db.agencyServiceOrders || []).find((o) => (o._id === idStr || o.id === idStr || o.orderId === idStr));
+      if (!ord) return false;
+      const belongs = agencyIdStrs.includes(ord.assignedAgency?.agencyId?.toString());
+      const isOpen = ord.status === 'ACTIVE' && !ord.assignedAgency?.agencyId;
+      return belongs || isOpen;
+    }
+    if (normType === 'agent' || normType === 'agents') {
+      const ag = (db.users || []).find((u) => u._id === idStr && u.role === 'agent' && agencyIdStrs.includes(u.agencyId?.toString()));
+      return !!ag;
+    }
+    if (normType === 'agentapplication' || normType === 'agentapplications') {
+      const app = (db.agentApplications || []).find((a) => (a._id === idStr || a.id === idStr || a.applicationId === idStr) && agencyIdStrs.includes(a.agency?.toString()));
+      return !!app;
+    }
+    if (normType === 'student' || normType === 'students') {
+      const hasApp = (db.applications || []).some((a) => (a.user?._id || a.user)?.toString() === idStr && agencyIdStrs.includes(a.assignedAgency?.toString()));
+      if (hasApp) return true;
+      const hasOrder = (db.agencyServiceOrders || []).some((o) => (o.user?._id || o.user)?.toString() === idStr && agencyIdStrs.includes(o.assignedAgency?.agencyId?.toString()));
+      return hasOrder;
+    }
+    if (normType === 'universitypartnership' || normType === 'university_connection' || normType === 'university_connections') {
+      const conn = (db.universityAgencyConnections || []).find((c) => (c._id === idStr || c.id === idStr) && agencyIdStrs.includes(c.agencyId?.toString()));
+      return !!conn;
+    }
+    if (normType === 'message' || normType === 'messages' || normType === 'chat_message') {
+      const allMsgs = [...(db.chatMessages || []), ...(db.messages || [])];
+      const msg = allMsgs.find((m) =>
+        (m.sessionId === idStr || m._id === idStr || (m.sender?._id || m.sender)?.toString() === idStr || m.user?.toString() === idStr) &&
+        (
+          (m.receiver || m.recipient)?.toString() === primaryUserId.toString() ||
+          m.user?.toString() === primaryUserId.toString() ||
+          agencyIdStrs.includes((m.receiver || m.recipient)?.toString())
+        )
+      );
+      return !!msg;
+    }
+    if (normType === 'report' || normType === 'reports') {
+      const rep = (db.reports || []).find((r) =>
+        (r._id === idStr || r.reportId === idStr) &&
+        (agencyIdStrs.includes(r.targetId?.toString()) ||
+          agencyIdStrs.includes(r.targetAgencyId?.toString()) ||
+          agencyIdStrs.includes(r.agencyId?.toString()) ||
+          r.targetType === 'agency')
+      );
+      return !!rep;
+    }
+    if (normType === 'notification' || normType === 'notifications') {
+      const notif = (db.notifications || []).find((n) => (n._id === idStr || n.id === idStr) && (n.user || n.userId)?.toString() === primaryUserId.toString());
+      return !!notif;
+    }
+    return true;
+  }
+};
+
+export const markAgencyEntityAsSeenHelper = async (agencyId, entityType, entityId) => {
+  if (!agencyId || !entityType || !entityId) return false;
+  const idStr = entityId.toString();
+  const aidStr = agencyId.toString();
+  const now = new Date();
+
+  if (mongoose.connection.readyState === 1) {
+    try {
+      await AgencySeenItem.findOneAndUpdate(
+        { agency: agencyId, entityType, entityId: idStr },
+        { agency: agencyId, user: agencyId, entityType, entityId: idStr, seenAt: now },
+        { upsert: true, new: true }
+      );
+    } catch (err) {
+      console.warn('[AgencySeen] Error saving seen item:', err.message);
+    }
+
+    if (['application', 'applications'].includes(entityType)) {
+      await Application.updateOne(
+        { _id: entityId },
+        { isSeenByAgency: true, agencySeenAt: now }
+      );
+    } else if (['serviceRequest', 'serviceRequests', 'serviceOrder', 'serviceOrders'].includes(entityType)) {
+      await AgencyServiceOrder.updateOne(
+        { _id: entityId },
+        { isSeenByAgency: true, agencySeenAt: now }
+      );
+    } else if (['chat_message', 'message', 'messages'].includes(entityType)) {
+      await ChatMessage.updateMany(
+        { $or: [{ sessionId: entityId }, { _id: entityId }] },
+        { isSeenByAgency: true, agencySeenAt: now }
+      );
+    } else if (['report', 'reports'].includes(entityType)) {
+      await Report.updateOne(
+        { $or: [{ _id: entityId }, { reportId: entityId }] },
+        { isSeenByAgency: true, agencySeenAt: now }
+      );
+    } else if (['universityPartnership', 'university_connection', 'university_connections'].includes(entityType)) {
+      await UniversityAgencyConnection.updateOne(
+        { _id: entityId },
+        { isSeenByAgency: true, agencySeenAt: now }
+      );
+    } else if (['agentApplication', 'agentApplications'].includes(entityType)) {
+      await AgentApplication.updateOne(
+        { _id: entityId },
+        { isSeenByAgency: true, agencySeenAt: now }
+      );
+    }
+
+    // Automatically synchronize matching unread agency notifications
+    await Notification.updateMany(
+      {
+        user: agencyId,
+        read: false,
+        $or: [
+          { relatedEntityId: idStr },
+          { relatedEntityType: entityType, link: { $regex: idStr } },
+        ],
+      },
+      { read: true }
+    );
+
+    return true;
+  } else {
+    return devStore.markAgencyEntitySeen(agencyId, entityType, entityId);
+  }
+};
+
+export const calculateAgencyUnseenCounts = async (agencyCtx) => {
+  const agencyIds = agencyCtx?.agencyIds || [];
+  const agencyIdStrs = agencyCtx?.agencyIdStrs || [];
+  const primaryUserId = agencyCtx?.agencyUser?._id || agencyCtx?.agencyUserId;
+  const aidStr = primaryUserId.toString();
+
+  const seenMap = await getAgencySeenMap(agencyIds);
+
+  let applications = [];
+  let serviceOrders = [];
+  let registeredAgents = [];
+  let agentApplications = [];
+  let connections = [];
+  let notifications = [];
+  let messages = [];
+  let reports = [];
+
+  if (mongoose.connection.readyState === 1) {
+    [
+      applications,
+      serviceOrders,
+      registeredAgents,
+      agentApplications,
+      connections,
+      notifications,
+      messages,
+      reports,
+    ] = await Promise.all([
+      Application.find({ assignedAgency: { $in: agencyIds } }).lean(),
+      AgencyServiceOrder.find({
+        $or: [
+          { 'assignedAgency.agencyId': { $in: agencyIdStrs } },
+          { status: 'ACTIVE', 'assignedAgency.agencyId': { $exists: false } },
+        ],
+      }).lean(),
+      User.find({ role: 'agent', agencyId: { $in: agencyIds } }).lean(),
+      AgentApplication.find({ agency: { $in: agencyIds } }).lean(),
+      UniversityAgencyConnection.find({ agencyId: { $in: agencyIds } }).lean(),
+      Notification.find({ user: primaryUserId, read: false }).lean(),
+      ChatMessage.find({ receiver: primaryUserId, sender: { $ne: 'agency' } }).lean(),
+      Report.find({ $or: [{ targetId: { $in: agencyIdStrs } }, { targetType: 'agency' }] }).lean(),
+    ]);
+  } else {
+    const db = devStore.read();
+    applications = (db.applications || []).filter((a) =>
+      agencyIdStrs.includes(a.assignedAgency?.toString())
+    );
+    serviceOrders = (db.agencyServiceOrders || []).filter(
+      (o) =>
+        agencyIdStrs.includes(o.assignedAgency?.agencyId?.toString()) ||
+        (o.status === 'ACTIVE' && !o.assignedAgency?.agencyId)
+    );
+    registeredAgents = (db.users || []).filter(
+      (u) => u.role === 'agent' && agencyIdStrs.includes(u.agencyId?.toString())
+    );
+    agentApplications = (db.agentApplications || []).filter((a) =>
+      agencyIdStrs.includes(a.agency?.toString())
+    );
+    connections = (db.universityAgencyConnections || []).filter((c) =>
+      agencyIdStrs.includes(c.agencyId?.toString())
+    );
+    notifications = (db.notifications || []).filter(
+      (n) => (n.user || n.userId)?.toString() === aidStr && !n.read
+    );
+    const allMsgs = [...(db.chatMessages || []), ...(db.messages || [])];
+    messages = allMsgs.filter(
+      (m) =>
+        (agencyIdStrs.includes((m.receiver || m.recipient)?.toString()) ||
+          (m.receiver || m.recipient)?.toString() === aidStr) &&
+        m.sender !== 'agency' &&
+        m.senderRole !== 'agency' &&
+        !m.read
+    );
+    reports = (db.reports || []).filter(
+      (r) =>
+        agencyIdStrs.includes(r.targetId?.toString()) ||
+        agencyIdStrs.includes(r.targetAgencyId?.toString()) ||
+        r.targetType === 'agency'
+    );
+  }
+
+  // 1. Applications unseen
+  const unseenApplications = applications.filter(
+    (a) => !isAgencyDocSeen('application', a, seenMap)
+  );
+
+  const applicationStatusCounts = {
+    all: unseenApplications.length,
+    All: unseenApplications.length,
+    Submitted: 0,
+    'Documents Pending': 0,
+    'In Review': 0,
+    Accepted: 0,
+    Rejected: 0,
+    Completed: 0,
+  };
+  unseenApplications.forEach((a) => {
+    if (applicationStatusCounts[a.stage] !== undefined) {
+      applicationStatusCounts[a.stage] += 1;
+    }
+  });
+
+  // 2. Service Requests unseen
+  const actionableOrders = serviceOrders.filter(
+    (o) => o.status !== 'COMPLETED' && o.status !== 'CANCELLED'
+  );
+  const unseenOrders = actionableOrders.filter(
+    (o) => !isAgencyDocSeen('serviceRequest', o, seenMap)
+  );
+  const serviceStatusCounts = {
+    all: unseenOrders.length,
+    All: unseenOrders.length,
+    ALL: unseenOrders.length,
+    ACTIVE: 0,
+    IN_PROGRESS: 0,
+    DOCUMENTS_REQUIRED: 0,
+    COMPLETED: 0,
+    CANCELLED: 0,
+  };
+  unseenOrders.forEach((o) => {
+    if (serviceStatusCounts[o.status] !== undefined) {
+      serviceStatusCounts[o.status] += 1;
+    }
+  });
+
+  // 3. My Agents unseen (unseen agent applications with update or newly registered agents)
+  const unseenAgentApps = agentApplications.filter(
+    (a) => !isAgencyDocSeen('agentApplication', a, seenMap)
+  );
+  const unseenAgentsRoster = registeredAgents.filter(
+    (ag) => !isAgencyDocSeen('agent', ag, seenMap)
+  );
+  const agentsTotalUnseen = unseenAgentApps.length + unseenAgentsRoster.length;
+
+  const agentStatusCounts = {
+    all: agentsTotalUnseen,
+    active: registeredAgents.filter((ag) => ag.status === 'active' && !isAgencyDocSeen('agent', ag, seenMap)).length,
+    inactive: registeredAgents.filter((ag) => ag.status === 'inactive' && !isAgencyDocSeen('agent', ag, seenMap)).length,
+    suspended: registeredAgents.filter((ag) => (ag.status === 'suspended' || ag.accountStatus === 'SUSPENDED') && !isAgencyDocSeen('agent', ag, seenMap)).length,
+    pendingApplications: agentApplications.filter((a) => a.status === 'PENDING' && !isAgencyDocSeen('agentApplication', a, seenMap)).length,
+    approvedApplications: agentApplications.filter((a) => a.status === 'APPROVED' && !isAgencyDocSeen('agentApplication', a, seenMap)).length,
+  };
+
+  // 4. Students unseen (unique assigned students)
+  const studentIds = Array.from(new Set([
+    ...applications.map((a) => (a.user?._id || a.user)?.toString()).filter(Boolean),
+    ...serviceOrders.map((o) => (o.user?._id || o.user)?.toString()).filter(Boolean),
+  ]));
+  const unseenStudents = studentIds.filter(
+    (sId) => !seenMap.has(`student:${sId}`) && !seenMap.has(sId)
+  ).length;
+
+  // 5. University Partnerships unseen
+  const unseenConnections = connections.filter(
+    (c) => !isAgencyDocSeen('universityPartnership', c, seenMap)
+  );
+  const partnershipStatusCounts = {
+    all: unseenConnections.length,
+    my: unseenConnections.length,
+    discover: 0,
+    PENDING: unseenConnections.filter((c) => c.status === 'PENDING').length,
+    ACCEPTED: unseenConnections.filter((c) => c.status === 'ACCEPTED').length,
+    REJECTED: unseenConnections.filter((c) => c.status === 'REJECTED').length,
+  };
+
+  // 6. Messages unseen (distinct contacts with incoming unseen messages)
+  const unseenMessages = messages.filter(
+    (m) => !isAgencyDocSeen('message', m, seenMap)
+  );
+  const unseenMessageContacts = new Set(
+    unseenMessages.map((m) => m.sessionId || m.user?.toString() || m._id?.toString())
+  ).size;
+
+  // 7. Reports unseen (open reports requiring response)
+  const unseenReports = reports.filter(
+    (r) => !isAgencyDocSeen('report', r, seenMap) && r.status !== 'RESOLVED'
+  );
+  const reportStatusCounts = {
+    all: unseenReports.length,
+    All: unseenReports.length,
+    ALL: unseenReports.length,
+    PENDING_REVIEW: unseenReports.filter((r) => r.status === 'PENDING_REVIEW').length,
+    UNDER_INVESTIGATION: unseenReports.filter((r) => r.status === 'UNDER_INVESTIGATION').length,
+    RESOLVED: 0,
+  };
+
+  // 8. Notifications unread
+  const notificationsUnread = notifications.length;
+
+  return {
+    sidebarCounts: {
+      agents: agentsTotalUnseen,
+      students: unseenStudents,
+      applications: unseenApplications.length,
+      serviceRequests: unseenOrders.length,
+      universityPartnerships: unseenConnections.length,
+      messages: unseenMessageContacts,
+      reports: unseenReports.length,
+      notifications: notificationsUnread,
+    },
+    statusCounts: {
+      applications: applicationStatusCounts,
+      serviceRequests: serviceStatusCounts,
+      agents: agentStatusCounts,
+      universityPartnerships: partnershipStatusCounts,
+      reports: reportStatusCounts,
+    },
+  };
+};
+
+export const getAgencySidebarCounts = async (req, res, next) => {
+  try {
+    const agencyCtx = await getResolvedAgencyContext(req);
+    if (!agencyCtx) {
+      return res.status(403).json({ success: false, message: 'Access denied. Registered Agency role required.' });
+    }
+    const { sidebarCounts, statusCounts } = await calculateAgencyUnseenCounts(agencyCtx);
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...sidebarCounts,
+        statusCounts,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAgencyStatusCounts = async (req, res, next) => {
+  try {
+    const agencyCtx = await getResolvedAgencyContext(req);
+    if (!agencyCtx) {
+      return res.status(403).json({ success: false, message: 'Access denied. Registered Agency role required.' });
+    }
+    const { statusCounts } = await calculateAgencyUnseenCounts(agencyCtx);
+    return res.status(200).json({
+      success: true,
+      data: statusCounts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const markAgencyEntityAsSeen = async (req, res, next) => {
+  try {
+    const { entityType, entityId } = req.params;
+    const agencyCtx = await getResolvedAgencyContext(req);
+    if (!agencyCtx) {
+      return res.status(403).json({ success: false, message: 'Access denied. Agency role required.' });
+    }
+
+    const agencyIds = agencyCtx.agencyIds || [];
+    const agencyIdStrs = agencyCtx.agencyIdStrs || [];
+    const primaryUserId = agencyCtx.agencyUser?._id || agencyCtx.agencyUserId;
+
+    // Strict Authorization / IDOR Protection
+    const isAuthorized = await verifyAgencyEntityOwnership(agencyIds, agencyIdStrs, primaryUserId, entityType, entityId);
+    if (!isAuthorized) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You do not have permission to view or modify this entity.',
+      });
+    }
+
+    const result = await markAgencyEntityAsSeenHelper(primaryUserId, entityType, entityId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Entity marked as seen',
+      isSeenByAgency: true,
+      alreadySeen: !!result?.alreadySeen,
+      entityType,
+      entityId,
+      data: {
+        isSeen: true,
+        isSeenByAgency: true,
+        alreadySeen: !!result?.alreadySeen,
+        entityType,
+        entityId,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const markAgencyEntityAsSeenPost = async (req, res, next) => {
+  try {
+    const { entityType, entityId } = req.body;
+    if (!entityType || !entityId) {
+      return res.status(400).json({ success: false, message: 'entityType and entityId are required.' });
+    }
+    req.params = { entityType, entityId };
+    return markAgencyEntityAsSeen(req, res, next);
+  } catch (error) {
+    next(error);
+  }
 };
 
 // Sanitize payload to prevent any client-side privilege escalation
@@ -660,10 +1211,18 @@ export const getAgencyAgentApplications = async (req, res) => {
       applications = await devStore.findAgentApplications({ agency: req.user._id });
     }
 
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const seenMap = await getAgencySeenMap(agencyCtx?.agencyIds || [req.user._id]);
+    const enriched = applications.map((app) => {
+      const plain = app.toObject ? app.toObject() : { ...app };
+      plain.isSeenByAgency = isAgencyDocSeen('agentApplication', plain, seenMap);
+      return plain;
+    });
+
     return res.status(200).json({
       success: true,
-      count: applications.length,
-      applications,
+      count: enriched.length,
+      applications: enriched,
     });
   } catch (error) {
     console.error('Error in getAgencyAgentApplications:', error);
@@ -906,11 +1465,18 @@ export const getAgencyUniversityConnections = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgencySeenMap(agencyIds);
+    const enrichedConnections = connections.map((conn) => {
+      const plain = conn.toObject ? conn.toObject() : { ...conn };
+      plain.isSeenByAgency = isAgencyDocSeen('universityPartnership', plain, seenMap);
+      return plain;
+    });
+
     return res.status(200).json({
       success: true,
-      count: connections.length,
+      count: enrichedConnections.length,
       data: {
-        connections,
+        connections: enrichedConnections,
       },
     });
   } catch (error) {
@@ -1049,6 +1615,23 @@ export const getAgencyDashboard = async (req, res, next) => {
 
     recentActivity.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
+    const seenMap = await getAgencySeenMap(agencyIds);
+    const enrichedRecentApps = applications.slice(0, 5).map((app) => {
+      const obj = app.toObject ? app.toObject() : { ...app };
+      obj.isSeenByAgency = isAgencyDocSeen('application', obj, seenMap);
+      return obj;
+    });
+    const enrichedRecentServices = serviceOrders.slice(0, 5).map((ord) => {
+      const obj = ord.toObject ? ord.toObject() : { ...ord };
+      obj.isSeenByAgency = isAgencyDocSeen('serviceRequest', obj, seenMap);
+      return obj;
+    });
+    const enrichedRecentPartnerships = connections.slice(0, 5).map((conn) => {
+      const obj = conn.toObject ? conn.toObject() : { ...conn };
+      obj.isSeenByAgency = isAgencyDocSeen('universityPartnership', obj, seenMap);
+      return obj;
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -1063,9 +1646,9 @@ export const getAgencyDashboard = async (req, res, next) => {
           pendingPartnershipRequests,
           pendingServiceRequests,
         },
-        recentApplications: applications.slice(0, 5),
-        recentServiceRequests: serviceOrders.slice(0, 5),
-        recentPartnerships: connections.slice(0, 5),
+        recentApplications: enrichedRecentApps,
+        recentServiceRequests: enrichedRecentServices,
+        recentPartnerships: enrichedRecentPartnerships,
         recentNotifications: notifications.slice(0, 5),
         recentActivity: recentActivity.slice(0, 10),
       },
@@ -1098,12 +1681,24 @@ export const getAgencyAgents = async (req, res, next) => {
       applications = (db.agentApplications || []).filter((a) => agencyIdStrs.includes(a.agency?.toString()));
     }
 
+    const seenMap = await getAgencySeenMap(agencyIds);
+    const enrichedRegistered = registeredAgents.map((ag) => {
+      const obj = ag.toObject ? ag.toObject() : { ...ag };
+      obj.isSeenByAgency = isAgencyDocSeen('agent', obj, seenMap);
+      return obj;
+    });
+    const enrichedApplications = applications.map((app) => {
+      const obj = app.toObject ? app.toObject() : { ...app };
+      obj.isSeenByAgency = isAgencyDocSeen('agentApplication', obj, seenMap);
+      return obj;
+    });
+
     return res.status(200).json({
       success: true,
-      count: registeredAgents.length + applications.length,
+      count: enrichedRegistered.length + enrichedApplications.length,
       data: {
-        registeredAgents,
-        applications,
+        registeredAgents: enrichedRegistered,
+        applications: enrichedApplications,
       },
     });
   } catch (error) {
@@ -1249,16 +1844,20 @@ export const getAgencyStudents = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgencySeenMap(agencyIds);
+
     // Attach student's active application and service context
     const enriched = students.map((s) => {
       const sId = s._id.toString();
       const app = applications.find((a) => (a.user?._id || a.user)?.toString() === sId);
       const srv = serviceOrders.find((o) => (o.user?._id || o.user)?.toString() === sId);
+      const isSeen = seenMap.has(`student:${sId}`) || seenMap.has(sId);
       return {
         ...s.toObject ? s.toObject() : s,
         activeApplication: app || null,
         activeService: srv || null,
         assignedAgent: app?.assignedAgent || srv?.assignedAgency?.agentName || 'Unassigned',
+        isSeenByAgency: isSeen,
       };
     });
 
@@ -1329,10 +1928,17 @@ export const getAgencyApplications = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgencySeenMap(agencyIds);
+    const enrichedApps = applications.map((app) => {
+      const obj = app.toObject ? app.toObject() : { ...app };
+      obj.isSeenByAgency = isAgencyDocSeen('application', obj, seenMap);
+      return obj;
+    });
+
     return res.status(200).json({
       success: true,
-      count: applications.length,
-      data: { applications },
+      count: enrichedApps.length,
+      data: { applications: enrichedApps },
     });
   } catch (error) {
     next(error);
@@ -1460,10 +2066,17 @@ export const getAgencyServiceRequests = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgencySeenMap(agencyCtx?.agencyIds || [req.user._id]);
+    const enrichedOrders = orders.map((ord) => {
+      const plain = ord.toObject ? ord.toObject() : { ...ord };
+      plain.isSeenByAgency = isAgencyDocSeen('serviceRequest', plain, seenMap);
+      return plain;
+    });
+
     return res.status(200).json({
       success: true,
-      count: orders.length,
-      data: { serviceOrders: orders },
+      count: enrichedOrders.length,
+      data: { serviceOrders: enrichedOrders },
     });
   } catch (error) {
     next(error);
@@ -1621,10 +2234,18 @@ export const getAgencyMessages = async (req, res, next) => {
       );
     }
 
+    const agencyCtx = await getResolvedAgencyContext(req);
+    const seenMap = await getAgencySeenMap(agencyCtx?.agencyIds || [req.user._id]);
+    const enrichedMessages = messages.map((m) => {
+      const plain = m.toObject ? m.toObject() : { ...m };
+      plain.isSeenByAgency = isAgencyDocSeen('message', plain, seenMap);
+      return plain;
+    });
+
     return res.status(200).json({
       success: true,
-      count: messages.length,
-      data: { messages },
+      count: enrichedMessages.length,
+      data: { messages: enrichedMessages },
     });
   } catch (error) {
     next(error);
@@ -1904,10 +2525,17 @@ export const getAgencyReports = async (req, res, next) => {
       );
     }
 
+    const seenMap = await getAgencySeenMap(agencyCtx?.agencyIds || [req.user._id]);
+    const enrichedReports = reports.map((rep) => {
+      const plain = rep.toObject ? rep.toObject() : { ...rep };
+      plain.isSeenByAgency = isAgencyDocSeen('report', plain, seenMap);
+      return plain;
+    });
+
     return res.status(200).json({
       success: true,
-      count: reports.length,
-      data: { reports },
+      count: enrichedReports.length,
+      data: { reports: enrichedReports },
     });
   } catch (error) {
     next(error);

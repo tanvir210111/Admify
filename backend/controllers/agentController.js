@@ -12,7 +12,299 @@ import ChatMessage from '../models/ChatMessage.js';
 import Report from '../models/Report.js';
 import Task from '../models/Task.js';
 import AuditLog from '../models/AuditLog.js';
+import AgentSeenItem from '../models/AgentSeenItem.js';
 import devStore from '../utils/devStore.js';
+
+// ── Helper: Agent Seen Tracking & Counts ─────────────────────────────────────
+export const isAgentDocSeen = (entityType, doc, seenItems = []) => {
+  if (!doc) return true;
+  if (doc.isSeenByAgent === true) return true;
+
+  const docId = (doc._id || doc.id || doc.applicationId || doc.reportId || doc.taskId)?.toString();
+  if (!docId) return true;
+
+  if (Array.isArray(seenItems)) {
+    return seenItems.some(
+      (item) => item.entityType === entityType && item.entityId === docId
+    );
+  }
+
+  if (seenItems instanceof Map) {
+    return seenItems.has(`${entityType}:${docId}`) || seenItems.has(docId);
+  }
+
+  return false;
+};
+
+export const getAgentSeenMap = async (agentId) => {
+  const aidStr = agentId.toString();
+  const seenMap = new Map();
+  if (mongoose.connection.readyState === 1) {
+    const items = await AgentSeenItem.find({ agent: agentId }).lean();
+    for (const item of items) {
+      seenMap.set(`${item.entityType}:${item.entityId}`, true);
+      seenMap.set(item.entityId, true);
+    }
+  } else {
+    const db = devStore.read();
+    const items = (db.agentSeenItems || []).filter(
+      (item) => (item.agent || item.user)?.toString() === aidStr
+    );
+    for (const item of items) {
+      seenMap.set(`${item.entityType}:${item.entityId}`, true);
+      seenMap.set(item.entityId, true);
+    }
+  }
+  return seenMap;
+};
+
+export const markAgentEntityAsSeenHelper = async (agentId, entityType, entityId) => {
+  if (!agentId || !entityType || !entityId) return false;
+  const idStr = entityId.toString();
+  const aidStr = agentId.toString();
+  const now = new Date();
+
+  if (mongoose.connection.readyState === 1) {
+    // 1. Record in persistent AgentSeenItem
+    try {
+      await AgentSeenItem.findOneAndUpdate(
+        { agent: agentId, entityType, entityId: idStr },
+        { agent: agentId, user: agentId, entityType, entityId: idStr, seenAt: now },
+        { upsert: true, new: true }
+      );
+    } catch (err) {
+      console.warn('[AgentSeen] Error saving seen item:', err.message);
+    }
+
+    // 2. Update target document directly
+    if (['application', 'applications'].includes(entityType)) {
+      await Application.updateOne(
+        { _id: entityId, assignedAgent: agentId },
+        { isSeenByAgent: true, agentSeenAt: now }
+      );
+    } else if (['task', 'tasks'].includes(entityType)) {
+      await Task.updateOne(
+        { _id: entityId, agent: agentId },
+        { isSeenByAgent: true, agentSeenAt: now }
+      );
+    } else if (['chat_message', 'message', 'messages'].includes(entityType)) {
+      await ChatMessage.updateMany(
+        { $or: [{ sessionId: entityId }, { _id: entityId }], $or: [{ user: agentId }, { receiver: agentId }] },
+        { isSeenByAgent: true, agentSeenAt: now }
+      );
+    } else if (['report', 'reports'].includes(entityType)) {
+      await Report.updateOne(
+        { $or: [{ _id: entityId }, { reportId: entityId }], reportedBy: agentId },
+        { isSeenByAgent: true, agentSeenAt: now }
+      );
+    }
+
+    // 3. Automatically synchronize any related unread notification for this agent
+    await Notification.updateMany(
+      {
+        user: agentId,
+        read: false,
+        $or: [
+          { relatedEntityId: idStr },
+          { relatedEntityType: entityType, link: { $regex: idStr } },
+        ],
+      },
+      { read: true }
+    );
+
+    return true;
+  } else {
+    return devStore.markAgentEntitySeen(agentId, entityType, entityId);
+  }
+};
+
+export const calculateAgentUnseenCounts = async (agentId) => {
+  const aidStr = agentId.toString();
+  const seenMap = await getAgentSeenMap(agentId);
+
+  let applications = [];
+  let serviceOrders = [];
+  let tasks = [];
+  let notifications = [];
+  let messages = [];
+  let reports = [];
+
+  if (mongoose.connection.readyState === 1) {
+    const agentUser = await User.findById(agentId);
+    const agencyIdStr = agentUser?.agencyId ? agentUser.agencyId.toString() : null;
+
+    [applications, tasks, notifications, messages, reports] = await Promise.all([
+      Application.find({ assignedAgent: agentId }).lean(),
+      Task.find({ agent: agentId }).lean(),
+      Notification.find({ user: agentId, read: false }).lean(),
+      ChatMessage.find({
+        receiver: agentId,
+        sender: { $ne: 'agent' },
+      }).lean(),
+      Report.find({ reportedBy: agentId }).lean(),
+    ]);
+
+    if (agencyIdStr) {
+      serviceOrders = await AgencyServiceOrder.find({
+        'assignedAgency.agencyId': agencyIdStr,
+        $or: [
+          { 'assignedAgency.agentName': agentUser.name },
+          { 'assignedAgency.agentId': aidStr },
+        ],
+      }).lean();
+    }
+  } else {
+    const db = devStore.read();
+    const agentUser = (db.users || []).find((u) => u._id === aidStr) || {};
+    const agencyIdStr = agentUser?.agencyId ? agentUser.agencyId.toString() : null;
+
+    applications = (db.applications || []).filter(
+      (a) => a.assignedAgent?.toString() === aidStr
+    );
+    tasks = (db.tasks || []).filter((t) => t.agent?.toString() === aidStr);
+    notifications = (db.notifications || []).filter(
+      (n) => (n.user || n.userId)?.toString() === aidStr && !n.read
+    );
+    messages = (db.chatMessages || []).filter(
+      (m) => m.receiver?.toString() === aidStr && m.sender !== 'agent'
+    );
+    reports = (db.reports || []).filter(
+      (r) => r.reportedBy?.toString() === aidStr
+    );
+
+    if (agencyIdStr) {
+      serviceOrders = (db.agencyServiceOrders || []).filter(
+        (o) =>
+          o.assignedAgency?.agencyId?.toString() === agencyIdStr &&
+          (o.assignedAgency?.agentName === agentUser.name || o.assignedAgency?.agentId?.toString() === aidStr)
+      );
+    }
+  }
+
+  // 1. Applications unseen
+  const unseenApplications = applications.filter(
+    (a) => !isAgentDocSeen('application', a, seenMap)
+  );
+
+  // 2. Students unseen (unique assigned students)
+  const studentIds = Array.from(new Set([
+    ...applications.map((a) => (a.user?._id || a.user)?.toString()).filter(Boolean),
+    ...serviceOrders.map((o) => (o.user?._id || o.user)?.toString()).filter(Boolean),
+  ]));
+  const unseenStudents = studentIds.filter(
+    (sId) => !seenMap.has(`student:${sId}`) && !seenMap.has(sId)
+  ).length;
+
+  // 3. Documents unseen
+  const docs = [];
+  applications.forEach((a) => {
+    if (Array.isArray(a.documents)) {
+      a.documents.forEach((d, idx) => {
+        docs.push({
+          id: `${a._id}-${idx}`,
+          docId: `${a._id}-${idx}`,
+          applicationId: a._id,
+          status: d.status || 'PENDING',
+        });
+      });
+    }
+  });
+  const unseenDocs = docs.filter(
+    (d) => !isAgentDocSeen('document', d, seenMap)
+  );
+
+  // 4. SOP / LOR drafts unseen
+  const sopLorItems = applications
+    .filter((a) => a.sopDraft || a.lorDraft)
+    .map((a) => ({
+      _id: a._id,
+      applicationId: a._id,
+      hasSop: !!a.sopDraft?.text,
+      hasLor: !!a.lorDraft?.text,
+      isSeen: isAgentDocSeen('sop_lor', a, seenMap),
+    }));
+  const unseenSopLor = sopLorItems.filter((i) => !i.isSeen).length;
+
+  // 5. Messages unseen (distinct sessions with incoming unread/unseen messages)
+  const unseenMessages = messages.filter(
+    (m) => !isAgentDocSeen('message', m, seenMap)
+  );
+  const unseenMessageSessions = new Set(unseenMessages.map((m) => m.sessionId || m.user || m._id)).size;
+
+  // 6. Tasks unseen
+  const unseenTasks = tasks.filter(
+    (t) => !isAgentDocSeen('task', t, seenMap) && t.status !== 'COMPLETED' && t.status !== 'CANCELLED'
+  );
+
+  // 7. Notifications unread
+  const notificationsUnread = notifications.length;
+
+  // 8. Reports unseen (reports with updates or responses)
+  const unseenReports = reports.filter((r) => {
+    const hasUpdate = r.status && r.status !== 'OPEN';
+    return hasUpdate && !isAgentDocSeen('report', r, seenMap);
+  });
+
+  const statusCounts = {
+    applications: {
+      all: unseenApplications.length,
+      Submitted: unseenApplications.filter((a) => a.stage === 'Submitted').length,
+      'Documents Pending': unseenApplications.filter((a) => a.stage === 'Documents Pending').length,
+      'In Review': unseenApplications.filter((a) => a.stage === 'In Review' || a.stage === 'Under Review').length,
+      Accepted: unseenApplications.filter((a) => a.stage === 'Accepted' || a.stage === 'OFFER_RECEIVED').length,
+      Completed: unseenApplications.filter((a) => a.stage === 'Completed' || a.stage === 'COMPLETED').length,
+      Rejected: unseenApplications.filter((a) => a.stage === 'Rejected').length,
+    },
+    students: {
+      all: unseenStudents,
+    },
+    documents: {
+      all: unseenDocs.length,
+      PENDING: unseenDocs.filter((d) => d.status === 'PENDING').length,
+      VERIFIED: unseenDocs.filter((d) => d.status === 'VERIFIED').length,
+      REVIEWED: unseenDocs.filter((d) => d.status === 'REVIEWED').length,
+      REJECTED: unseenDocs.filter((d) => d.status === 'REJECTED').length,
+    },
+    sopLor: {
+      all: unseenSopLor,
+      sop: sopLorItems.filter((i) => !i.isSeen && i.hasSop).length,
+      lor: sopLorItems.filter((i) => !i.isSeen && i.hasLor).length,
+    },
+    messages: {
+      all: unseenMessageSessions,
+    },
+    tasks: {
+      all: unseenTasks.length,
+      PENDING: unseenTasks.filter((t) => t.status === 'PENDING').length,
+      IN_PROGRESS: unseenTasks.filter((t) => t.status === 'IN_PROGRESS').length,
+      COMPLETED: 0,
+      CANCELLED: 0,
+    },
+    notifications: {
+      all: notificationsUnread,
+      unread: notificationsUnread,
+    },
+    reports: {
+      all: unseenReports.length,
+    },
+    agency: {
+      all: 0,
+    },
+  };
+
+  return {
+    students: unseenStudents,
+    applications: unseenApplications.length,
+    documents: unseenDocs.length,
+    sopLor: unseenSopLor,
+    messages: unseenMessageSessions,
+    tasks: unseenTasks.length,
+    notifications: notificationsUnread,
+    reports: unseenReports.length,
+    agency: 0,
+    statusCounts,
+  };
+};
 
 // ── Helper: Audit Logging for Agent Actions ──────────────────────────────────
 const recordAgentAuditLog = async ({
@@ -260,14 +552,17 @@ export const getAgentStudents = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgentSeenMap(req.user._id);
     const enriched = students.map((s) => {
       const sId = s._id.toString();
       const app = applications.find((a) => (a.user?._id || a.user)?.toString() === sId);
       const srv = serviceOrders.find((o) => (o.user?._id || o.user)?.toString() === sId);
+      const isSeen = !(!seenMap.has(`student:${sId}`) && !seenMap.has(sId) && s.isSeenByAgent === false);
       return {
         ...(s.toObject ? s.toObject() : s),
         activeApplication: app || null,
         activeService: srv || null,
+        isSeenByAgent: isAgentDocSeen('student', s, seenMap),
       };
     });
 
@@ -403,10 +698,17 @@ export const getAgentApplications = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgentSeenMap(req.user._id);
+    const enrichedApplications = applications.map((a) => {
+      const item = a.toObject ? a.toObject() : { ...a };
+      item.isSeenByAgent = isAgentDocSeen('application', a, seenMap);
+      return item;
+    });
+
     return res.status(200).json({
       success: true,
-      count: applications.length,
-      data: { applications },
+      count: enrichedApplications.length,
+      data: { applications: enrichedApplications },
     });
   } catch (error) {
     next(error);
@@ -528,6 +830,11 @@ export const getAgentDocuments = async (req, res, next) => {
       }
     });
 
+    const seenMap = await getAgentSeenMap(req.user._id);
+    docs.forEach((d) => {
+      d.isSeenByAgent = isAgentDocSeen('document', d, seenMap);
+    });
+
     return res.status(200).json({
       success: true,
       count: docs.length,
@@ -561,6 +868,7 @@ export const getAgentSopLor = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgentSeenMap(req.user._id);
     const items = applications.map((a) => ({
       applicationId: a._id,
       university: a.university,
@@ -569,6 +877,7 @@ export const getAgentSopLor = async (req, res, next) => {
       studentEmail: a.user?.email,
       sop: a.sopDraft || { text: '', status: 'NOT_STARTED', comments: [] },
       lor: a.lorDraft || { text: '', status: 'NOT_STARTED', comments: [] },
+      isSeenByAgent: isAgentDocSeen('sop_lor', a, seenMap),
     }));
 
     return res.status(200).json({
@@ -779,10 +1088,17 @@ export const getAgentTasks = async (req, res, next) => {
       }
     }
 
+    const seenMap = await getAgentSeenMap(req.user._id);
+    const enrichedTasks = tasks.map((t) => {
+      const item = t.toObject ? t.toObject() : { ...t };
+      item.isSeenByAgent = isAgentDocSeen('task', t, seenMap);
+      return item;
+    });
+
     return res.status(200).json({
       success: true,
-      count: tasks.length,
-      data: { tasks },
+      count: enrichedTasks.length,
+      data: { tasks: enrichedTasks },
     });
   } catch (error) {
     next(error);
@@ -1011,10 +1327,17 @@ export const getAgentReports = async (req, res, next) => {
       reports = (db.reports || []).filter((r) => r.reportedBy?.toString() === agentIdStr);
     }
 
+    const seenMap = await getAgentSeenMap(req.user._id);
+    const enrichedReports = reports.map((r) => {
+      const item = r.toObject ? r.toObject() : { ...r };
+      item.isSeenByAgent = isAgentDocSeen('report', r, seenMap);
+      return item;
+    });
+
     return res.status(200).json({
       success: true,
-      count: reports.length,
-      data: { reports },
+      count: enrichedReports.length,
+      data: { reports: enrichedReports },
     });
   } catch (error) {
     next(error);
@@ -1283,4 +1606,155 @@ export const updateAgentSettings = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+// ── 15. Agent Sidebar & Status Unseen Counts & Seen Mutators ───────────────────
+// @desc    Get agent sidebar unseen counts
+// @route   GET /api/agent/sidebar-counts
+// @access  Private (Agent)
+export const getAgentSidebarCounts = async (req, res, next) => {
+  try {
+    const counts = await calculateAgentUnseenCounts(req.user._id);
+    return res.status(200).json({
+      success: true,
+      data: counts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get internal page/status/tab unseen counts for agent
+// @route   GET /api/agent/status-counts
+// @access  Private (Agent)
+export const getAgentStatusCounts = async (req, res, next) => {
+  try {
+    const counts = await calculateAgentUnseenCounts(req.user._id);
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...counts.statusCounts,
+        sidebarCounts: {
+          students: counts.students,
+          applications: counts.applications,
+          documents: counts.documents,
+          sopLor: counts.sopLor,
+          messages: counts.messages,
+          tasks: counts.tasks,
+          notifications: counts.notifications,
+          reports: counts.reports,
+          agency: counts.agency,
+        },
+        statusCounts: counts.statusCounts,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Mark an agent entity as seen
+// @route   PUT /api/agent/seen/:entityType/:entityId
+// @access  Private (Agent)
+export const markAgentEntityAsSeen = async (req, res, next) => {
+  try {
+    const { entityType, entityId } = req.params;
+    const agentId = req.user._id;
+
+    if (!entityType || !entityId) {
+      return res.status(400).json({
+        success: false,
+        message: 'entityType and entityId are required',
+      });
+    }
+
+    const idStr = entityId.toString();
+    const aidStr = agentId.toString();
+
+    // Strict Authorization / IDOR Prevention: Verify that the authenticated agent has authorization
+    if (mongoose.connection.readyState === 1) {
+      if (['application', 'applications'].includes(entityType)) {
+        const app = await Application.findById(entityId);
+        if (app && app.assignedAgent?.toString() !== aidStr) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You are not assigned to this application',
+          });
+        }
+      } else if (['task', 'tasks'].includes(entityType)) {
+        const task = await Task.findById(entityId);
+        if (task && task.agent?.toString() !== aidStr) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You do not own this task',
+          });
+        }
+      } else if (['report', 'reports'].includes(entityType)) {
+        const rep = await Report.findOne({ $or: [{ _id: entityId }, { reportId: entityId }] });
+        if (rep && rep.reportedBy?.toString() !== aidStr) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You do not own this report',
+          });
+        }
+      } else if (['chat_message', 'message', 'messages'].includes(entityType)) {
+        const msg = await ChatMessage.findOne({ $or: [{ sessionId: entityId }, { _id: entityId }] });
+        if (msg && msg.user?.toString() !== aidStr && msg.receiver?.toString() !== aidStr) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You are not a participant in this conversation',
+          });
+        }
+      }
+    } else {
+      const db = devStore.read();
+      if (['application', 'applications'].includes(entityType)) {
+        const app = (db.applications || []).find((a) => a._id === idStr || a.applicationId === idStr);
+        if (app && app.assignedAgent?.toString() !== aidStr) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You are not assigned to this application',
+          });
+        }
+      } else if (['task', 'tasks'].includes(entityType)) {
+        const task = (db.tasks || []).find((t) => t._id === idStr || t.taskId === idStr);
+        if (task && task.agent?.toString() !== aidStr) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You do not own this task',
+          });
+        }
+      } else if (['report', 'reports'].includes(entityType)) {
+        const rep = (db.reports || []).find((r) => r._id === idStr || r.reportId === idStr);
+        if (rep && rep.reportedBy?.toString() !== aidStr) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You do not own this report',
+          });
+        }
+      }
+    }
+
+    await markAgentEntityAsSeenHelper(agentId, entityType, entityId);
+
+    return res.status(200).json({
+      success: true,
+      message: `Entity [${entityType}/${entityId}] marked as seen by agent`,
+      data: {
+        entityType,
+        entityId,
+        isSeenByAgent: true,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Mark an agent entity as seen (POST variant)
+// @route   POST /api/agent/seen
+// @access  Private (Agent)
+export const markAgentEntityAsSeenPost = async (req, res, next) => {
+  req.params = { ...req.params, entityType: req.body.entityType, entityId: req.body.entityId };
+  return markAgentEntityAsSeen(req, res, next);
 };

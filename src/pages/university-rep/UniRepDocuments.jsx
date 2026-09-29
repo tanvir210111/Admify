@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import toast from "react-hot-toast";
+import { useUniRepBadges, formatBadgeCount } from "../../context/UniRepBadgeContext";
 
 const DOC_TYPES = [
   "All Types",
@@ -29,11 +30,23 @@ const DOC_TYPES = [
 ];
 
 export default function UniRepDocuments() {
+  const { getStatusCount, markEntityAsSeen } = useUniRepBadges();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All Types");
   const [previewDoc, setPreviewDoc] = useState(null);
+
+  const handleInspectDoc = (doc) => {
+    if (doc.isSeenByUniRep === false) {
+      markEntityAsSeen("document", doc.id);
+      doc.isSeenByUniRep = true;
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, isSeenByUniRep: true } : d))
+      );
+    }
+    setPreviewDoc(doc);
+  };
 
   const fetchDocuments = async () => {
     setLoading(true);
@@ -106,19 +119,27 @@ export default function UniRepDocuments() {
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {DOC_TYPES.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition ${
-                typeFilter === t
-                  ? "bg-purple-600/20 border border-purple-500/40 text-purple-200"
-                  : "bg-[#0B1228] border border-white/5 text-slate-400 hover:text-white"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+          {DOC_TYPES.map((t) => {
+            const count = getStatusCount("documents", t);
+            return (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 ${
+                  typeFilter === t
+                    ? "bg-purple-600/20 border border-purple-500/40 text-purple-200"
+                    : "bg-[#0B1228] border border-white/5 text-slate-400 hover:text-white"
+                }`}
+              >
+                <span>{t}</span>
+                {count > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500 text-white shadow-sm shadow-purple-500/40">
+                    {formatBadgeCount(count)}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -151,44 +172,65 @@ export default function UniRepDocuments() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {filtered.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-white/[0.02] transition">
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 shrink-0">
-                          <FileText className="w-4 h-4" />
+                {filtered.map((doc) => {
+                  const isUnseen = doc.isSeenByUniRep === false;
+                  return (
+                    <tr
+                      key={doc.id}
+                      onClick={() => handleInspectDoc(doc)}
+                      className={`cursor-pointer transition ${
+                        isUnseen
+                          ? "bg-gradient-to-r from-purple-500/[0.08] to-blue-500/[0.04] border-l-4 border-l-purple-500 border-purple-500/30"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 shrink-0">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-white">{doc.documentName}</p>
+                              {isUnseen && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500 text-white shadow-sm shadow-purple-500/40">
+                                  NEW
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">App: {doc.applicationId}</span>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-semibold text-white">{doc.documentName}</p>
-                          <span className="text-[10px] text-slate-500 font-mono">App: {doc.applicationId}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <p className="font-semibold text-white">{doc.studentName}</p>
-                      <p className="text-[10px] text-slate-400">{doc.studentEmail}</p>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300">
-                      {doc.program || "General Admissions"}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/5 text-purple-300 border border-white/10 uppercase">
-                        {doc.documentType || "Academic"}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-400">
-                      {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : "Recent"}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => setPreviewDoc(doc)}
-                        className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-semibold transition inline-flex items-center gap-1.5"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> Inspect
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <p className="font-semibold text-white">{doc.studentName}</p>
+                        <p className="text-[10px] text-slate-400">{doc.studentEmail}</p>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-300">
+                        {doc.program || "General Admissions"}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/5 text-purple-300 border border-white/10 uppercase">
+                          {doc.documentType || "Academic"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-400">
+                        {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : "Recent"}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleInspectDoc(doc);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-semibold transition inline-flex items-center gap-1.5"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Inspect
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -65,6 +65,25 @@ router.post('/', protect, async (req, res, next) => {
           });
         }
       } catch {}
+
+      // Notify Agency if target is agency
+      if (report.targetType === 'agency' || payload.targetType === 'agency') {
+        try {
+          const targetAgencyId = report.targetId || payload.targetId;
+          if (targetAgencyId) {
+            await Notification.create({
+              user: targetAgencyId,
+              title: 'New Issue Report Filed',
+              message: `A report [${report.reportId}] has been filed: ${report.title}`,
+              type: 'warning',
+              link: '/agency/reports',
+              actionUrl: '/agency/reports',
+              relatedEntityType: 'report',
+              relatedEntityId: report._id ? report._id.toString() : '',
+            });
+          }
+        } catch {}
+      }
     } else {
       report = await devStore.createReport(payload);
 
@@ -83,6 +102,25 @@ router.post('/', protect, async (req, res, next) => {
           });
         }
       } catch {}
+
+      // Notify Agency if target is agency
+      if (report.targetType === 'agency' || payload.targetType === 'agency') {
+        try {
+          const targetAgencyId = report.targetId || payload.targetId;
+          if (targetAgencyId) {
+            await devStore.createNotification({
+              userId: targetAgencyId,
+              title: 'New Issue Report Filed',
+              message: `A report [${report.reportId}] has been filed: ${report.title}`,
+              type: 'warning',
+              link: '/agency/reports',
+              actionUrl: '/agency/reports',
+              relatedEntityType: 'report',
+              relatedEntityId: report._id ? report._id.toString() : '',
+            });
+          }
+        } catch {}
+      }
     }
 
     return res.status(201).json({

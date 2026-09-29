@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -36,6 +37,7 @@ export default function AgentSopLor() {
   const [feedbackText, setFeedbackText] = useState("");
   const [reviewStatus, setReviewStatus] = useState("IN_REVIEW");
   const [submitting, setSubmitting] = useState(false);
+  const { sidebarCounts, getStatusCount, markEntityAsSeen } = useAgentBadges();
 
   const fetchSopLor = async () => {
     try {
@@ -61,6 +63,13 @@ export default function AgentSopLor() {
     const draft = activeTab === "lor" ? item.lor : item.sop;
     setReviewStatus(draft?.status || "IN_REVIEW");
     setFeedbackText("");
+    if (item && item.isSeenByAgent === false) {
+      item.isSeenByAgent = true;
+      markEntityAsSeen("sop_lor", item.applicationId);
+      setItems((prev) =>
+        prev.map((i) => (i.applicationId === item.applicationId ? { ...i, isSeenByAgent: true } : i))
+      );
+    }
   };
 
   const handleSaveReview = async (e) => {
@@ -137,7 +146,12 @@ export default function AgentSopLor() {
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
-          Statement of Purpose (SOP)
+          <span>Statement of Purpose (SOP)</span>
+          {getStatusCount('sopLor', 'sop') > 0 && (
+            <span className="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/30 text-cyan-200 font-extrabold border border-cyan-400/40">
+              [{getStatusCount('sopLor', 'sop')}]
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab("lor")}
@@ -148,7 +162,12 @@ export default function AgentSopLor() {
           }`}
         >
           <GraduationCap className="w-3.5 h-3.5" />
-          Recommendation Letters (LOR)
+          <span>Recommendation Letters (LOR)</span>
+          {getStatusCount('sopLor', 'lor') > 0 && (
+            <span className="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/30 text-cyan-200 font-extrabold border border-cyan-400/40">
+              [{getStatusCount('sopLor', 'lor')}]
+            </span>
+          )}
         </button>
       </motion.div>
 
@@ -210,10 +229,16 @@ export default function AgentSopLor() {
                   const textLength = draft?.text ? draft.text.split(/\s+/).filter(Boolean).length : 0;
                   const commentCount = draft?.comments?.length || 0;
 
+                  const isUnseen = item.isSeenByAgent === false;
+
                   return (
                     <tr
                       key={item.applicationId}
-                      className="hover:bg-white/[0.02] transition-colors group cursor-pointer"
+                      className={`transition-colors group cursor-pointer border-b border-white/5 ${
+                        isUnseen
+                          ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
+                          : "hover:bg-white/[0.02]"
+                      }`}
                       onClick={() => openReviewModal(item)}
                     >
                       <td className="py-3 px-4">

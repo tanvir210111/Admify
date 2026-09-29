@@ -16,7 +16,10 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+
 export default function AgencyMessages() {
+  const { markEntityAsSeen } = useAgencyBadges();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const defaultRecipient = searchParams.get("recipient");
@@ -40,7 +43,8 @@ export default function AgencyMessages() {
         api.get("/api/agency/university-connections"),
       ]);
 
-      if (msgRes.success) setMessages(msgRes.data.messages || []);
+      const fetchedMessages = msgRes.success ? (msgRes.data.messages || []) : [];
+      setMessages(fetchedMessages);
 
       const list = [];
       if (stRes.success && stRes.data?.students) {
@@ -72,14 +76,36 @@ export default function AgencyMessages() {
 
       if (defaultRecipient) {
         const found = list.find((c) => c.id === defaultRecipient);
-        if (found) setSelectedContact(found);
+        if (found) handleSelectContact(found, fetchedMessages);
       } else if (list.length > 0 && !selectedContact) {
-        setSelectedContact(list[0]);
+        handleSelectContact(list[0], fetchedMessages);
       }
     } catch (err) {
       toast.error(err.message || "Failed to load communications");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectContact = (c, msgsList = messages) => {
+    setSelectedContact(c);
+    // Mark any unseen incoming messages from this contact as seen
+    const unseenMsgs = (msgsList || []).filter(
+      (m) =>
+        m.isSeenByAgency === false &&
+        m.sender !== "agency" &&
+        ((m.user?.toString() === c.id || m.receiver?.toString() === c.id) ||
+         (m.sessionId && m.sessionId.includes(c.id)))
+    );
+    unseenMsgs.forEach((m) => {
+      markEntityAsSeen("message", m._id || m.sessionId);
+    });
+    if (unseenMsgs.length > 0) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          unseenMsgs.some((u) => u._id === m._id) ? { ...m, isSeenByAgency: true } : m
+        )
+      );
     }
   };
 
@@ -165,19 +191,37 @@ export default function AgencyMessages() {
             ) : (
               contacts.map((c) => {
                 const isSelected = selectedContact?.id === c.id;
+                const hasUnread = messages.some(
+                  (m) =>
+                    m.isSeenByAgency === false &&
+                    m.sender !== "agency" &&
+                    ((m.user?.toString() === c.id || m.receiver?.toString() === c.id) ||
+                     (m.sessionId && m.sessionId.includes(c.id)))
+                );
                 return (
                   <button
                     key={c.id}
-                    onClick={() => setSelectedContact(c)}
-                    className={`w-full p-3 text-left transition-colors flex items-center gap-3 ${
-                      isSelected ? "bg-violet-600/20 border-l-2 border-violet-500" : "hover:bg-white/[0.02]"
+                    onClick={() => handleSelectContact(c)}
+                    className={`w-full p-3 text-left transition-all flex items-center gap-3 ${
+                      hasUnread
+                        ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                        : isSelected
+                        ? "bg-violet-600/20 border-l-2 border-violet-500"
+                        : "hover:bg-white/[0.02]"
                     }`}
                   >
                     <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
                       <c.icon className={`w-4 h-4 ${c.color}`} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-white text-xs font-semibold truncate">{c.name}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-white text-xs font-semibold truncate">{c.name}</p>
+                        {hasUnread && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                            UNREAD
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-slate-400 truncate">{c.type}</p>
                     </div>
                   </button>

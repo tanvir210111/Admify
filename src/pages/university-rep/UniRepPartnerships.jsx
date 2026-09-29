@@ -21,8 +21,10 @@ import {
 import { api } from "../../lib/api";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
+import { useUniRepBadges, formatBadgeCount } from "../../context/UniRepBadgeContext";
 
 export default function UniRepPartnerships() {
+  const { getStatusCount, markEntityAsSeen } = useUniRepBadges();
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -52,6 +54,7 @@ export default function UniRepPartnerships() {
   const handleAccept = async (id) => {
     setProcessingId(id);
     try {
+      markEntityAsSeen("partnership", id);
       const res = await api.post(`/api/university-rep/partnerships/${id}/accept`);
       if (res?.success) {
         toast.success("Agency partnership request accepted!");
@@ -67,6 +70,7 @@ export default function UniRepPartnerships() {
   const handleReject = async (id) => {
     setProcessingId(id);
     try {
+      markEntityAsSeen("partnership", id);
       const res = await api.post(`/api/university-rep/partnerships/${id}/reject`);
       if (res?.success) {
         toast.success("Partnership request declined.");
@@ -82,6 +86,7 @@ export default function UniRepPartnerships() {
   const handleBlock = async (id) => {
     setProcessingId(id);
     try {
+      markEntityAsSeen("partnership", id);
       const res = await api.post(`/api/university-rep/partnerships/${id}/block`);
       if (res?.success) {
         toast.success("Agency partnership blocked.");
@@ -167,19 +172,28 @@ export default function UniRepPartnerships() {
             { id: "ACCEPTED", label: "Accepted" },
             { id: "REJECTED", label: "Declined" },
             { id: "BLOCKED", label: "Blocked" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition ${
-                statusFilter === tab.id
-                  ? "bg-purple-600/20 border border-purple-500/40 text-purple-200"
-                  : "bg-[#0B1228] border border-white/5 text-slate-400 hover:text-white"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ].map((tab) => {
+            const count = getStatusCount("partnerships", tab.id);
+            const formatted = formatBadgeCount(count);
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 ${
+                  statusFilter === tab.id
+                    ? "bg-purple-600/20 border border-purple-500/40 text-purple-200"
+                    : "bg-[#0B1228] border border-white/5 text-slate-400 hover:text-white"
+                }`}
+              >
+                <span>{tab.label}</span>
+                {formatted && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-purple-500/30 text-purple-300 rounded-full border border-purple-500/40">
+                    {formatted}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -207,13 +221,29 @@ export default function UniRepPartnerships() {
             const agencyName = agency.name || "Agency Partner";
             const agencyEmail = agency.email || "";
             const isProcessing = processingId === conn._id;
+            const isUnseen = conn.isSeenByUniRep === false;
+
+            const handleCardView = () => {
+              if (isUnseen) {
+                markEntityAsSeen("partnership", conn._id);
+                conn.isSeenByUniRep = true;
+                setConnections((prev) =>
+                  prev.map((c) => (c._id === conn._id ? { ...c, isSeenByUniRep: true } : c))
+                );
+              }
+            };
 
             return (
               <motion.div
                 key={conn._id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="rounded-xl p-5 bg-[#0B1228] border border-white/5 hover:border-purple-500/30 transition flex flex-col justify-between space-y-4"
+                onClick={handleCardView}
+                className={`rounded-xl p-5 transition flex flex-col justify-between space-y-4 ${
+                  isUnseen
+                    ? "bg-gradient-to-r from-purple-500/[0.08] to-blue-500/[0.04] border-l-4 border-l-purple-500 border-purple-500/30 shadow-lg shadow-purple-500/10 cursor-pointer"
+                    : "bg-[#0B1228] border border-white/5 hover:border-purple-500/30"
+                }`}
               >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
@@ -224,7 +254,14 @@ export default function UniRepPartnerships() {
                         <Building2 className="w-5 h-5" />
                       )}
                     </div>
-                    {getStatusBadge(conn.status)}
+                    <div className="flex items-center gap-1.5">
+                      {isUnseen && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500 text-white shadow-sm shadow-purple-500/40">
+                          NEW
+                        </span>
+                      )}
+                      {getStatusBadge(conn.status)}
+                    </div>
                   </div>
 
                   <div>

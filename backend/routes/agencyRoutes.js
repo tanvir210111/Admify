@@ -31,6 +31,10 @@ import {
   getAgencyProfile,
   updateAgencyProfile,
   updateAgencySettings,
+  getAgencySidebarCounts,
+  getAgencyStatusCounts,
+  markAgencyEntityAsSeen,
+  markAgencyEntityAsSeenPost,
 } from '../controllers/agencyController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { resolveAuthenticatedAgency } from '../utils/agencyResolver.js';
@@ -106,6 +110,14 @@ router.get('/verification', getAgencyVerification);
 router.put('/verification/draft', saveAgencyDraft);
 router.post('/verification', submitAgencyVerification);
 router.post('/verification/resubmit', resubmitAgencyVerification);
+
+// ── Seen / Unseen Tracking & Sidebar Badge Counts ──
+router.get('/sidebar-counts', requireAgency, getAgencySidebarCounts);
+router.get('/status-counts', requireAgency, getAgencyStatusCounts);
+router.put('/seen/:entityType/:entityId', requireAgency, markAgencyEntityAsSeen);
+router.post('/seen/:entityType/:entityId', requireAgency, markAgencyEntityAsSeen);
+router.post('/seen', requireAgency, markAgencyEntityAsSeenPost);
+router.put('/seen', requireAgency, markAgencyEntityAsSeenPost);
 
 // ── Operational Routes (Require Verified & Active Agency) ──
 // Dashboard

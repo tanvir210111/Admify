@@ -11,8 +11,10 @@ import {
   AlertCircle,
   Building2,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import toast from "react-hot-toast";
+import { useAgentBadges, triggerAgentBadgeRefresh } from "../../context/AgentBadgeContext";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -23,6 +25,8 @@ const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
 export default function AgentNotifications() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { markEntityAsSeen, refreshSidebarCounts } = useAgentBadges();
+  const navigate = useNavigate();
 
   const fetchNotifications = async () => {
     try {
@@ -50,9 +54,35 @@ export default function AgentNotifications() {
         setNotifications((prev) =>
           prev.map((n) => (n._id === id ? { ...n, read: true } : n))
         );
+        triggerAgentBadgeRefresh();
       }
     } catch (err) {
       console.error("Failed to mark notification read:", err);
+    }
+  };
+
+  const handleNotificationClick = async (notif) => {
+    if (!notif.read) {
+      await handleMarkAsRead(notif._id);
+    }
+    if (notif.relatedEntityType && notif.relatedEntityId) {
+      await markEntityAsSeen(notif.relatedEntityType, notif.relatedEntityId);
+    }
+    triggerAgentBadgeRefresh();
+
+    const targetUrl = notif.actionUrl || notif.link;
+    if (targetUrl) {
+      navigate(targetUrl);
+    } else if (notif.relatedEntityType) {
+      const type = notif.relatedEntityType.toLowerCase();
+      if (type.includes('application')) navigate('/agent/applications');
+      else if (type.includes('student')) navigate('/agent/students');
+      else if (type.includes('document')) navigate('/agent/documents');
+      else if (type.includes('sop') || type.includes('lor')) navigate('/agent/sop-lor');
+      else if (type.includes('message')) navigate('/agent/messages');
+      else if (type.includes('task')) navigate('/agent/tasks');
+      else if (type.includes('report')) navigate('/agent/reports');
+      else if (type.includes('agency')) navigate('/agent/agency');
     }
   };
 
@@ -63,6 +93,7 @@ export default function AgentNotifications() {
     try {
       await Promise.all(unread.map((n) => api.put(`/api/agent/notifications/${n._id}/read`)));
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      triggerAgentBadgeRefresh();
       toast.success("All notifications marked as read.");
     } catch (err) {
       toast.error("Failed to mark all as read.");
@@ -135,11 +166,11 @@ export default function AgentNotifications() {
             {notifications.map((notif) => (
               <div
                 key={notif._id}
-                onClick={() => !notif.read && handleMarkAsRead(notif._id)}
+                onClick={() => handleNotificationClick(notif)}
                 className={`p-4 transition-colors flex items-start justify-between gap-4 cursor-pointer ${
                   notif.read
                     ? "opacity-60 bg-transparent hover:bg-white/[0.01]"
-                    : "bg-violet-950/15 hover:bg-violet-950/25 border-l-2 border-violet-500"
+                    : "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
                 }`}
               >
                 <div className="flex items-start gap-3">

@@ -3,6 +3,7 @@ import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
+import { AgentBadgeProvider, useAgentBadges, formatBadgeCount } from "../../context/AgentBadgeContext";
 import {
   LayoutDashboard,
   Users,
@@ -28,27 +29,28 @@ import {
 
 const NAV = [
   { icon: LayoutDashboard, label: "Dashboard",                path: "/agent/dashboard" },
-  { icon: Users,           label: "My Students",              path: "/agent/students" },
-  { icon: FileCheck,       label: "Applications",             path: "/agent/applications" },
-  { icon: FileText,        label: "Documents",                path: "/agent/documents" },
-  { icon: Sparkles,        label: "SOP / LOR",                path: "/agent/sop-lor" },
+  { icon: Users,           label: "My Students",              path: "/agent/students", countKey: "students" },
+  { icon: FileCheck,       label: "Applications",             path: "/agent/applications", countKey: "applications" },
+  { icon: FileText,        label: "Documents",                path: "/agent/documents", countKey: "documents" },
+  { icon: Sparkles,        label: "SOP / LOR",                path: "/agent/sop-lor", countKey: "sopLor" },
   { icon: Building2,       label: "Universities & Programs",  path: "/agent/universities" },
-  { icon: MessageSquare,   label: "Messages",                 path: "/agent/messages" },
-  { icon: Calendar,        label: "Tasks & Deadlines",        path: "/agent/tasks" },
+  { icon: MessageSquare,   label: "Messages",                 path: "/agent/messages", countKey: "messages" },
+  { icon: Calendar,        label: "Tasks & Deadlines",        path: "/agent/tasks", countKey: "tasks" },
   { icon: BarChart3,       label: "My Performance",           path: "/agent/performance" },
-  { icon: Bell,            label: "Notifications",            path: "/agent/notifications" },
-  { icon: AlertCircle,     label: "Reports / Issues",         path: "/agent/reports" },
-  { icon: ShieldCheck,     label: "My Agency",                path: "/agent/agency" },
+  { icon: Bell,            label: "Notifications",            path: "/agent/notifications", countKey: "notifications" },
+  { icon: AlertCircle,     label: "Reports / Issues",         path: "/agent/reports", countKey: "reports" },
+  { icon: ShieldCheck,     label: "My Agency",                path: "/agent/agency", countKey: "agency" },
   { icon: User,            label: "My Profile",               path: "/agent/profile" },
   { icon: Settings,        label: "Settings",                 path: "/agent/settings" },
 ];
 
-export default function AgentLayout() {
+function AgentLayoutContent() {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { sidebarCounts } = useAgentBadges();
   const navigate = useNavigate();
 
   // Load real Agent notifications
@@ -160,11 +162,16 @@ export default function AgentLayout() {
                     style={{ width: 16, height: 16 }}
                   />
                   <span className="truncate">{item.label}</span>
-                  {item.label === "Notifications" && unreadCount > 0 && (
-                    <span className="ml-auto px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
-                      {unreadCount}
-                    </span>
-                  )}
+                  {(() => {
+                    const count = item.countKey ? sidebarCounts[item.countKey] || 0 : 0;
+                    const badgeText = formatBadgeCount(count);
+                    if (!badgeText) return null;
+                    return (
+                      <span className="ml-auto px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        {badgeText}
+                      </span>
+                    );
+                  })()}
                 </>
               )}
             </NavLink>
@@ -230,7 +237,7 @@ export default function AgentLayout() {
               title="Notifications"
             >
               <Bell className="w-4 h-4" />
-              {unreadCount > 0 && (
+              {(sidebarCounts.notifications > 0 || unreadCount > 0) && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               )}
             </Link>
@@ -311,5 +318,13 @@ export default function AgentLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function AgentLayout() {
+  return (
+    <AgentBadgeProvider>
+      <AgentLayoutContent />
+    </AgentBadgeProvider>
   );
 }

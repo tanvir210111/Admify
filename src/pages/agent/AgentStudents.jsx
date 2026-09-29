@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../../lib/api";
 import toast from "react-hot-toast";
+import { useAgentBadges } from "../../context/AgentBadgeContext";
 import {
   Users,
   Search,
@@ -23,7 +24,19 @@ export default function AgentStudents() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const { sidebarCounts, markEntityAsSeen } = useAgentBadges();
   const navigate = useNavigate();
+
+  const handleSelectStudent = (st) => {
+    setSelectedStudent(st);
+    if (st && st.isSeenByAgent === false) {
+      st.isSeenByAgent = true;
+      markEntityAsSeen("student", st._id);
+      setStudents((prev) =>
+        prev.map((s) => (s._id === st._id ? { ...s, isSeenByAgent: true } : s))
+      );
+    }
+  };
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -113,8 +126,18 @@ export default function AgentStudents() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-xs">
-                {students.map((st) => (
-                  <tr key={st._id} className="hover:bg-white/[0.02] transition-colors">
+                {students.map((st) => {
+                  const isUnseen = st.isSeenByAgent === false;
+                  return (
+                    <tr
+                      key={st._id}
+                      className={`transition-colors cursor-pointer border-b border-white/5 ${
+                        isUnseen
+                          ? "bg-cyan-950/30 border-l-4 border-l-cyan-500 shadow-[inset_0_0_24px_rgba(6,182,212,0.12)] hover:bg-cyan-950/40"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                      onClick={() => handleSelectStudent(st)}
+                    >
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600/30 to-blue-600/30 border border-cyan-500/30 flex items-center justify-center text-white font-bold text-xs shrink-0">
@@ -168,13 +191,20 @@ export default function AgentStudents() {
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => setSelectedStudent(st)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectStudent(st);
+                          }}
                           className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors"
                         >
                           View Profile
                         </button>
                         <button
-                          onClick={() => navigate(`/agent/messages?recipient=${st._id}`)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectStudent(st);
+                            navigate(`/agent/messages?recipient=${st._id}`);
+                          }}
                           className="p-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 transition-colors"
                           title="Message Student"
                         >
@@ -183,7 +213,8 @@ export default function AgentStudents() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

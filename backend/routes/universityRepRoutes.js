@@ -41,6 +41,10 @@ import {
   getUniRepReports,
   createUniRepReport,
   updateUniRepSettings,
+  getUniRepSidebarCounts,
+  getUniRepStatusCounts,
+  markUniRepEntityAsSeen,
+  markUniRepEntityAsSeenPost,
 } from '../controllers/universityRepController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -91,6 +95,14 @@ router.get('/verification', getUniRepVerification);
 
 // Operational routes require an approved/active University Representative
 router.use(requireActiveUniRep);
+
+// ── Seen / Unseen Tracking & Sidebar Badge Counts ──
+router.get('/sidebar-counts', getUniRepSidebarCounts);
+router.get('/status-counts', getUniRepStatusCounts);
+router.put('/seen/:entityType/:entityId', markUniRepEntityAsSeen);
+router.post('/seen/:entityType/:entityId', markUniRepEntityAsSeen);
+router.post('/seen', markUniRepEntityAsSeenPost);
+router.put('/seen', markUniRepEntityAsSeenPost);
 
 // Dashboard
 router.get('/dashboard', getUniRepDashboard);

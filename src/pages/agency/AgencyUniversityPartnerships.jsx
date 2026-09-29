@@ -19,7 +19,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+
 export default function AgencyUniversityPartnerships() {
+  const { getStatusCount, markEntityAsSeen } = useAgencyBadges();
   const [activeTab, setActiveTab] = useState("my"); // 'my' | 'discover'
   const [connections, setConnections] = useState([]);
   const [verifiedReps, setVerifiedReps] = useState([]);
@@ -59,6 +62,15 @@ export default function AgencyUniversityPartnerships() {
     loadData();
   }, []);
 
+  const handleRowClick = (conn) => {
+    if (!conn.isSeenByAgency) {
+      markEntityAsSeen("universityPartnership", conn._id);
+      setConnections((prev) =>
+        prev.map((item) => (item._id === conn._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
+
   const handleSendConnection = async (rep) => {
     setRequestingRepId(rep._id);
     try {
@@ -77,7 +89,14 @@ export default function AgencyUniversityPartnerships() {
     }
   };
 
-  const handleCancelConnection = async (connId) => {
+  const handleCancelConnection = async (conn) => {
+    const connId = conn._id || conn.id;
+    if (!conn.isSeenByAgency) {
+      markEntityAsSeen("universityPartnership", connId);
+      setConnections((prev) =>
+        prev.map((item) => (item._id === connId ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
     try {
       const res = await api.delete(`/api/agency/university-connections/${connId}`);
       if (res.success) {
@@ -107,6 +126,8 @@ export default function AgencyUniversityPartnerships() {
     const rCountry = (r.universityId?.country || r.country || "").toLowerCase();
     return uName.includes(q) || rName.includes(q) || rCountry.includes(q);
   });
+
+  const myUnseenCount = getStatusCount("universityPartnerships", "my") || getStatusCount("universityPartnerships", "all");
 
   return (
     <div className="space-y-6">
@@ -141,6 +162,13 @@ export default function AgencyUniversityPartnerships() {
         >
           <Handshake className="w-3.5 h-3.5" />
           <span>My Partnerships ({connections.length})</span>
+          {myUnseenCount > 0 && (
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              activeTab === "my" ? "bg-white text-violet-700" : "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+            }`}>
+              [{myUnseenCount}]
+            </span>
+          )}
         </button>
 
         <button
@@ -213,56 +241,75 @@ export default function AgencyUniversityPartnerships() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-xs">
-                  {filteredConnections.map((conn) => (
-                    <tr key={conn._id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-pink-600/20 border border-pink-500/30 flex items-center justify-center text-pink-400 font-bold text-xs shrink-0">
-                            <Building2 className="w-4 h-4" />
+                  {filteredConnections.map((conn) => {
+                    const isUnseen = conn.isSeenByAgency === false;
+                    return (
+                      <tr
+                        key={conn._id}
+                        onClick={() => handleRowClick(conn)}
+                        className={`transition-all cursor-pointer ${
+                          isUnseen
+                            ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                            : "hover:bg-white/[0.02]"
+                        }`}
+                      >
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-pink-600/20 border border-pink-500/30 flex items-center justify-center text-pink-400 font-bold text-xs shrink-0">
+                              <Building2 className="w-4 h-4" />
+                            </div>
+                            <div>
+                              {isUnseen && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider mb-1">
+                                  NEW UPDATE
+                                </span>
+                              )}
+                              <p className="text-white font-semibold">{conn.university?.name || "Partner University"}</p>
+                              <p className="text-slate-400 text-[11px]">{conn.university?.country || "Global"}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-white font-semibold">{conn.university?.name || "Partner University"}</p>
-                            <p className="text-slate-400 text-[11px]">{conn.university?.country || "Global"}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <p className="text-white font-medium">
-                          {conn.universityRepresentative?.name || "Institutional Rep"}
-                        </p>
-                        <p className="text-slate-400 text-[11px]">{conn.universityRepresentative?.email}</p>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-300">
-                        {conn.universityRepresentative?.designation || "Admissions Officer"}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            conn.status === "ACCEPTED"
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                              : conn.status === "PENDING"
-                              ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                              : "bg-red-500/10 text-red-400 border-red-500/20"
-                          }`}
-                        >
-                          {conn.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-400 text-[11px]">
-                        Requested {new Date(conn.createdAt || Date.now()).toLocaleDateString()}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        {conn.status === "PENDING" && (
-                          <button
-                            onClick={() => handleCancelConnection(conn._id)}
-                            className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[11px] font-semibold border border-red-500/20 transition-colors"
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <p className="text-white font-medium">
+                            {conn.universityRepresentative?.name || "Institutional Rep"}
+                          </p>
+                          <p className="text-slate-400 text-[11px]">{conn.universityRepresentative?.email}</p>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-300">
+                          {conn.universityRepresentative?.designation || "Admissions Officer"}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                              conn.status === "ACCEPTED"
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                : conn.status === "PENDING"
+                                ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                : "bg-red-500/10 text-red-400 border-red-500/20"
+                            }`}
                           >
-                            Cancel Request
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            {conn.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                          Requested {new Date(conn.createdAt || Date.now()).toLocaleDateString()}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          {conn.status === "PENDING" && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancelConnection(conn);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[11px] font-semibold border border-red-500/20 transition-colors"
+                            >
+                              Cancel Request
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

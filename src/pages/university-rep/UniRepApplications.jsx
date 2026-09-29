@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import toast from "react-hot-toast";
+import { useUniRepBadges, formatBadgeCount } from "../../context/UniRepBadgeContext";
 
 const STAGES = [
   "All Stages",
@@ -41,11 +42,23 @@ const STAGE_COLORS = {
 };
 
 export default function UniRepApplications() {
+  const { getStatusCount, markEntityAsSeen } = useUniRepBadges();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("All Stages");
   const [selectedApp, setSelectedApp] = useState(null);
+
+  const handleViewApplication = (app) => {
+    if (app.isSeenByUniRep === false) {
+      markEntityAsSeen("application", app._id);
+      app.isSeenByUniRep = true;
+      setApplications((prev) =>
+        prev.map((a) => (a._id === app._id ? { ...a, isSeenByUniRep: true } : a))
+      );
+    }
+    setSelectedApp(app);
+  };
 
   const fetchApplications = async () => {
     setLoading(true);
@@ -118,19 +131,28 @@ export default function UniRepApplications() {
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {STAGES.map((stg) => (
-            <button
-              key={stg}
-              onClick={() => setStageFilter(stg)}
-              className={`px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition ${
-                stageFilter === stg
-                  ? "bg-purple-600/20 border border-purple-500/40 text-purple-200"
-                  : "bg-[#0B1228] border border-white/5 text-slate-400 hover:text-white"
-              }`}
-            >
-              {stg}
-            </button>
-          ))}
+          {STAGES.map((stg) => {
+            const count = getStatusCount("applications", stg);
+            const formatted = formatBadgeCount(count);
+            return (
+              <button
+                key={stg}
+                onClick={() => setStageFilter(stg)}
+                className={`px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 ${
+                  stageFilter === stg
+                    ? "bg-purple-600/20 border border-purple-500/40 text-purple-200"
+                    : "bg-[#0B1228] border border-white/5 text-slate-400 hover:text-white"
+                }`}
+              >
+                <span>{stg}</span>
+                {formatted && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-purple-500/30 text-purple-300 rounded-full border border-purple-500/40">
+                    {formatted}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -167,11 +189,27 @@ export default function UniRepApplications() {
                 {filtered.map((app) => {
                   const student = app.student || {};
                   const stageClass = STAGE_COLORS[app.stage] || "text-slate-400 bg-slate-500/10 border-slate-500/20";
+                  const isUnseen = app.isSeenByUniRep === false;
 
                   return (
-                    <tr key={app._id} className="hover:bg-white/[0.02] transition">
+                    <tr
+                      key={app._id}
+                      onClick={() => handleViewApplication(app)}
+                      className={`transition cursor-pointer ${
+                        isUnseen
+                          ? "bg-gradient-to-r from-purple-500/[0.08] to-blue-500/[0.04] border-l-4 border-l-purple-500 border-purple-500/30 shadow-sm shadow-purple-500/10"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
                       <td className="py-3.5 px-4 font-mono font-bold text-white">
-                        {app.applicationId}
+                        <div className="flex items-center gap-2">
+                          {isUnseen && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500 text-white shadow-sm shadow-purple-500/40 shrink-0">
+                              NEW
+                            </span>
+                          )}
+                          <span>{app.applicationId}</span>
+                        </div>
                       </td>
                       <td className="py-3.5 px-4">
                         <div>
@@ -206,7 +244,10 @@ export default function UniRepApplications() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button
-                          onClick={() => setSelectedApp(app)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewApplication(app);
+                          }}
                           className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-semibold transition inline-flex items-center gap-1.5"
                         >
                           <Eye className="w-3.5 h-3.5" /> View

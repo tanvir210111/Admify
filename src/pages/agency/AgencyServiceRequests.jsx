@@ -18,7 +18,19 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+
+const SERVICE_STATUSES = [
+  { key: "all", label: "All" },
+  { key: "ACTIVE", label: "ACTIVE" },
+  { key: "IN_PROGRESS", label: "IN_PROGRESS" },
+  { key: "DOCUMENTS_REQUIRED", label: "DOCUMENTS_REQUIRED" },
+  { key: "COMPLETED", label: "COMPLETED" },
+  { key: "CANCELLED", label: "CANCELLED" },
+];
+
 export default function AgencyServiceRequests() {
+  const { getStatusCount, markEntityAsSeen } = useAgencyBadges();
   const [orders, setOrders] = useState([]);
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,14 +73,37 @@ export default function AgencyServiceRequests() {
     fetchAgents();
   }, [statusFilter]);
 
+  const handleRowClick = (ord) => {
+    if (!ord.isSeenByAgency) {
+      markEntityAsSeen("serviceRequest", ord._id);
+      setOrders((prev) =>
+        prev.map((item) => (item._id === ord._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
+
   const handleOpenManage = (ord) => {
     setSelectedOrder(ord);
     setActionStatus(ord.status || "IN_PROGRESS");
     setAssignAgentId("");
     setOrderNotes(ord.notes || "");
+
+    if (!ord.isSeenByAgency) {
+      markEntityAsSeen("serviceRequest", ord._id);
+      setOrders((prev) =>
+        prev.map((item) => (item._id === ord._id ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
   };
 
-  const handleQuickAccept = async (ordId) => {
+  const handleQuickAccept = async (ord) => {
+    const ordId = ord._id || ord.id;
+    if (!ord.isSeenByAgency) {
+      markEntityAsSeen("serviceRequest", ordId);
+      setOrders((prev) =>
+        prev.map((item) => (item._id === ordId ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
     try {
       const res = await api.put(`/api/agency/service-requests/${ordId}`, { action: "ACCEPT" });
       if (res.success) {
@@ -80,7 +115,14 @@ export default function AgencyServiceRequests() {
     }
   };
 
-  const handleQuickReject = async (ordId) => {
+  const handleQuickReject = async (ord) => {
+    const ordId = ord._id || ord.id;
+    if (!ord.isSeenByAgency) {
+      markEntityAsSeen("serviceRequest", ordId);
+      setOrders((prev) =>
+        prev.map((item) => (item._id === ordId ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
     try {
       const res = await api.put(`/api/agency/service-requests/${ordId}`, { action: "REJECT" });
       if (res.success) {
@@ -165,30 +207,31 @@ export default function AgencyServiceRequests() {
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div
-        className="p-4 rounded-2xl border flex items-center justify-between gap-4"
-        style={{ background: "#0B1228", borderColor: "rgba(255, 255, 255, 0.07)" }}
-      >
-        <div className="flex items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-slate-400" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-violet-500"
-          >
-            <option value="all">All Service Statuses</option>
-            <option value="ACTIVE">Active / Unassigned</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="DOCUMENTS_REQUIRED">Documents Required</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="CANCELLED">Cancelled</option>
-          </select>
-        </div>
-
-        <span className="text-xs text-slate-400 font-medium">
-          {orders.length} service booking{orders.length !== 1 ? "s" : ""}
-        </span>
+      {/* Status Filter Tabs */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+        {SERVICE_STATUSES.map((st) => {
+          const unseenCount = st.key === "all" ? getStatusCount("serviceRequests", "all") : getStatusCount("serviceRequests", st.key);
+          return (
+            <button
+              key={st.key}
+              onClick={() => setStatusFilter(st.key)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                statusFilter === st.key
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30 font-bold"
+                  : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <span>{st.label}</span>
+              {unseenCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  statusFilter === st.key ? "bg-white text-violet-700" : "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+                }`}>
+                  [{unseenCount}]
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Service Orders Table */}
@@ -222,10 +265,24 @@ export default function AgencyServiceRequests() {
               <tbody className="divide-y divide-white/5 text-xs">
                 {orders.map((ord) => {
                   const isAssigned = !!ord.assignedAgency?.agencyId;
+                  const isUnseen = ord.isSeenByAgency === false;
                   return (
-                    <tr key={ord._id} className="hover:bg-white/[0.02] transition-colors">
+                    <tr
+                      key={ord._id}
+                      onClick={() => handleRowClick(ord)}
+                      className={`transition-all cursor-pointer ${
+                        isUnseen
+                          ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
                       <td className="py-3.5 px-4">
                         <div>
+                          {isUnseen && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider mb-1">
+                              NEW UPDATE
+                            </span>
+                          )}
                           <p className="text-white font-semibold">{ord.serviceName || "Agency Service"}</p>
                           <p className="text-slate-400 text-[11px]">
                             Booked on {new Date(ord.createdAt || Date.now()).toLocaleDateString()}
@@ -266,16 +323,33 @@ export default function AgencyServiceRequests() {
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {!isAssigned && ord.status === "ACTIVE" && (
-                            <button
-                              onClick={() => handleQuickAccept(ord._id)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-semibold border border-emerald-500/20 transition-colors"
-                            >
-                              Accept Order
-                            </button>
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleQuickAccept(ord);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition-colors"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleQuickReject(ord);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-[11px] font-semibold transition-colors"
+                              >
+                                Decline
+                              </button>
+                            </>
                           )}
                           <button
-                            onClick={() => handleOpenManage(ord)}
-                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenManage(ord);
+                            }}
+                            className="px-3 py-1 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-[11px] font-semibold transition-colors"
                           >
                             Manage
                           </button>

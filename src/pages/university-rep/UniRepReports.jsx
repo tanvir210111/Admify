@@ -14,8 +14,10 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import toast from "react-hot-toast";
+import { useUniRepBadges } from "../../context/UniRepBadgeContext";
 
 export default function UniRepReports() {
+  const { markEntityAsSeen } = useUniRepBadges();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -78,6 +80,16 @@ export default function UniRepReports() {
     }
   };
 
+  const handleInspectReport = (rep) => {
+    if (rep.isSeenByUniRep === false) {
+      markEntityAsSeen("report", rep._id);
+      rep.isSeenByUniRep = true;
+      setReports((prev) =>
+        prev.map((r) => (r._id === rep._id ? { ...r, isSeenByUniRep: true } : r))
+      );
+    }
+  };
+
   const getStatusBadge = (status) => {
     switch (status) {
       case "RESOLVED":
@@ -133,40 +145,54 @@ export default function UniRepReports() {
         </div>
       ) : (
         <div className="space-y-3">
-          {reports.map((rep) => (
-            <motion.div
-              key={rep._id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl p-5 bg-[#0B1228] border border-white/5 space-y-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-purple-400 text-xs font-bold">{rep.reportId}</span>
-                    <span className="text-slate-500">•</span>
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase">{rep.category}</span>
+          {reports.map((rep) => {
+            const hasUpdate = rep.status && rep.status !== "PENDING";
+            const isUnseen = rep.isSeenByUniRep === false && hasUpdate;
+            return (
+              <motion.div
+                key={rep._id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                onClick={() => handleInspectReport(rep)}
+                className={`rounded-xl p-5 border transition space-y-3 cursor-pointer ${
+                  isUnseen
+                    ? "bg-gradient-to-r from-purple-500/[0.08] to-blue-500/[0.04] border-l-4 border-l-purple-500 border-purple-500/30 shadow-lg text-white"
+                    : "bg-[#0B1228] border-white/5"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-purple-400 text-xs font-bold">{rep.reportId}</span>
+                      <span className="text-slate-500">•</span>
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase">{rep.category}</span>
+                      {isUnseen && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500 text-white shadow-sm shadow-purple-500/40">
+                          NEW UPDATE
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-sm font-bold text-white mt-1">{rep.title}</h3>
                   </div>
-                  <h3 className="text-sm font-bold text-white mt-1">{rep.title}</h3>
+                  {getStatusBadge(rep.status)}
                 </div>
-                {getStatusBadge(rep.status)}
-              </div>
 
-              <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
-                {rep.description}
-              </p>
+                <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
+                  {rep.description}
+                </p>
 
-              <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-                <div className="flex items-center gap-3">
-                  <span>Priority: <span className="font-semibold text-white">{rep.priority}</span></span>
-                  {rep.targetName && (
-                    <span>Related Entity: <span className="font-semibold text-slate-300">{rep.targetName}</span></span>
-                  )}
+                <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                  <div className="flex items-center gap-3">
+                    <span>Priority: <span className="font-semibold text-white">{rep.priority}</span></span>
+                    {rep.targetName && (
+                      <span>Related Entity: <span className="font-semibold text-slate-300">{rep.targetName}</span></span>
+                    )}
+                  </div>
+                  <span>Submitted: {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : "Recent"}</span>
                 </div>
-                <span>Submitted: {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : "Recent"}</span>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </div>
       )}
 

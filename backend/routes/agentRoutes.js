@@ -23,6 +23,10 @@ import {
   getAgentProfile,
   updateAgentProfile,
   updateAgentSettings,
+  getAgentSidebarCounts,
+  getAgentStatusCounts,
+  markAgentEntityAsSeen,
+  markAgentEntityAsSeenPost,
 } from '../controllers/agentController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -60,6 +64,12 @@ router.use(requireAgent);
 router.use(requireActiveAgent);
 
 // ── Agent Routes ─────────────────────────────────────────────────────────────
+// Sidebar & Status Unseen Counts & Seen Mutators
+router.get('/sidebar-counts', getAgentSidebarCounts);
+router.get('/status-counts', getAgentStatusCounts);
+router.put('/seen/:entityType/:entityId', markAgentEntityAsSeen);
+router.post('/seen', markAgentEntityAsSeenPost);
+
 // Dashboard
 router.get('/dashboard', getAgentDashboard);
 

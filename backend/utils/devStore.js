@@ -311,6 +311,9 @@ class DevStore {
           'chatMessages',
           'adminSeenItems',
           'studentSeenItems',
+          'agentSeenItems',
+          'agencySeenItems',
+          'uniRepSeenItems',
         ];
 
         for (const k of arraysToCheck) {
@@ -2780,6 +2783,301 @@ class DevStore {
       for (const n of db.notifications) {
         const notifUserId = (n.user || n.userId)?.toString();
         if (notifUserId === uidStr) {
+          if (
+            n.relatedEntityId === idStr ||
+            (n.relatedEntityType && n.relatedEntityType.toLowerCase() === entityType.toLowerCase() && n.link?.includes(idStr))
+          ) {
+            n.read = true;
+          }
+        }
+      }
+    }
+
+    this.write(db);
+    return true;
+  }
+
+  // ── Agent Seen Tracking Methods ───────────────────────────────────────────
+  async isAgentEntitySeen(agentId, entityType, entityId) {
+    if (!agentId || !entityType || !entityId) return false;
+    const db = this.read();
+    const items = db.agentSeenItems || [];
+    const aidStr = agentId.toString();
+    const idStr = entityId.toString();
+    return items.some(
+      (item) => (item.agent === aidStr || item.user === aidStr) && item.entityType === entityType && item.entityId === idStr
+    );
+  }
+
+  async markAgentEntitySeen(agentId, entityType, entityId) {
+    if (!agentId || !entityType || !entityId) return false;
+    const db = this.read();
+    db.agentSeenItems = db.agentSeenItems || [];
+    const aidStr = agentId.toString();
+    const idStr = entityId.toString();
+    const nowIso = new Date().toISOString();
+
+    const existing = db.agentSeenItems.find(
+      (item) => (item.agent === aidStr || item.user === aidStr) && item.entityType === entityType && item.entityId === idStr
+    );
+    if (!existing) {
+      db.agentSeenItems.push({
+        _id: new mongoose.Types.ObjectId().toString(),
+        agent: aidStr,
+        user: aidStr,
+        entityType,
+        entityId: idStr,
+        seenAt: nowIso,
+        createdAt: nowIso,
+      });
+    }
+
+    const collectionMap = {
+      applications: 'applications',
+      application: 'applications',
+      tasks: 'tasks',
+      task: 'tasks',
+      reports: 'reports',
+      report: 'reports',
+      support: 'chatMessages',
+      message: 'chatMessages',
+      chat_message: 'chatMessages',
+      messages: 'chatMessages',
+      notifications: 'notifications',
+      notification: 'notifications',
+      students: 'users',
+      student: 'users',
+    };
+
+    const collName = collectionMap[entityType];
+    if (collName && Array.isArray(db[collName])) {
+      if (collName === 'chatMessages') {
+        for (const msg of db.chatMessages) {
+          if (
+            (msg.sessionId === idStr || msg._id === idStr) &&
+            (msg.receiver?.toString() === aidStr || msg.user?.toString() === aidStr)
+          ) {
+            msg.isSeenByAgent = true;
+            msg.agentSeenAt = nowIso;
+          }
+        }
+      } else {
+        const doc = db[collName].find(
+          (d) =>
+            (d._id === idStr || d.id === idStr || d.applicationId === idStr || d.reportId === idStr || d.taskId === idStr)
+        );
+        if (doc) {
+          doc.isSeenByAgent = true;
+          doc.agentSeenAt = nowIso;
+        }
+      }
+    }
+
+    // Automatically mark matching agent notification as read
+    if (Array.isArray(db.notifications)) {
+      for (const n of db.notifications) {
+        const notifUserId = (n.user || n.userId)?.toString();
+        if (notifUserId === aidStr) {
+          if (
+            n.relatedEntityId === idStr ||
+            (n.relatedEntityType && n.relatedEntityType.toLowerCase() === entityType.toLowerCase() && n.link?.includes(idStr))
+          ) {
+            n.read = true;
+          }
+        }
+      }
+    }
+
+    this.write(db);
+    return true;
+  }
+
+  // ── Agency Seen Tracking Methods ──────────────────────────────────────────
+  async isAgencyEntitySeen(agencyId, entityType, entityId) {
+    if (!agencyId || !entityType || !entityId) return false;
+    const db = this.read();
+    const items = db.agencySeenItems || [];
+    const aidStr = agencyId.toString();
+    const idStr = entityId.toString();
+    return items.some(
+      (item) => (item.agency === aidStr || item.user === aidStr) && item.entityType === entityType && item.entityId === idStr
+    );
+  }
+
+  async markAgencyEntitySeen(agencyId, entityType, entityId) {
+    if (!agencyId || !entityType || !entityId) return false;
+    const db = this.read();
+    db.agencySeenItems = db.agencySeenItems || [];
+    const aidStr = agencyId.toString();
+    const idStr = entityId.toString();
+    const nowIso = new Date().toISOString();
+
+    const existing = db.agencySeenItems.find(
+      (item) => (item.agency === aidStr || item.user === aidStr) && item.entityType === entityType && item.entityId === idStr
+    );
+    if (!existing) {
+      db.agencySeenItems.push({
+        _id: new mongoose.Types.ObjectId().toString(),
+        agency: aidStr,
+        user: aidStr,
+        entityType,
+        entityId: idStr,
+        seenAt: nowIso,
+        createdAt: nowIso,
+      });
+    }
+
+    const collectionMap = {
+      applications: 'applications',
+      application: 'applications',
+      serviceRequests: 'agencyServiceOrders',
+      serviceRequest: 'agencyServiceOrders',
+      service_request: 'agencyServiceOrders',
+      serviceOrders: 'agencyServiceOrders',
+      serviceOrder: 'agencyServiceOrders',
+      agents: 'users',
+      agent: 'users',
+      agentApplications: 'agentApplications',
+      agentApplication: 'agentApplications',
+      students: 'users',
+      student: 'users',
+      universityPartnerships: 'universityAgencyConnections',
+      universityPartnership: 'universityAgencyConnections',
+      partnerships: 'universityAgencyConnections',
+      partnership: 'universityAgencyConnections',
+      university_connection: 'universityAgencyConnections',
+      university_connections: 'universityAgencyConnections',
+      messages: 'chatMessages',
+      message: 'chatMessages',
+      chatMessages: 'chatMessages',
+      chat_message: 'chatMessages',
+      reports: 'reports',
+      report: 'reports',
+      notifications: 'notifications',
+      notification: 'notifications',
+    };
+
+    const collName = collectionMap[entityType];
+    if (collName && Array.isArray(db[collName])) {
+      if (collName === 'chatMessages') {
+        for (const msg of db.chatMessages) {
+          if (
+            (msg.sessionId === idStr || msg._id === idStr) &&
+            (msg.receiver?.toString() === aidStr || msg.user?.toString() === aidStr)
+          ) {
+            msg.isSeenByAgency = true;
+            msg.agencySeenAt = nowIso;
+          }
+        }
+      } else {
+        const doc = db[collName].find(
+          (d) =>
+            (d._id === idStr || d.id === idStr || d.applicationId === idStr || d.orderId === idStr || d.reportId === idStr)
+        );
+        if (doc) {
+          doc.isSeenByAgency = true;
+          doc.agencySeenAt = nowIso;
+        }
+      }
+    }
+
+    // Automatically mark matching agency notification as read
+    if (Array.isArray(db.notifications)) {
+      for (const n of db.notifications) {
+        const notifUserId = (n.user || n.userId)?.toString();
+        if (notifUserId === aidStr) {
+          if (
+            n.relatedEntityId === idStr ||
+            (n.relatedEntityType && n.relatedEntityType.toLowerCase() === entityType.toLowerCase() && n.link?.includes(idStr))
+          ) {
+            n.read = true;
+          }
+        }
+      }
+    }
+
+    this.write(db);
+    return true;
+  }
+
+  async isUniRepEntitySeen(repId, entityType, entityId) {
+    if (!repId || !entityType || !entityId) return false;
+    const db = this.read();
+    const items = db.uniRepSeenItems || [];
+    const ridStr = repId.toString();
+    const idStr = entityId.toString();
+    return items.some(
+      (item) => (item.universityRep === ridStr || item.user === ridStr) && item.entityType === entityType && item.entityId === idStr
+    );
+  }
+
+  async markUniRepEntitySeen(repId, entityType, entityId) {
+    if (!repId || !entityType || !entityId) return false;
+    const db = this.read();
+    db.uniRepSeenItems = db.uniRepSeenItems || [];
+    const ridStr = repId.toString();
+    const idStr = entityId.toString();
+    const nowIso = new Date().toISOString();
+
+    const existing = db.uniRepSeenItems.find(
+      (item) => (item.universityRep === ridStr || item.user === ridStr) && item.entityType === entityType && item.entityId === idStr
+    );
+    if (!existing) {
+      db.uniRepSeenItems.push({
+        _id: new mongoose.Types.ObjectId().toString(),
+        universityRep: ridStr,
+        user: ridStr,
+        entityType,
+        entityId: idStr,
+        seenAt: nowIso,
+        createdAt: nowIso,
+      });
+    }
+
+    const collectionMap = {
+      applications: 'applications',
+      application: 'applications',
+      partnerships: 'universityAgencyConnections',
+      partnership: 'universityAgencyConnections',
+      universityAgencyConnections: 'universityAgencyConnections',
+      messages: 'chatMessages',
+      message: 'chatMessages',
+      chatMessages: 'chatMessages',
+      reports: 'reports',
+      report: 'reports',
+      notifications: 'notifications',
+      notification: 'notifications',
+    };
+
+    const collName = collectionMap[entityType];
+    if (collName && Array.isArray(db[collName])) {
+      if (collName === 'chatMessages') {
+        for (const msg of db.chatMessages) {
+          if (
+            (msg.sessionId === idStr || msg._id === idStr) &&
+            (msg.receiver?.toString() === ridStr || msg.user?.toString() === ridStr)
+          ) {
+            msg.isSeenByUniRep = true;
+            msg.uniRepSeenAt = nowIso;
+          }
+        }
+      } else {
+        const doc = db[collName].find(
+          (d) =>
+            (d._id === idStr || d.id === idStr || d.applicationId === idStr || d.reportId === idStr)
+        );
+        if (doc) {
+          doc.isSeenByUniRep = true;
+          doc.uniRepSeenAt = nowIso;
+        }
+      }
+    }
+
+    // Automatically mark matching university rep notification as read
+    if (Array.isArray(db.notifications)) {
+      for (const n of db.notifications) {
+        const notifUserId = (n.user || n.userId)?.toString();
+        if (notifUserId === ridStr) {
           if (
             n.relatedEntityId === idStr ||
             (n.relatedEntityType && n.relatedEntityType.toLowerCase() === entityType.toLowerCase() && n.link?.includes(idStr))

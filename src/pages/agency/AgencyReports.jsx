@@ -14,8 +14,19 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+
+const REPORT_STATUS_TABS = [
+  { key: "all", label: "All Reports" },
+  { key: "PENDING_REVIEW", label: "PENDING_REVIEW" },
+  { key: "UNDER_INVESTIGATION", label: "UNDER_INVESTIGATION" },
+  { key: "RESOLVED", label: "RESOLVED" },
+];
+
 export default function AgencyReports() {
+  const { getStatusCount, markEntityAsSeen } = useAgencyBadges();
   const [reports, setReports] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState(null);
   const [responseText, setResponseText] = useState("");
@@ -39,9 +50,26 @@ export default function AgencyReports() {
     fetchReports();
   }, []);
 
+  const handleRowClick = (r) => {
+    const rId = r._id || r.reportId;
+    if (!r.isSeenByAgency) {
+      markEntityAsSeen("report", rId);
+      setReports((prev) =>
+        prev.map((item) => ((item._id === rId || item.reportId === rId) ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
+  };
+
   const handleOpenRespond = (report) => {
     setSelectedReport(report);
     setResponseText("");
+    const rId = report._id || report.reportId;
+    if (!report.isSeenByAgency) {
+      markEntityAsSeen("report", rId);
+      setReports((prev) =>
+        prev.map((item) => ((item._id === rId || item.reportId === rId) ? { ...item, isSeenByAgency: true } : item))
+      );
+    }
   };
 
   const handleSendResponse = async (e) => {
@@ -65,6 +93,11 @@ export default function AgencyReports() {
     }
   };
 
+  const filteredReports = reports.filter((r) => {
+    if (statusFilter === "all") return true;
+    return (r.status || "PENDING_REVIEW") === statusFilter;
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -86,6 +119,33 @@ export default function AgencyReports() {
         </button>
       </div>
 
+      {/* Status Filter Tabs */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+        {REPORT_STATUS_TABS.map((st) => {
+          const unseenCount = st.key === "all" ? getStatusCount("reports", "all") : getStatusCount("reports", st.key);
+          return (
+            <button
+              key={st.key}
+              onClick={() => setStatusFilter(st.key)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                statusFilter === st.key
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/30 font-bold"
+                  : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <span>{st.label}</span>
+              {unseenCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  statusFilter === st.key ? "bg-white text-violet-700" : "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+                }`}>
+                  [{unseenCount}]
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Reports Table */}
       <div
         className="rounded-2xl border overflow-hidden"
@@ -93,7 +153,7 @@ export default function AgencyReports() {
       >
         {loading ? (
           <div className="p-12 text-center text-slate-400 text-xs">Loading reports...</div>
-        ) : reports.length === 0 ? (
+        ) : filteredReports.length === 0 ? (
           <div className="p-12 text-center">
             <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-75" />
             <p className="text-white text-sm font-semibold">Zero open complaints or disputes</p>
@@ -114,39 +174,58 @@ export default function AgencyReports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-xs">
-                {reports.map((r) => (
-                  <tr key={r._id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3.5 px-4">
-                      <p className="text-white font-medium">{r.reason || "Operational Inquiry"}</p>
-                      <p className="text-slate-400 text-[11px] truncate max-w-sm mt-0.5">{r.details}</p>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300">
-                      {r.targetType || "Agency Service"}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                          r.status === "RESOLVED"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                        }`}
-                      >
-                        {r.status || "PENDING_REVIEW"}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-400 text-[11px]">
-                      {new Date(r.createdAt || Date.now()).toLocaleDateString()}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => handleOpenRespond(r)}
-                        className="px-3 py-1 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-[11px] font-semibold transition-colors"
-                      >
-                        Respond
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredReports.map((r) => {
+                  const isUnseen = r.isSeenByAgency === false;
+                  return (
+                    <tr
+                      key={r._id}
+                      onClick={() => handleRowClick(r)}
+                      className={`transition-all cursor-pointer ${
+                        isUnseen
+                          ? "border-l-4 border-l-violet-500 bg-violet-950/30 shadow-[inset_0_0_24px_rgba(139,92,246,0.12)]"
+                          : "hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <td className="py-3.5 px-4">
+                        {isUnseen && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/40 uppercase tracking-wider mb-1">
+                            NEW UPDATE
+                          </span>
+                        )}
+                        <p className="text-white font-medium">{r.reason || "Operational Inquiry"}</p>
+                        <p className="text-slate-400 text-[11px] truncate max-w-sm mt-0.5">{r.details}</p>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-300">
+                        {r.targetType || "Agency Service"}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                            r.status === "RESOLVED"
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                          }`}
+                        >
+                          {r.status || "PENDING_REVIEW"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                        {new Date(r.createdAt || Date.now()).toLocaleDateString()}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenRespond(r);
+                          }}
+                          className="px-3 py-1 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 text-[11px] font-semibold transition-colors"
+                        >
+                          Respond
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

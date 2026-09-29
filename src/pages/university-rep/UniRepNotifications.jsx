@@ -15,9 +15,12 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import toast from "react-hot-toast";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useUniRepBadges } from "../../context/UniRepBadgeContext";
 
 export default function UniRepNotifications() {
+  const navigate = useNavigate();
+  const { markEntityAsSeen } = useUniRepBadges();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [markingAll, setMarkingAll] = useState(false);
@@ -48,6 +51,25 @@ export default function UniRepNotifications() {
       );
     } catch (err) {
       console.warn("Failed to mark notification read", err);
+    }
+  };
+
+  const handleNotificationClick = async (notif) => {
+    if (!notif.read && !notif.isRead) {
+      handleMarkRead(notif._id);
+    }
+    const entityType = notif.relatedEntityType;
+    const entityId = notif.relatedEntityId;
+    if (entityType && entityId) {
+      try {
+        await markEntityAsSeen(entityType, entityId);
+      } catch (err) {
+        console.warn("Failed to mark related entity seen", err);
+      }
+    }
+    const destination = notif.actionUrl || notif.link;
+    if (destination) {
+      navigate(destination);
     }
   };
 
@@ -129,10 +151,11 @@ export default function UniRepNotifications() {
                 key={notif._id}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`rounded-xl p-4 sm:p-5 border transition flex items-start justify-between gap-4 ${
+                onClick={() => handleNotificationClick(notif)}
+                className={`rounded-xl p-4 sm:p-5 border transition flex items-start justify-between gap-4 cursor-pointer ${
                   isRead
-                    ? "bg-[#0B1228]/60 border-white/5 text-slate-400"
-                    : "bg-[#0B1228] border-purple-500/30 shadow-lg text-white"
+                    ? "bg-[#0B1228]/60 border-white/5 text-slate-400 hover:bg-[#0B1228]/80"
+                    : "bg-gradient-to-r from-purple-500/[0.08] to-blue-500/[0.04] border-l-4 border-l-purple-500 border-purple-500/30 shadow-lg text-white"
                 }`}
               >
                 <div className="flex items-start gap-3.5">
@@ -149,16 +172,18 @@ export default function UniRepNotifications() {
                         {notif.title}
                       </h4>
                       {!isRead && (
-                        <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse shrink-0" />
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500 text-white shadow-sm shadow-purple-500/40">
+                          NEW
+                        </span>
                       )}
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed">{notif.message}</p>
                     <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1">
                       <span>{notif.createdAt ? new Date(notif.createdAt).toLocaleString() : "Recent"}</span>
-                      {notif.link && (
-                        <Link to={notif.link} className="text-purple-400 hover:underline flex items-center gap-0.5">
+                      {(notif.actionUrl || notif.link) && (
+                        <span className="text-purple-400 hover:underline flex items-center gap-0.5">
                           View Details <ExternalLink className="w-2.5 h-2.5" />
-                        </Link>
+                        </span>
                       )}
                     </div>
                   </div>
@@ -166,7 +191,10 @@ export default function UniRepNotifications() {
 
                 {!isRead && (
                   <button
-                    onClick={() => handleMarkRead(notif._id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMarkRead(notif._id);
+                    }}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition shrink-0"
                     title="Mark as read"
                   >
