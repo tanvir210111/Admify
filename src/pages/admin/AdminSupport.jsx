@@ -14,6 +14,7 @@ import {
   ExternalLink,
   ChevronRight,
   Filter,
+  Trash2,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { initSocket, getSocket } from "../../lib/socket";
@@ -36,6 +37,8 @@ export default function AdminSupport() {
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const messagesEndRef = useRef(null);
 
@@ -72,7 +75,7 @@ export default function AdminSupport() {
         setMessages(res.data?.messages || []);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || err?.message || "Failed to load messages");
+      toast.error(err.response?.data?.message || err?.data?.message || err?.message || "Failed to load messages");
     } finally {
       setLoadingMessages(false);
     }
@@ -98,12 +101,26 @@ export default function AdminSupport() {
       fetchConversations();
     };
 
+    const handleConversationDeleted = (data) => {
+      if (data?.sessionId) {
+        setConversations((prev) =>
+          prev.filter((c) => (c.sessionId || c.id || c._id) !== data.sessionId)
+        );
+        if (selectedConv && (selectedConv.sessionId === data.sessionId || selectedConv.id === data.sessionId)) {
+          setSelectedConv(null);
+          setMessages([]);
+        }
+      }
+    };
+
     socket.on("new_support_request", handleNewRequest);
     socket.on("support_message_received", handleMessageReceived);
+    socket.on("support_conversation_deleted", handleConversationDeleted);
 
     return () => {
       socket.off("new_support_request", handleNewRequest);
       socket.off("support_message_received", handleMessageReceived);
+      socket.off("support_conversation_deleted", handleConversationDeleted);
     };
   }, [selectedConv]);
 
@@ -133,9 +150,36 @@ export default function AdminSupport() {
         toast.error(res?.message || "Failed to send reply");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || err?.message || "Failed to send reply");
+      toast.error(err.response?.data?.message || err?.data?.message || err?.message || "Failed to send reply");
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!selectedConv) return;
+    const sid = selectedConv.sessionId || selectedConv.id || selectedConv._id;
+    if (!sid) return;
+
+    try {
+      setDeleting(true);
+      const res = await api.delete(`/api/admin/support/conversations/${sid}`);
+      if (res?.success) {
+        toast.success("Conversation deleted successfully.");
+        setShowDeleteModal(false);
+        setConversations((prev) =>
+          prev.filter((c) => (c.sessionId || c.id || c._id) !== sid)
+        );
+        setSelectedConv(null);
+        setMessages([]);
+        fetchConversations();
+      } else {
+        toast.error(res?.message || "Failed to delete conversation");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || err?.data?.message || err?.message || "Failed to delete conversation");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -311,6 +355,15 @@ export default function AdminSupport() {
                   >
                     Status: {selectedConv.isLiveAgentRequest ? "needs_agent" : (selectedConv.status || "open")}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteModal(true)}
+                    className="px-2.5 py-1 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="Delete this complete conversation"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Conversation</span>
+                  </button>
                 </div>
               </div>
 
@@ -411,6 +464,54 @@ export default function AdminSupport() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete this conversation?</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Permanent Deletion Confirmation</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This will permanently delete the complete conversation history, including AI and Live Agent messages. This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDeleteConversation}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-50 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-rose-900/30"
+              >
+                {deleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Conversation</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }

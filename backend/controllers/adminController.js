@@ -29,8 +29,10 @@ import {
   getSupervisoryConversationTimeline,
   getSupervisoryAttachmentStream,
 } from '../services/messagingService.js';
-import { emitToVisitor } from '../socket/socketServer.js';
-import { getVisitorSession } from './chatController.js';
+import { emitToVisitor, emitToAdminSupport } from '../socket/socketServer.js';
+import { getVisitorSession, removeVisitorSession } from './chatController.js';
+import fs from 'fs';
+import path from 'path';
 
 // ── Audit Logging Utility ───────────────────────────────────────────────────
 export const recordAuditLog = async ({
@@ -372,65 +374,58 @@ export const markEntityAsSeenHelper = async (entityType, entityId, adminId = nul
       // Ignored for duplicate idempotency
     }
 
-    if (normType === 'agency') {
-      await AgencyProfile.updateOne(
-        { $or: [{ _id: idStr }, { applicationId: idStr }] },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'agent') {
-      await AgentApplication.updateOne(
-        { $or: [{ _id: idStr }, { applicationId: idStr }] },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'agent_user') {
-      await User.updateOne(
-        { _id: idStr, role: 'agent' },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'university_rep') {
-      await UniversityRepresentativeApplication.updateOne(
-        { $or: [{ _id: idStr }, { applicationId: idStr }] },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-      await User.updateOne(
-        { _id: idStr, role: { $in: ['university_rep', 'university representative'] } },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'application') {
-      await Application.updateOne(
-        { _id: idStr },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'partnership') {
-      await UniversityAgencyConnection.updateOne(
-        { _id: idStr },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'payment') {
-      await PaymentOrder.updateOne(
-        { $or: [{ _id: idStr }, { orderId: idStr }] },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'scholarship') {
-      await Scholarship.updateOne(
-        { _id: idStr },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'report') {
-      await Report.updateOne(
-        { $or: [{ _id: idStr }, { reportId: idStr }] },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'support') {
-      await ChatMessage.updateMany(
-        { $or: [{ sessionId: idStr }, { _id: idStr }] },
-        { isSeenByAdmin: true, adminSeenAt: now }
-      );
-    } else if (normType === 'notification') {
-      await Notification.updateOne(
-        { _id: idStr },
-        { read: true }
-      );
+    try {
+      const isObjId = mongoose.isValidObjectId(idStr);
+
+      if (normType === 'agency') {
+        const agencyQuery = isObjId ? { $or: [{ _id: idStr }, { applicationId: idStr }] } : { applicationId: idStr };
+        await AgencyProfile.updateOne(agencyQuery, { isSeenByAdmin: true, adminSeenAt: now });
+      } else if (normType === 'agent') {
+        const agentQuery = isObjId ? { $or: [{ _id: idStr }, { applicationId: idStr }] } : { applicationId: idStr };
+        await AgentApplication.updateOne(agentQuery, { isSeenByAdmin: true, adminSeenAt: now });
+      } else if (normType === 'agent_user') {
+        if (isObjId) {
+          await User.updateOne({ _id: idStr, role: 'agent' }, { isSeenByAdmin: true, adminSeenAt: now });
+        }
+      } else if (normType === 'university_rep') {
+        const repQuery = isObjId ? { $or: [{ _id: idStr }, { applicationId: idStr }] } : { applicationId: idStr };
+        await UniversityRepresentativeApplication.updateOne(repQuery, { isSeenByAdmin: true, adminSeenAt: now });
+        if (isObjId) {
+          await User.updateOne({ _id: idStr, role: { $in: ['university_rep', 'university representative'] } }, { isSeenByAdmin: true, adminSeenAt: now });
+        }
+      } else if (normType === 'application') {
+        if (isObjId) {
+          await Application.updateOne({ _id: idStr }, { isSeenByAdmin: true, adminSeenAt: now });
+        }
+      } else if (normType === 'partnership') {
+        if (isObjId) {
+          await UniversityAgencyConnection.updateOne({ _id: idStr }, { isSeenByAdmin: true, adminSeenAt: now });
+        }
+      } else if (normType === 'payment') {
+        const payQuery = isObjId ? { $or: [{ _id: idStr }, { orderId: idStr }] } : { orderId: idStr };
+        await PaymentOrder.updateOne(payQuery, { isSeenByAdmin: true, adminSeenAt: now });
+      } else if (normType === 'scholarship') {
+        if (isObjId) {
+          await Scholarship.updateOne({ _id: idStr }, { isSeenByAdmin: true, adminSeenAt: now });
+        }
+      } else if (normType === 'report') {
+        const repQuery = isObjId ? { $or: [{ _id: idStr }, { reportId: idStr }] } : { reportId: idStr };
+        await Report.updateOne(repQuery, { isSeenByAdmin: true, adminSeenAt: now });
+      } else if (normType === 'support') {
+        const rawId = idStr.startsWith('vis_') ? idStr.slice(4) : idStr;
+        const prefixedId = idStr.startsWith('vis_') ? idStr : `vis_${idStr}`;
+        const sessionIds = [idStr, rawId, prefixedId];
+        const chatQuery = isObjId
+          ? { $or: [{ sessionId: { $in: sessionIds } }, { _id: idStr }] }
+          : { sessionId: { $in: sessionIds } };
+        await ChatMessage.updateMany(chatQuery, { isSeenByAdmin: true, adminSeenAt: now });
+      } else if (normType === 'notification') {
+        if (isObjId) {
+          await Notification.updateOne({ _id: idStr }, { read: true });
+        }
+      }
+    } catch (modelErr) {
+      console.warn(`[markEntityAsSeenHelper] Non-fatal entity update error:`, modelErr.message);
     }
 
     try {
@@ -3419,21 +3414,41 @@ export const getAdminSupportMessages = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
     if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        data: { messages: [] },
+      return res.status(404).json({
+        success: false,
+        message: 'Resource not found with the specified ID',
       });
     }
 
-    let messages = [];
+    const rawId = sessionId.startsWith('vis_') ? sessionId.slice(4) : sessionId;
+    const prefixedId = sessionId.startsWith('vis_') ? sessionId : `vis_${sessionId}`;
+    const sessionConditions = [sessionId, rawId, prefixedId];
 
     await markEntityAsSeenHelper('support', sessionId, req.user?._id);
 
+    let messages = [];
+
     if (mongoose.connection.readyState === 1) {
-      messages = await ChatMessage.find({ sessionId }).populate('user', 'name email').sort({ createdAt: 1 });
+      const isObjId = mongoose.isValidObjectId(sessionId);
+      const query = isObjId
+        ? { $or: [{ sessionId: { $in: sessionConditions } }, { _id: sessionId }] }
+        : { sessionId: { $in: sessionConditions } };
+
+      messages = await ChatMessage.find(query)
+        .populate('user', 'name email')
+        .sort({ createdAt: 1 });
     } else {
       messages = await devStore.findChatMessagesBySession(sessionId);
+    }
+
+    if (!messages || messages.length === 0) {
+      const activeSession = getVisitorSession(sessionId) || getVisitorSession(prefixedId) || getVisitorSession(rawId);
+      if (!activeSession) {
+        return res.status(404).json({
+          success: false,
+          message: 'Resource not found with the specified ID',
+        });
+      }
     }
 
     return res.status(200).json({
@@ -3499,6 +3514,137 @@ export const replyAdminSupportConversation = async (req, res, next) => {
       success: true,
       message: 'Support reply sent',
       data: { message: saved, reply: saved },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Permanently delete a public visitor support conversation
+// @route   DELETE /api/admin/support/conversations/:sessionId
+// @access  Private (Admin)
+export const deleteAdminSupportConversation = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+      return res.status(404).json({
+        success: false,
+        message: 'Resource not found with the specified ID',
+      });
+    }
+
+    const rawId = sessionId.startsWith('vis_') ? sessionId.slice(4) : sessionId;
+    const prefixedId = sessionId.startsWith('vis_') ? sessionId : `vis_${sessionId}`;
+    const sessionConditions = [sessionId, rawId, prefixedId];
+    const isObjId = mongoose.isValidObjectId(sessionId);
+
+    let messages = [];
+    if (mongoose.connection.readyState === 1) {
+      const query = isObjId
+        ? { $or: [{ sessionId: { $in: sessionConditions } }, { _id: sessionId }] }
+        : { sessionId: { $in: sessionConditions } };
+      messages = await ChatMessage.find(query).lean();
+    } else {
+      messages = await devStore.findChatMessagesBySession(sessionId);
+    }
+
+    const activeSession = getVisitorSession(sessionId) || getVisitorSession(prefixedId) || getVisitorSession(rawId);
+
+    if ((!messages || messages.length === 0) && !activeSession) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resource not found with the specified ID',
+      });
+    }
+
+    // Identify attachments / voice files belonging exclusively to these messages
+    const filesToDelete = [];
+    for (const msg of (messages || [])) {
+      if (Array.isArray(msg?.attachments)) {
+        for (const att of msg.attachments) {
+          if (att?.url || att?.path) {
+            filesToDelete.push(att.path || att.url);
+          }
+        }
+      }
+      if (msg?.voiceUrl || msg?.voicePath) {
+        filesToDelete.push(msg.voicePath || msg.voiceUrl);
+      }
+    }
+
+    // Safely remove files if located in uploads directory
+    for (const filePath of filesToDelete) {
+      try {
+        if (typeof filePath === 'string' && (filePath.includes('/uploads/') || filePath.includes('\\uploads\\'))) {
+          const normalized = filePath.replace(/^[/\\]+/, '');
+          const absPath = path.resolve(process.cwd(), normalized);
+          if (fs.existsSync(absPath)) {
+            fs.unlinkSync(absPath);
+          }
+        }
+      } catch (fileErr) {
+        console.warn('[Support Conversation Delete] File cleanup error (ignored):', fileErr.message);
+      }
+    }
+
+    let deletedCount = 0;
+    if (mongoose.connection.readyState === 1) {
+      const delQuery = isObjId
+        ? { $or: [{ sessionId: { $in: sessionConditions } }, { _id: sessionId }] }
+        : { sessionId: { $in: sessionConditions } };
+      const delResult = await ChatMessage.deleteMany(delQuery);
+      deletedCount = delResult.deletedCount || 0;
+
+      try {
+        await AdminSeenItem.deleteMany({
+          entityType: 'support',
+          entityId: { $in: sessionConditions },
+        });
+      } catch {}
+
+      try {
+        await Notification.deleteMany({
+          $or: [
+            { relatedEntityType: 'support', relatedEntityId: { $in: sessionConditions } },
+            ...sessionConditions.map((sid) => ({ link: { $regex: sid } })),
+          ],
+        });
+      } catch {}
+    } else {
+      const delResult = await devStore.deleteChatSession(sessionId);
+      deletedCount = delResult.deletedCount || 0;
+    }
+
+    // Remove from in-memory registry
+    removeVisitorSession(sessionId);
+    removeVisitorSession(prefixedId);
+    removeVisitorSession(rawId);
+
+    // Notify connected visitor and admin tabs via Socket.io
+    try {
+      emitToVisitor(sessionId, 'support_conversation_deleted', {
+        sessionId,
+        deletedAt: new Date().toISOString(),
+      });
+      emitToVisitor(prefixedId, 'support_conversation_deleted', {
+        sessionId: prefixedId,
+        deletedAt: new Date().toISOString(),
+      });
+      emitToAdminSupport('support_conversation_deleted', {
+        sessionId,
+        deletedAt: new Date().toISOString(),
+      });
+    } catch (sockErr) {
+      console.warn('[Socket Emit Error on support conversation delete]', sockErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Support conversation permanently deleted',
+      data: {
+        sessionId,
+        deletedMessagesCount: deletedCount,
+      },
     });
   } catch (error) {
     next(error);

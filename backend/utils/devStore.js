@@ -2338,9 +2338,59 @@ class DevStore {
     if (!sessionId || sessionId === 'undefined' || sessionId === 'null') return [];
     const db = this.read();
     if (!Array.isArray(db.chatMessages)) return [];
-    const list = db.chatMessages.filter((m) => m.sessionId === sessionId);
+    const rawId = sessionId.startsWith('vis_') ? sessionId.slice(4) : sessionId;
+    const prefixedId = sessionId.startsWith('vis_') ? sessionId : `vis_${sessionId}`;
+    const list = db.chatMessages.filter(
+      (m) =>
+        m.sessionId === sessionId ||
+        m.sessionId === rawId ||
+        m.sessionId === prefixedId ||
+        m._id === sessionId
+    );
     list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     return list;
+  }
+
+  async deleteChatSession(sessionId) {
+    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') return { deletedCount: 0 };
+    const db = this.read();
+    const rawId = sessionId.startsWith('vis_') ? sessionId.slice(4) : sessionId;
+    const prefixedId = sessionId.startsWith('vis_') ? sessionId : `vis_${sessionId}`;
+    const sessionConditions = [sessionId, rawId, prefixedId];
+
+    let deletedCount = 0;
+    if (Array.isArray(db.chatMessages)) {
+      const initialLen = db.chatMessages.length;
+      db.chatMessages = db.chatMessages.filter(
+        (m) =>
+          !sessionConditions.includes(m.sessionId) &&
+          !sessionConditions.includes(m._id)
+      );
+      deletedCount = initialLen - db.chatMessages.length;
+    }
+
+    if (Array.isArray(db.visitorSessions)) {
+      db.visitorSessions = db.visitorSessions.filter(
+        (s) => !sessionConditions.includes(s.visitorToken)
+      );
+    }
+
+    if (Array.isArray(db.adminSeenItems)) {
+      db.adminSeenItems = db.adminSeenItems.filter(
+        (item) => !(item.entityType === 'support' && sessionConditions.includes(item.entityId))
+      );
+    }
+
+    if (Array.isArray(db.notifications)) {
+      db.notifications = db.notifications.filter(
+        (n) =>
+          !sessionConditions.includes(n.relatedEntityId) &&
+          !sessionConditions.some((sid) => n.link?.includes(sid))
+      );
+    }
+
+    this.write(db);
+    return { deletedCount };
   }
 
   async addChatMessage(data) {
@@ -2753,8 +2803,15 @@ class DevStore {
     const collName = collectionMap[entityType];
     if (collName && Array.isArray(db[collName])) {
       if (collName === 'chatMessages') {
+        const rawId = idStr.startsWith('vis_') ? idStr.slice(4) : idStr;
+        const prefixedId = idStr.startsWith('vis_') ? idStr : `vis_${idStr}`;
         for (const msg of db.chatMessages) {
-          if (msg.sessionId === idStr || msg._id === idStr) {
+          if (
+            msg.sessionId === idStr ||
+            msg.sessionId === rawId ||
+            msg.sessionId === prefixedId ||
+            msg._id === idStr
+          ) {
             msg.isSeenByAdmin = true;
             msg.adminSeenAt = nowIso;
           }

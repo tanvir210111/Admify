@@ -255,13 +255,34 @@ function ChatWidgetContent() {
         }
       };
 
+      const handleConversationDeleted = () => {
+        localStorage.removeItem("admify_visitor_token");
+        sessionStorage.removeItem("admify_visitor_token");
+        visitorTokenRef.current = getVisitorToken();
+        setIsEscalated(false);
+        setMode("ai");
+        setAiLimitReached(false);
+        setShowLiveForm(false);
+        setMessages([
+          {
+            id: "ai-reset",
+            from: "ai",
+            sender: "ai",
+            text: "👋 Hello! I'm Admify AI — your 24/7 global study admissions assistant. Ask me anything about universities, scholarships, admission criteria, or application guidance!",
+            time: now(),
+          },
+        ]);
+      };
+
       socket.on("admin_support_reply", handleSupportReply);
       socket.on("support_connected", () => {
         setIsEscalated(true);
       });
+      socket.on("support_conversation_deleted", handleConversationDeleted);
 
       return () => {
         socket.off("admin_support_reply", handleSupportReply);
+        socket.off("support_conversation_deleted", handleConversationDeleted);
       };
     }
   }, []);

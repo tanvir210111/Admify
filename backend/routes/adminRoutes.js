@@ -37,6 +37,7 @@ import {
   getAdminSupportConversations,
   getAdminSupportMessages,
   replyAdminSupportConversation,
+  deleteAdminSupportConversation,
   getAdminNotifications,
   broadcastAdminNotification,
   getAdminAIMetrics,
@@ -142,6 +143,7 @@ router.get('/support/conversations', getAdminSupportConversations);
 router.get('/support/conversations/:sessionId', getAdminSupportMessages);
 router.get('/support/conversations/:sessionId/messages', getAdminSupportMessages);
 router.post('/support/conversations/:sessionId/reply', replyAdminSupportConversation);
+router.delete('/support/conversations/:sessionId', deleteAdminSupportConversation);
 
 // Notifications Center
 router.get('/notifications', getAdminNotifications);

@@ -84,6 +84,29 @@ export function getOrCreateVisitorSession(token) {
   return newSession;
 }
 
+export function removeVisitorSession(token) {
+  let sessionToken = typeof token === 'string' ? token.trim() : '';
+  if (!sessionToken) return false;
+  const rawId = sessionToken.startsWith('vis_') ? sessionToken.slice(4) : sessionToken;
+  const prefixedId = sessionToken.startsWith('vis_') ? sessionToken : `vis_${sessionToken}`;
+  visitorSessions.delete(sessionToken);
+  visitorSessions.delete(rawId);
+  visitorSessions.delete(prefixedId);
+
+  if (process.env.NODE_ENV !== 'production' && mongoose.connection.readyState !== 1) {
+    try {
+      const db = devStore.read();
+      if (Array.isArray(db.visitorSessions)) {
+        db.visitorSessions = db.visitorSessions.filter(
+          (s) => s.visitorToken !== sessionToken && s.visitorToken !== rawId && s.visitorToken !== prefixedId
+        );
+        devStore.write(db);
+      }
+    } catch {}
+  }
+  return true;
+}
+
 function saveVisitorSession(session) {
   session.updatedAt = new Date().toISOString();
   visitorSessions.set(session.visitorToken, session);
@@ -454,7 +477,6 @@ export const sendVisitorReply = async (req, res, next) => {
   }
 };
 
-// ── 4. Retrieve Visitor Session History (Secure, Token-Scoped) ────────────────
 export const getSessionHistory = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
@@ -462,19 +484,23 @@ export const getSessionHistory = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Session ID is required.' });
     }
 
-    const session = visitorSessions.get(sessionId) || getOrCreateVisitorSession(sessionId);
+    const rawId = sessionId.startsWith('vis_') ? sessionId.slice(4) : sessionId;
+    const prefixedId = sessionId.startsWith('vis_') ? sessionId : `vis_${sessionId}`;
+    const sessionConditions = [sessionId, rawId, prefixedId];
 
     let messages = [];
     if (mongoose.connection.readyState === 1) {
-      messages = await ChatMessage.find({ sessionId }).sort({ createdAt: 1 }).limit(100).lean();
+      messages = await ChatMessage.find({ sessionId: { $in: sessionConditions } }).sort({ createdAt: 1 }).limit(100).lean();
     } else if (process.env.NODE_ENV !== 'production') {
       try {
         const db = devStore.read();
         messages = (db.chatMessages || [])
-          .filter((m) => m.sessionId === sessionId)
+          .filter((m) => sessionConditions.includes(m.sessionId))
           .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       } catch {}
     }
+
+    const session = getVisitorSession(sessionId) || getVisitorSession(prefixedId) || getVisitorSession(rawId) || getOrCreateVisitorSession(sessionId);
 
     return res.status(200).json({
       success: true,
@@ -498,5 +524,6 @@ export default {
   getSessionHistory,
   getVisitorSession,
   getOrCreateVisitorSession,
+  removeVisitorSession,
   EXACT_AI_WARNING,
 };
