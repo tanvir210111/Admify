@@ -31,12 +31,13 @@ export const EXACT_AI_WARNING =
 function getVisitorToken() {
   if (typeof window === "undefined") return "vis_ssr_fallback";
   try {
-    let token = sessionStorage.getItem("admify_visitor_token");
+    let token = localStorage.getItem("admify_visitor_token") || sessionStorage.getItem("admify_visitor_token");
     if (!token || !token.startsWith("vis_")) {
       const rand = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
       token = `vis_${rand}`;
-      sessionStorage.setItem("admify_visitor_token", token);
     }
+    localStorage.setItem("admify_visitor_token", token);
+    sessionStorage.setItem("admify_visitor_token", token);
     return token;
   } catch {
     return `vis_${Date.now()}`;
@@ -206,18 +207,15 @@ function ChatWidgetContent() {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
-  const [aiMessages, setAiMessages] = useState([
+  const [messages, setMessages] = useState([
     {
       id: "ai-init",
       from: "ai",
+      sender: "ai",
       text: "👋 Hello! I'm Admify AI — your 24/7 global study admissions assistant. Ask me anything about universities, scholarships, admission criteria, or application guidance!",
       time: now(),
     },
   ]);
-
-  const [agentMessages, setAgentMessages] = useState([]);
-
-  const messages = mode === "ai" ? aiMessages : agentMessages;
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -232,7 +230,7 @@ function ChatWidgetContent() {
     }
   }, [isOpen]);
 
-  // Connect socket and fetch history on initial open
+  // Connect socket and handle incoming live agent replies
   useEffect(() => {
     const token = visitorTokenRef.current;
     if (!token) return;
@@ -242,14 +240,18 @@ function ChatWidgetContent() {
 
     if (socket) {
       const handleSupportReply = (data) => {
-        if (data?.message) {
+        const msgObj = data?.message || data;
+        if (msgObj && (msgObj.text || msgObj.message)) {
           const newMsg = {
-            id: data.message._id || `rep-${Date.now()}`,
-            from: data.message.sender === "agent" ? "agent" : "ai",
-            text: data.message.text,
-            time: new Date(data.message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            id: msgObj._id || `rep-${Date.now()}`,
+            from: "agent",
+            sender: "agent",
+            text: msgObj.text || msgObj.message,
+            time: msgObj.createdAt
+              ? new Date(msgObj.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : now(),
           };
-          setAgentMessages((prev) => [...prev, newMsg]);
+          setMessages((prev) => [...prev, newMsg]);
         }
       };
 
@@ -271,32 +273,34 @@ function ChatWidgetContent() {
       const res = await api.get(`/api/chat/history/${token}`);
       if (res?.success && res.data?.messages) {
         const loaded = res.data.messages;
-        const loadedAi = [];
-        const loadedAgent = [];
-
-        for (const m of loaded) {
-          const formatted = {
+        if (loaded.length > 0) {
+          const formatted = loaded.map((m) => ({
             id: m._id || String(Math.random()),
             from: m.sender === "visitor" ? "user" : m.sender,
+            sender: m.sender,
             text: m.text,
-            time: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            isLimitWarning: m.isLimitWarning || m.text === EXACT_AI_WARNING,
-          };
-          if (m.isLiveAgentRequest || m.sender === "agent" || res.status === "waiting_live_agent" || res.status === "live") {
-            loadedAgent.push(formatted);
-          } else {
-            loadedAi.push(formatted);
-          }
-        }
+            time: m.createdAt
+              ? new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : now(),
+            isLimitWarning: Boolean(m.isLimitWarning || m.text === EXACT_AI_WARNING),
+            isLiveAgentRequest: Boolean(m.isLiveAgentRequest),
+          }));
 
-        if (loadedAi.length > 0) {
-          setAiMessages((prev) => [prev[0], ...loadedAi]);
+          const initialMsg = {
+            id: "ai-init",
+            from: "ai",
+            sender: "ai",
+            text: "👋 Hello! I'm Admify AI — your 24/7 global study admissions assistant. Ask me anything about universities, scholarships, admission criteria, or application guidance!",
+            time: loaded[0]?.createdAt
+              ? new Date(loaded[0].createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : now(),
+          };
+
+          setMessages([initialMsg, ...formatted]);
         }
-        if (loadedAgent.length > 0) {
-          setAgentMessages(loadedAgent);
-        }
-        if (res.visitorInfo) {
+        if (res.visitorInfo || res.status === "waiting_live_agent" || res.status === "live") {
           setIsEscalated(true);
+          setMode("agent");
         }
         if (res.limitReached || res.aiMessageCount >= 4) {
           setAiLimitReached(true);
@@ -323,26 +327,27 @@ function ChatWidgetContent() {
     if (!text) return;
 
     const token = visitorTokenRef.current;
-    const userMsg = { id: `usr-${Date.now()}`, from: "user", text, time: now() };
+    const userMsg = { id: `usr-${Date.now()}`, from: "user", sender: "visitor", text, time: now() };
 
     setInputValue("");
 
     if (mode === "ai") {
       if (aiLimitReached) {
         setShowLiveForm(true);
-        toast("AI message quota reached. Please click 'Talk to Live Agent' below to connect with an advisor.", {
+        toast("Please connect with a live counselor below for personalized guidance.", {
           icon: "ℹ️",
         });
         return;
       }
 
-      setAiMessages((prev) => [...prev, userMsg]);
+      setMessages((prev) => [...prev, userMsg]);
       setIsTyping(true);
 
       try {
         const res = await api.post("/api/chat/message", {
           text,
           visitorToken: token,
+          sessionId: token,
         });
 
         setIsTyping(false);
@@ -350,6 +355,7 @@ function ChatWidgetContent() {
         if (res?.success) {
           if (res.visitorToken) {
             visitorTokenRef.current = res.visitorToken;
+            localStorage.setItem("admify_visitor_token", res.visitorToken);
             sessionStorage.setItem("admify_visitor_token", res.visitorToken);
           }
 
@@ -360,18 +366,20 @@ function ChatWidgetContent() {
           const replyMsg = {
             id: res.data?.reply?._id || `ai-${Date.now()}`,
             from: "ai",
+            sender: "ai",
             text: res.data?.reply?.text || res.warning || res.reply?.text,
             time: now(),
             isLimitWarning: Boolean(res.limitReached || res.warning),
           };
 
-          setAiMessages((prev) => [...prev, replyMsg]);
+          setMessages((prev) => [...prev, replyMsg]);
         } else {
-          setAiMessages((prev) => [
+          setMessages((prev) => [
             ...prev,
             {
               id: `err-${Date.now()}`,
               from: "ai",
+              sender: "ai",
               text: res?.message || "I apologize, but I am currently unable to process your request. Please try again or talk to a live agent.",
               time: now(),
             },
@@ -383,18 +391,19 @@ function ChatWidgetContent() {
         const errMsg = isRateLimit
           ? "Too many messages sent. Please wait a minute before asking another question."
           : (err?.data?.message || err?.message || "An error occurred connecting to Admify AI. Please try again shortly.");
-        setAiMessages((prev) => [
+        setMessages((prev) => [
           ...prev,
-          { id: `err-${Date.now()}`, from: "ai", text: errMsg, time: now() },
+          { id: `err-${Date.now()}`, from: "ai", sender: "ai", text: errMsg, time: now() },
         ]);
       }
     } else {
-      // In Live Agent mode
-      setAgentMessages((prev) => [...prev, userMsg]);
+      // In Live Agent mode: continue the exact same conversation thread
+      setMessages((prev) => [...prev, userMsg]);
 
       try {
         await api.post("/api/chat/visitor-reply", {
           visitorToken: token,
+          sessionId: token,
           text,
         });
       } catch (err) {
@@ -447,6 +456,7 @@ function ChatWidgetContent() {
       const token = visitorTokenRef.current;
       const res = await api.post("/api/chat/live-agent-request", {
         visitorToken: token,
+        sessionId: token,
         fullName: fullName.trim(),
         email: email.trim().toLowerCase(),
         phone: phone.trim(),
@@ -460,16 +470,20 @@ function ChatWidgetContent() {
         // Initialize and bind socket
         initVisitorSocket(token);
 
-        setAgentMessages([
+        // PRESERVE previous AI messages and append live agent handover events in the SAME conversation
+        setMessages((prev) => [
+          ...prev,
           {
             id: `sys-${Date.now()}`,
             from: "system",
+            sender: "system",
             text: `Support request created for ${fullName.trim()}. You are connected to the Admify Live Admissions Desk.`,
             time: now(),
           },
           {
             id: `agent-welcome-${Date.now()}`,
             from: "agent",
+            sender: "agent",
             text: `Hello ${fullName.trim()}! 👋 Thank you for reaching out. An admissions advisor has been notified and will join this live thread shortly. Feel free to type your question below!`,
             time: now(),
           },
@@ -727,7 +741,7 @@ function ChatWidgetContent() {
                       <Headphones className="w-5 h-5" />
                     </div>
                     <div>
-                      <h5 className="text-white font-bold text-xs">AI Inquiries Limit Reached</h5>
+                      <h5 className="text-white font-bold text-xs">Need More Personalized Guidance?</h5>
                       <p className="text-[11px] text-slate-400 mt-0.5">
                         Connect with our admissions desk counselors for personalized assistance.
                       </p>
@@ -769,7 +783,7 @@ function ChatWidgetContent() {
                       placeholder={
                         mode === "ai"
                           ? aiLimitReached
-                            ? "AI limit reached. Click 'Talk to Live Agent' above."
+                            ? "Connect with a Live Agent above for personalized guidance..."
                             : "Ask Admify AI anything about study abroad..."
                           : "Message your live admissions advisor..."
                       }

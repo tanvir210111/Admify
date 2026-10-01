@@ -30,6 +30,7 @@ import {
   getSupervisoryAttachmentStream,
 } from '../services/messagingService.js';
 import { emitToVisitor } from '../socket/socketServer.js';
+import { getVisitorSession } from './chatController.js';
 
 // ── Audit Logging Utility ───────────────────────────────────────────────────
 export const recordAuditLog = async ({
@@ -3224,29 +3225,74 @@ export const getAdminSupportConversations = async (req, res, next) => {
     let sessions = [];
 
     if (mongoose.connection.readyState === 1) {
-      const messages = await ChatMessage.find({}).populate('user', 'name email phone role').sort({ createdAt: 1 });
+      // Find all messages that have a valid sessionId
+      const messages = await ChatMessage.find({
+        sessionId: { $exists: true, $ne: null, $nin: ['', 'undefined', 'null'] },
+      })
+        .populate('user', 'name email phone role')
+        .sort({ createdAt: 1 });
+
       const sessionMap = new Map();
 
       for (const msg of messages) {
-        if (!sessionMap.has(msg.sessionId)) {
-          sessionMap.set(msg.sessionId, {
-            sessionId: msg.sessionId,
-            user: msg.user,
+        const sid = msg.sessionId?.toString().trim();
+        if (!sid || sid === 'undefined' || sid === 'null') continue;
+
+        let existing = sessionMap.get(sid);
+        if (!existing) {
+          existing = {
+            id: sid,
+            sessionId: sid,
+            _id: sid,
+            user: msg.user || null,
+            visitorInfo: msg.visitorInfo || null,
             lastMessage: msg.text,
             lastSender: msg.sender,
-            isLiveAgentRequest: msg.isLiveAgentRequest || false,
+            isLiveAgentRequest: Boolean(msg.isLiveAgentRequest),
             status: msg.status || 'active',
+            createdAt: msg.createdAt,
             updatedAt: msg.createdAt,
             messageCount: 1,
-          });
+          };
+          sessionMap.set(sid, existing);
         } else {
-          const item = sessionMap.get(msg.sessionId);
-          item.messageCount += 1;
-          if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
-          if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
-            item.lastMessage = msg.text;
-            item.lastSender = msg.sender;
-            item.updatedAt = msg.createdAt;
+          existing.messageCount += 1;
+          if (msg.isLiveAgentRequest) existing.isLiveAgentRequest = true;
+          if (msg.visitorInfo && (!existing.visitorInfo || !existing.visitorInfo.email)) {
+            existing.visitorInfo = msg.visitorInfo;
+          }
+          if (msg.user && !existing.user) {
+            existing.user = msg.user;
+          }
+          if (new Date(msg.createdAt) > new Date(existing.updatedAt)) {
+            existing.lastMessage = msg.text;
+            existing.lastSender = msg.sender;
+            existing.updatedAt = msg.createdAt;
+          }
+        }
+
+        // Check if text is an escalation notice to extract visitor info
+        if (msg.text && msg.text.startsWith('[LIVE SUPPORT ESCALATION]') && (!existing.visitorInfo || !existing.visitorInfo.email)) {
+          const match = msg.text.match(/Visitor:\s*([^|]+)\s*\|\s*Email:\s*([^|]+)\s*\|\s*Phone:\s*([^\n\r]+)/);
+          if (match) {
+            existing.visitorInfo = {
+              fullName: match[1].trim(),
+              email: match[2].trim().toLowerCase(),
+              phone: match[3].trim(),
+            };
+          }
+        }
+      }
+
+      // Also enrich with any active in-memory visitorSessions
+      for (const [sid, item] of sessionMap.entries()) {
+        const inMemSession = getVisitorSession(sid);
+        if (inMemSession) {
+          if (inMemSession.visitorInfo && (!item.visitorInfo || !item.visitorInfo.email)) {
+            item.visitorInfo = inMemSession.visitorInfo;
+          }
+          if (inMemSession.status === 'waiting_live_agent' || inMemSession.status === 'live') {
+            item.isLiveAgentRequest = true;
           }
         }
       }
@@ -3255,19 +3301,105 @@ export const getAdminSupportConversations = async (req, res, next) => {
       const seenMap = new Map();
       for (const s of seenItems) seenMap.set(s.entityId, true);
 
-      sessions = Array.from(sessionMap.values())
-        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-        .map((s) => ({
-          ...s,
+      sessions = Array.from(sessionMap.values()).map((s) => {
+        const vInfo = s.visitorInfo;
+        const u = s.user;
+        const displayName = vInfo?.fullName || u?.name || `Visitor (${s.sessionId.slice(-6)})`;
+        const displayEmail = vInfo?.email || u?.email || '';
+        const displayPhone = vInfo?.phone || u?.phone || '';
+
+        const studentObj = {
+          _id: s.sessionId,
+          name: displayName,
+          email: displayEmail,
+          phone: displayPhone,
+          role: u?.role || 'visitor',
+        };
+
+        return {
+          id: s.sessionId,
+          sessionId: s.sessionId,
+          _id: s.sessionId,
+          student: studentObj,
+          user: studentObj,
+          visitorInfo: studentObj,
+          lastMessage: s.lastMessage,
+          lastSender: s.lastSender,
+          isLiveAgentRequest: s.isLiveAgentRequest,
+          status: s.isLiveAgentRequest ? 'needs_agent' : s.status,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+          messageCount: s.messageCount,
           isSeenByAdmin: Boolean(seenMap.has(s.sessionId)),
-        }));
+        };
+      });
+
+      // Deduplicate conversations if multiple sessions belong to the same active email
+      const emailMap = new Map();
+      const dedupedSessions = [];
+      for (const conv of sessions.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))) {
+        const email = conv.student?.email?.trim().toLowerCase();
+        if (email) {
+          if (emailMap.has(email)) continue;
+          emailMap.set(email, conv);
+        }
+        dedupedSessions.push(conv);
+      }
+      sessions = dedupedSessions;
     } else {
       const rawSessions = await devStore.findChatSessions();
       const dbSeen = (devStore.read()).adminSeenItems || [];
-      sessions = rawSessions.map((s) => ({
-        ...s,
-        isSeenByAdmin: Boolean(dbSeen.some((item) => item.entityType === 'support' && item.entityId === s.sessionId)),
-      }));
+      const seenMap = new Map();
+      for (const item of dbSeen) {
+        if (item.entityType === 'support') seenMap.set(item.entityId, true);
+      }
+
+      sessions = rawSessions
+        .filter((s) => s.sessionId && s.sessionId !== 'undefined' && s.sessionId !== 'null')
+        .map((s) => {
+          const vInfo = s.visitorInfo || getVisitorSession(s.sessionId)?.visitorInfo;
+          const u = s.user;
+          const displayName = vInfo?.fullName || u?.name || `Visitor (${s.sessionId.slice(-6)})`;
+          const displayEmail = vInfo?.email || u?.email || '';
+          const displayPhone = vInfo?.phone || u?.phone || '';
+
+          const studentObj = {
+            _id: s.sessionId,
+            name: displayName,
+            email: displayEmail,
+            phone: displayPhone,
+            role: u?.role || 'visitor',
+          };
+
+          return {
+            id: s.sessionId,
+            sessionId: s.sessionId,
+            _id: s.sessionId,
+            student: studentObj,
+            user: studentObj,
+            visitorInfo: studentObj,
+            lastMessage: s.lastMessage,
+            lastSender: s.lastSender,
+            isLiveAgentRequest: s.isLiveAgentRequest,
+            status: s.isLiveAgentRequest ? 'needs_agent' : s.status,
+            createdAt: s.createdAt || s.updatedAt,
+            updatedAt: s.updatedAt,
+            messageCount: s.messageCount,
+            isSeenByAdmin: Boolean(seenMap.has(s.sessionId)),
+          };
+        });
+
+      const emailMap = new Map();
+      const dedupedSessions = [];
+      for (const conv of sessions.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))) {
+        const email = conv.student?.email?.trim().toLowerCase();
+        if (email) {
+          if (emailMap.has(email)) continue;
+          emailMap.set(email, conv);
+        }
+        dedupedSessions.push(conv);
+      }
+      sessions = dedupedSessions;
     }
 
     return res.status(200).json({
@@ -3286,6 +3418,14 @@ export const getAdminSupportConversations = async (req, res, next) => {
 export const getAdminSupportMessages = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
+    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: { messages: [] },
+      });
+    }
+
     let messages = [];
 
     await markEntityAsSeenHelper('support', sessionId, req.user?._id);
@@ -3338,10 +3478,18 @@ export const replyAdminSupportConversation = async (req, res, next) => {
       });
     }
 
+    const session = getVisitorSession(sessionId);
+    if (session) {
+      session.status = 'live';
+    }
+
     try {
       emitToVisitor(sessionId, 'admin_support_reply', {
         sessionId,
         message: saved,
+        text: saved.text,
+        sender: 'agent',
+        createdAt: saved.createdAt,
       });
     } catch (sockErr) {
       console.warn('[Socket Visitor Emit Error]', sockErr.message);
@@ -3350,7 +3498,7 @@ export const replyAdminSupportConversation = async (req, res, next) => {
     return res.status(201).json({
       success: true,
       message: 'Support reply sent',
-      data: { message: saved },
+      data: { message: saved, reply: saved },
     });
   } catch (error) {
     next(error);

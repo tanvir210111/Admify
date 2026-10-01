@@ -2244,22 +2244,60 @@ class DevStore {
 
     const sessionMap = new Map();
     for (const msg of db.chatMessages) {
-      if (!sessionMap.has(msg.sessionId)) {
-        const u = msg.user ? db.users.find((usr) => usr._id === msg.user.toString()) : null;
-        sessionMap.set(msg.sessionId, {
-          sessionId: msg.sessionId,
+      const sid = msg.sessionId?.toString().trim();
+      if (!sid || sid === 'undefined' || sid === 'null') continue;
+
+      if (!sessionMap.has(sid)) {
+        const u = msg.user ? (db.users || []).find((usr) => usr._id === msg.user.toString()) : null;
+        let vInfo = msg.visitorInfo || null;
+
+        if (!vInfo && Array.isArray(db.visitorSessions)) {
+          const vs = db.visitorSessions.find((s) => s.visitorToken === sid);
+          if (vs?.visitorInfo) vInfo = vs.visitorInfo;
+        }
+
+        if (!vInfo && msg.text && msg.text.startsWith('[LIVE SUPPORT ESCALATION]')) {
+          const match = msg.text.match(/Visitor:\s*([^|]+)\s*\|\s*Email:\s*([^|]+)\s*\|\s*Phone:\s*([^\n\r]+)/);
+          if (match) {
+            vInfo = {
+              fullName: match[1].trim(),
+              email: match[2].trim().toLowerCase(),
+              phone: match[3].trim(),
+            };
+          }
+        }
+
+        sessionMap.set(sid, {
+          id: sid,
+          sessionId: sid,
+          _id: sid,
           user: u ? { _id: u._id, name: u.name, email: u.email, role: u.role } : null,
+          visitorInfo: vInfo,
           lastMessage: msg.text,
           lastSender: msg.sender,
           isLiveAgentRequest: msg.isLiveAgentRequest || false,
           status: msg.status || 'active',
+          createdAt: msg.createdAt,
           updatedAt: msg.createdAt,
           messageCount: 1,
         });
       } else {
-        const item = sessionMap.get(msg.sessionId);
+        const item = sessionMap.get(sid);
         item.messageCount += 1;
         if (msg.isLiveAgentRequest) item.isLiveAgentRequest = true;
+        if (msg.visitorInfo && !item.visitorInfo) item.visitorInfo = msg.visitorInfo;
+
+        if (!item.visitorInfo && msg.text && msg.text.startsWith('[LIVE SUPPORT ESCALATION]')) {
+          const match = msg.text.match(/Visitor:\s*([^|]+)\s*\|\s*Email:\s*([^|]+)\s*\|\s*Phone:\s*([^\n\r]+)/);
+          if (match) {
+            item.visitorInfo = {
+              fullName: match[1].trim(),
+              email: match[2].trim().toLowerCase(),
+              phone: match[3].trim(),
+            };
+          }
+        }
+
         if (new Date(msg.createdAt) > new Date(item.updatedAt)) {
           item.lastMessage = msg.text;
           item.lastSender = msg.sender;
@@ -2268,12 +2306,36 @@ class DevStore {
       }
     }
 
-    const sessions = Array.from(sessionMap.values());
+    const sessions = Array.from(sessionMap.values()).map((s) => {
+      const vInfo = s.visitorInfo;
+      const u = s.user;
+      const displayName = vInfo?.fullName || u?.name || `Visitor (${s.sessionId.slice(-6)})`;
+      const displayEmail = vInfo?.email || u?.email || '';
+      const displayPhone = vInfo?.phone || u?.phone || '';
+
+      const studentObj = {
+        _id: s.sessionId,
+        name: displayName,
+        email: displayEmail,
+        phone: displayPhone,
+        role: u?.role || 'visitor',
+      };
+
+      return {
+        ...s,
+        student: studentObj,
+        user: studentObj,
+        visitorInfo: studentObj,
+        status: s.isLiveAgentRequest ? 'needs_agent' : s.status,
+      };
+    });
+
     sessions.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     return sessions;
   }
 
   async findChatMessagesBySession(sessionId) {
+    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') return [];
     const db = this.read();
     if (!Array.isArray(db.chatMessages)) return [];
     const list = db.chatMessages.filter((m) => m.sessionId === sessionId);

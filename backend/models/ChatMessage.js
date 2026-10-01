@@ -103,6 +103,11 @@ const chatMessageSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    visitorInfo: {
+      fullName: { type: String, default: null },
+      email: { type: String, default: null },
+      phone: { type: String, default: null },
+    },
     status: {
       type: String,
       enum: ['active', 'closed'],

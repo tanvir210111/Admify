@@ -13,10 +13,36 @@ export const EXACT_AI_WARNING =
 // ── In-Memory Visitor Session Registry with devStore sync ─────────────────────
 const visitorSessions = new Map();
 
-function getOrCreateVisitorSession(token) {
+export function getVisitorSession(token) {
+  let sessionToken = typeof token === 'string' ? token.trim() : '';
+  if (!sessionToken) return null;
+  if (!sessionToken.startsWith('vis_')) {
+    sessionToken = `vis_${sessionToken}`;
+  }
+  if (visitorSessions.has(sessionToken)) {
+    return visitorSessions.get(sessionToken);
+  }
+  if (process.env.NODE_ENV !== 'production' && mongoose.connection.readyState !== 1) {
+    try {
+      const db = devStore.read();
+      const existing = (db.visitorSessions || []).find(
+        (s) => s.visitorToken === sessionToken || s.visitorToken === token
+      );
+      if (existing) {
+        visitorSessions.set(sessionToken, existing);
+        return existing;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+export function getOrCreateVisitorSession(token) {
   let sessionToken = typeof token === 'string' ? token.trim() : '';
   if (!sessionToken) {
     sessionToken = `vis_${crypto.randomBytes(16).toString('hex')}`;
+  } else if (!sessionToken.startsWith('vis_')) {
+    sessionToken = `vis_${sessionToken}`;
   }
 
   if (visitorSessions.has(sessionToken)) {
@@ -231,7 +257,12 @@ export const sendMessage = async (req, res, next) => {
 // ── 2. Live Agent Intake & Escalation ─────────────────────────────────────────
 export const requestLiveAgent = async (req, res, next) => {
   try {
-    const { visitorToken: incomingToken, fullName, email, phone } = req.body;
+    const incomingToken =
+      req.body.visitorToken ||
+      req.body.sessionId ||
+      req.headers['x-visitor-token'] ||
+      req.headers['x-session-id'];
+    const { fullName, email, phone } = req.body;
 
     // Strict form validation
     if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2 || fullName.trim().length > 100) {
@@ -248,30 +279,57 @@ export const requestLiveAgent = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'A valid phone number is required (7–25 digits).' });
     }
 
-    const session = getOrCreateVisitorSession(incomingToken || req.headers['x-visitor-token']);
-    session.visitorInfo = {
+    const session = getOrCreateVisitorSession(incomingToken);
+    const cleanedInfo = {
       fullName: fullName.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
     };
+
+    const isAlreadyWaiting =
+      session.status === 'waiting_live_agent' || session.status === 'live';
+
+    session.visitorInfo = cleanedInfo;
     session.status = 'waiting_live_agent';
     saveVisitorSession(session);
 
-    // Save escalation notice in ChatMessage
-    const escalationNotice = `[LIVE SUPPORT ESCALATION] Visitor: ${session.visitorInfo.fullName} | Email: ${session.visitorInfo.email} | Phone: ${session.visitorInfo.phone}`;
+    // If already waiting/live, be idempotent: do not create duplicate escalation notices or duplicate notifications
+    if (isAlreadyWaiting) {
+      return res.status(200).json({
+        success: true,
+        visitorToken: session.visitorToken,
+        sessionId: session.visitorToken,
+        status: session.status,
+        alreadyActive: true,
+        message: 'Your live support request is already active. An advisor will respond shortly.',
+      });
+    }
+
+    // Save escalation notice in ChatMessage with visitorInfo
+    const escalationNotice = `[LIVE SUPPORT ESCALATION] Visitor: ${cleanedInfo.fullName} | Email: ${cleanedInfo.email} | Phone: ${cleanedInfo.phone}`;
     if (mongoose.connection.readyState === 1) {
       await ChatMessage.create({
         sessionId: session.visitorToken,
         sender: 'system',
         text: escalationNotice,
         isLiveAgentRequest: true,
+        visitorInfo: cleanedInfo,
       });
+
+      // Update prior messages in this session with visitorInfo
+      try {
+        await ChatMessage.updateMany(
+          { sessionId: session.visitorToken, $or: [{ visitorInfo: null }, { visitorInfo: { $exists: false } }] },
+          { $set: { visitorInfo: cleanedInfo } }
+        );
+      } catch {}
     } else if (process.env.NODE_ENV !== 'production') {
       await devStore.addChatMessage({
         sessionId: session.visitorToken,
         sender: 'system',
         text: escalationNotice,
         isLiveAgentRequest: true,
+        visitorInfo: cleanedInfo,
       });
     }
 
@@ -283,7 +341,7 @@ export const requestLiveAgent = async (req, res, next) => {
           await Notification.create({
             user: adminUser._id,
             title: 'New Website Visitor Support Request',
-            message: `${session.visitorInfo.fullName} (${session.visitorInfo.email}) requested Live Support.`,
+            message: `${cleanedInfo.fullName} (${cleanedInfo.email}) requested Live Support.`,
             type: 'info',
             link: '/admin/support',
             actionUrl: '/admin/support',
@@ -300,7 +358,7 @@ export const requestLiveAgent = async (req, res, next) => {
             _id: `notif_sup_${Date.now()}`,
             user: adminUser._id,
             title: 'New Website Visitor Support Request',
-            message: `${session.visitorInfo.fullName} (${session.visitorInfo.email}) requested Live Support.`,
+            message: `${cleanedInfo.fullName} (${cleanedInfo.email}) requested Live Support.`,
             type: 'info',
             link: '/admin/support',
             actionUrl: '/admin/support',
@@ -320,7 +378,7 @@ export const requestLiveAgent = async (req, res, next) => {
     try {
       emitToAdminSupport('new_support_request', {
         sessionId: session.visitorToken,
-        visitorInfo: session.visitorInfo,
+        visitorInfo: cleanedInfo,
         requestedAt: new Date().toISOString(),
       });
     } catch {}
@@ -340,12 +398,17 @@ export const requestLiveAgent = async (req, res, next) => {
 // ── 3. Visitor Sends Message to Admin (Live Mode) ─────────────────────────────
 export const sendVisitorReply = async (req, res, next) => {
   try {
-    const { visitorToken: incomingToken, text } = req.body;
+    const incomingToken =
+      req.body.visitorToken ||
+      req.body.sessionId ||
+      req.headers['x-visitor-token'] ||
+      req.headers['x-session-id'];
+    const { text } = req.body;
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ success: false, message: 'Message text is required.' });
     }
 
-    const session = getOrCreateVisitorSession(incomingToken || req.headers['x-visitor-token']);
+    const session = getOrCreateVisitorSession(incomingToken);
     const trimmedText = text.trim().slice(0, 1000);
 
     let savedMsg = null;
@@ -354,12 +417,14 @@ export const sendVisitorReply = async (req, res, next) => {
         sessionId: session.visitorToken,
         sender: 'visitor',
         text: trimmedText,
+        visitorInfo: session.visitorInfo || undefined,
       });
     } else if (process.env.NODE_ENV !== 'production') {
       savedMsg = await devStore.addChatMessage({
         sessionId: session.visitorToken,
         sender: 'visitor',
         text: trimmedText,
+        visitorInfo: session.visitorInfo || undefined,
       });
     } else {
       savedMsg = {
@@ -367,6 +432,7 @@ export const sendVisitorReply = async (req, res, next) => {
         sessionId: session.visitorToken,
         sender: 'visitor',
         text: trimmedText,
+        visitorInfo: session.visitorInfo || undefined,
         createdAt: new Date().toISOString(),
       };
     }
@@ -430,5 +496,7 @@ export default {
   requestLiveAgent,
   sendVisitorReply,
   getSessionHistory,
+  getVisitorSession,
+  getOrCreateVisitorSession,
   EXACT_AI_WARNING,
 };

@@ -16,6 +16,7 @@ import {
   Filter,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import { initSocket, getSocket } from "../../lib/socket";
 import { triggerAdminBadgeRefresh, useAdminBadges } from "../../context/AdminBadgeContext";
 import toast from "react-hot-toast";
 
@@ -79,7 +80,32 @@ export default function AdminSupport() {
 
   useEffect(() => {
     fetchConversations();
-  }, []);
+
+    const token = localStorage.getItem("admify_token") || localStorage.getItem("token");
+    const socket = initSocket(token) || getSocket();
+    if (!socket) return;
+
+    const handleNewRequest = () => {
+      fetchConversations();
+    };
+
+    const handleMessageReceived = (data) => {
+      if (data?.sessionId && selectedConv && (selectedConv.sessionId === data.sessionId || selectedConv.id === data.sessionId)) {
+        if (data.message) {
+          setMessages((prev) => [...prev, data.message]);
+        }
+      }
+      fetchConversations();
+    };
+
+    socket.on("new_support_request", handleNewRequest);
+    socket.on("support_message_received", handleMessageReceived);
+
+    return () => {
+      socket.off("new_support_request", handleNewRequest);
+      socket.off("support_message_received", handleMessageReceived);
+    };
+  }, [selectedConv]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -98,7 +124,7 @@ export default function AdminSupport() {
       });
 
       if (res?.success) {
-        const newMsg = res.data?.reply || { sender: 'agent', text: replyText.trim(), createdAt: new Date() };
+        const newMsg = res.data?.reply || res.data?.message || { sender: 'agent', text: replyText.trim(), createdAt: new Date() };
         setMessages((prev) => [...prev, newMsg]);
         setReplyText("");
         toast.success("Reply delivered to student");
@@ -197,11 +223,14 @@ export default function AdminSupport() {
               </div>
             ) : (
               filtered.map((c) => {
-                const isSelected = selectedConv?.id === c.id;
+                const convId = c.sessionId || c.id || c._id;
+                const isSelected = (selectedConv?.sessionId || selectedConv?.id || selectedConv?._id) === convId;
                 const isUnseen = !c.isSeenByAdmin;
+                const studentName = c.student?.name || c.user?.name || `Visitor (${(c.sessionId || '').slice(-6)})`;
+                const studentEmail = c.student?.email || c.user?.email || "";
                 return (
                   <div
-                    key={c.id}
+                    key={convId}
                     onClick={() => selectConversation(c)}
                     className={`p-3.5 cursor-pointer transition flex items-start gap-3 ${
                       isSelected
@@ -212,12 +241,12 @@ export default function AdminSupport() {
                     }`}
                   >
                     <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center font-bold text-white text-xs border border-slate-700 flex-shrink-0">
-                      {c.student?.name?.[0]?.toUpperCase() || "S"}
+                      {studentName?.[0]?.toUpperCase() || "V"}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-white text-xs truncate">
-                          {c.student?.name || "Student"}
+                          {studentName}
                         </h4>
                         <span className="text-[10px] text-slate-500">
                           {c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
@@ -227,7 +256,7 @@ export default function AdminSupport() {
                         {c.lastMessage || "No messages yet"}
                       </p>
                       <div className="flex items-center gap-1.5 mt-1.5">
-                        {c.status === "needs_agent" && (
+                        {(c.status === "needs_agent" || c.isLiveAgentRequest) && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
                             Handover Requested
                           </span>
@@ -237,9 +266,11 @@ export default function AdminSupport() {
                             Resolved
                           </span>
                         )}
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {c.student?.email}
-                        </span>
+                        {studentEmail && (
+                          <span className="text-[10px] text-slate-500 font-mono truncate max-w-[140px]">
+                            {studentEmail}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -257,14 +288,15 @@ export default function AdminSupport() {
               <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center font-bold text-white text-sm">
-                    {selectedConv.student?.name?.[0]?.toUpperCase() || "S"}
+                    {(selectedConv.student?.name || selectedConv.user?.name || "V")?.[0]?.toUpperCase()}
                   </div>
                   <div>
                     <h3 className="font-bold text-white text-sm">
-                      {selectedConv.student?.name || "Student"}
+                      {selectedConv.student?.name || selectedConv.user?.name || "Visitor"}
                     </h3>
                     <p className="text-xs text-slate-400 font-mono">
-                      {selectedConv.student?.email} • ID: {selectedConv.id}
+                      {selectedConv.student?.email || selectedConv.user?.email || "Public Visitor"}
+                      {selectedConv.student?.phone ? ` • ${selectedConv.student.phone}` : ""} • ID: {selectedConv.sessionId || selectedConv.id || selectedConv._id}
                     </p>
                   </div>
                 </div>
@@ -272,12 +304,12 @@ export default function AdminSupport() {
                 <div className="flex items-center gap-2">
                   <span
                     className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-                      selectedConv.status === "needs_agent"
+                      selectedConv.status === "needs_agent" || selectedConv.isLiveAgentRequest
                         ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                         : "bg-slate-800 text-slate-300 border-slate-700"
                     }`}
                   >
-                    Status: {selectedConv.status || "open"}
+                    Status: {selectedConv.isLiveAgentRequest ? "needs_agent" : (selectedConv.status || "open")}
                   </span>
                 </div>
               </div>
@@ -295,8 +327,21 @@ export default function AdminSupport() {
                   </div>
                 ) : (
                   messages.map((m, idx) => {
+                    const isSystem = m.sender === "system" || Boolean(m.isLiveAgentRequest);
                     const isAdmin = m.sender === "admin" || m.sender === "agent";
                     const isBot = m.sender === "bot" || m.sender === "ai";
+
+                    if (isSystem) {
+                      return (
+                        <div key={idx} className="my-3 text-center px-4">
+                          <div className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3.5 py-1.5 text-xs text-amber-300 font-medium shadow-sm">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                            <span>{m.message || m.text}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
                       <div
                         key={idx}
@@ -313,7 +358,7 @@ export default function AdminSupport() {
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                              <User className="w-3 h-3" /> Student
+                              <User className="w-3 h-3" /> {selectedConv.student?.name || "Visitor"}
                             </span>
                           )}
                           <span className="text-[9px] text-slate-500">

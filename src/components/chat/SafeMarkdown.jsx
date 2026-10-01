@@ -1,7 +1,6 @@
 import React from "react";
 
-// Inline regex pattern matching:
-// 1: Safe Markdown link [text](url)
+// Inline regex pattern matching with standard left/right flanking delimiter rules:
 // 1: Safe Markdown link label, 2: url
 // 3: Bold-Italic ***text***
 // 4: Bold **text**
@@ -10,7 +9,53 @@ import React from "react";
 // 7: Italic _text_ (surrounded by whitespace/boundaries)
 // 8: Inline code `text`
 const INLINE_REGEX =
-  /(?:\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+|[^\s)]+)\))|(?:\*\*\*([^*]+?)\*\*\*)|(?:\*\*([^*]+?)\*\*)|(?:__([^_]+?)__)|(?:\*([^*]+?)\*)|(?:(?<=\s|^)_([^_]+?)_(?=\s|$|[.,:;!?]))|(?:`([^`]+?)`)/g;
+  /(?:\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+|[^\s)]+)\))|(?:\*\*\*(?!\s)([\s\S]+?)(?<!\s)\*\*\*)|(?:\*\*(?!\s)([\s\S]+?)(?<!\s)\*\*)|(?:__(?!\s)([\s\S]+?)(?<!\s)__)|(?:\*(?!\s)([\s\S]+?)(?<!\s)\*)|(?:(?<=\s|^)_(?!\s)([\s\S]+?)(?<!\s)_(?=\s|$|[.,:;!?]))|(?:`([^`]+?)`)/g;
+
+/**
+ * Clean unclosed or malformed note asterisks (e.g. "*Note: ...", "*Note...", "*Important: ...")
+ * when there is no matching closing asterisk in the text block.
+ * Also balances unclosed ** bold syntax.
+ */
+function cleanUnclosedAsterisks(str) {
+  if (!str) return "";
+  let cleaned = str;
+
+  // Auto-close dangling odd count of ** bold delimiters
+  const boldMatches = cleaned.match(/\*\*/g);
+  if (boldMatches && boldMatches.length % 2 !== 0) {
+    cleaned += "**";
+  }
+
+  // Strip orphan leading asterisk on note-style prefixes if there is no closing asterisk
+  cleaned = cleaned.replace(
+    /(^|\n)(\s*)\*(?!\*)\s*(Note:?|Important:?|Warning:?|Tip:?|Disclaimer:?|Please note:?)/gi,
+    (full, prefix, spaces, word) => {
+      const idx = cleaned.indexOf(full);
+      const after = cleaned.slice(idx + full.length);
+      if (after.includes("*")) {
+        return full;
+      }
+      return `${prefix}${spaces}${word}`;
+    }
+  );
+
+  return cleaned;
+}
+
+/**
+ * Render text slices that may contain newlines into React text nodes with <br /> elements.
+ */
+function renderTextWithBreaks(text, keyPrefix) {
+  if (typeof text !== "string") return text;
+  if (!text.includes("\n")) return text;
+  const lines = text.split("\n");
+  return lines.map((line, idx) => (
+    <React.Fragment key={`${keyPrefix}-br-${idx}`}>
+      {idx > 0 && <br />}
+      {line}
+    </React.Fragment>
+  ));
+}
 
 /**
  * Validate and sanitize URLs to prevent javascript:, data:, and other malicious schemes
@@ -55,16 +100,19 @@ function sanitizeUrl(rawUrl) {
  */
 function renderInline(text) {
   if (!text) return null;
+  const cleanedText = cleanUnclosedAsterisks(text);
+
   const elements = [];
   let lastIndex = 0;
   let match;
 
   INLINE_REGEX.lastIndex = 0;
 
-  while ((match = INLINE_REGEX.exec(text)) !== null) {
+  while ((match = INLINE_REGEX.exec(cleanedText)) !== null) {
     const matchIndex = match.index;
     if (matchIndex > lastIndex) {
-      elements.push(text.slice(lastIndex, matchIndex));
+      const rawText = cleanedText.slice(lastIndex, matchIndex);
+      elements.push(renderTextWithBreaks(rawText, `txt-${lastIndex}`));
     }
 
     const key = `inline-${elements.length}-${matchIndex}`;
@@ -84,7 +132,7 @@ function renderInline(text) {
             rel="noopener noreferrer"
             className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 break-all inline-flex items-center gap-0.5 transition-colors cursor-pointer"
           >
-            {label}
+            {renderTextWithBreaks(label, `${key}-lbl`)}
           </a>
         );
       } else {
@@ -95,7 +143,9 @@ function renderInline(text) {
       // Group 3: Bold-Italic ***text***
       elements.push(
         <strong key={key} className="font-bold text-white">
-          <em className="italic text-slate-200">{match[3]}</em>
+          <em className="italic text-slate-200">
+            {renderTextWithBreaks(match[3], `${key}-bi`)}
+          </em>
         </strong>
       );
     } else if (match[4] || match[5]) {
@@ -103,7 +153,7 @@ function renderInline(text) {
       const boldText = match[4] || match[5];
       elements.push(
         <strong key={key} className="font-semibold text-white">
-          {boldText}
+          {renderTextWithBreaks(boldText, `${key}-b`)}
         </strong>
       );
     } else if (match[6] || match[7]) {
@@ -111,7 +161,7 @@ function renderInline(text) {
       const italicText = match[6] || match[7];
       elements.push(
         <em key={key} className="italic text-slate-300">
-          {italicText}
+          {renderTextWithBreaks(italicText, `${key}-i`)}
         </em>
       );
     } else if (match[8]) {
@@ -129,8 +179,9 @@ function renderInline(text) {
     lastIndex = INLINE_REGEX.lastIndex;
   }
 
-  if (lastIndex < text.length) {
-    elements.push(text.slice(lastIndex));
+  if (lastIndex < cleanedText.length) {
+    const rawText = cleanedText.slice(lastIndex);
+    elements.push(renderTextWithBreaks(rawText, `txt-end-${lastIndex}`));
   }
 
   return elements.length === 1 ? elements[0] : elements;
@@ -152,7 +203,7 @@ function parseBlocks(markdown) {
     if (currentParagraphLines.length > 0) {
       blocks.push({
         type: "paragraph",
-        lines: [...currentParagraphLines],
+        text: currentParagraphLines.join("\n"),
       });
       currentParagraphLines = [];
     }
@@ -367,12 +418,7 @@ export default function SafeMarkdown({ content, className = "" }) {
         if (block.type === "paragraph") {
           return (
             <p key={bKey} className="leading-relaxed">
-              {block.lines.map((line, lIdx) => (
-                <React.Fragment key={`line-${lIdx}`}>
-                  {lIdx > 0 && <br />}
-                  {renderInline(line)}
-                </React.Fragment>
-              ))}
+              {renderInline(block.text)}
             </p>
           );
         }
