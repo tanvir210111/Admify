@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Headphones,
   ArrowRight,
+  ArrowLeft,
   Loader2,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -150,10 +151,10 @@ function MessageBubble({ msg, mode, onEscalateLive }) {
               <button
                 type="button"
                 onClick={onEscalateLive}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold text-xs shadow-md hover:brightness-110 active:scale-95 transition"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold text-xs shadow-md hover:brightness-110 active:scale-95 transition cursor-pointer"
               >
                 <Headphones className="w-3.5 h-3.5" />
-                TALK TO LIVE AGENT
+                Talk to Live Agent
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -183,6 +184,7 @@ function ChatWidgetContent() {
   const [aiCount, setAiCount] = useState(0);
 
   // Live Agent form state
+  const [showLiveForm, setShowLiveForm] = useState(false);
   const [isConnectingLive, setIsConnectingLive] = useState(false);
   const [isEscalated, setIsEscalated] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -321,6 +323,14 @@ function ChatWidgetContent() {
     setInputValue("");
 
     if (mode === "ai") {
+      if (aiLimitReached) {
+        setShowLiveForm(true);
+        toast("AI message quota reached. Please click 'Talk to Live Agent' below to connect with an advisor.", {
+          icon: "ℹ️",
+        });
+        return;
+      }
+
       setAiMessages((prev) => [...prev, userMsg]);
       setIsTyping(true);
 
@@ -439,6 +449,7 @@ function ChatWidgetContent() {
 
       if (res?.success) {
         setIsEscalated(true);
+        setShowLiveForm(false);
         setMode("agent");
 
         // Initialize and bind socket
@@ -554,8 +565,13 @@ function ChatWidgetContent() {
                     <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-slate-900" />
                   </div>
                   <div>
-                    <h3 className="text-white font-bold text-sm leading-tight">Admify Live Support</h3>
-                    <p className="text-green-400 text-[11px] font-semibold flex items-center gap-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-white font-bold text-sm leading-tight">Admify Live Support</h3>
+                      <span className="text-[10px] bg-cyan-500/20 text-cyan-300 font-semibold px-2 py-0.5 rounded-full border border-cyan-500/30">
+                        {mode === "agent" && isEscalated ? "Live Agent" : "AI Assistant"}
+                      </span>
+                    </div>
+                    <p className="text-green-400 text-[11px] font-semibold flex items-center gap-1 mt-0.5">
                       <Circle className="w-2 h-2 fill-green-400" />
                       AI & Live Agent Counselors
                     </p>
@@ -570,46 +586,24 @@ function ChatWidgetContent() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-
-              {/* Mode tabs */}
-              <div
-                onPointerDown={(e) => e.stopPropagation()}
-                className="flex mx-4 mb-3 bg-black/30 rounded-xl p-1 gap-1 cursor-default"
-              >
-                <button
-                  onClick={() => switchMode("ai")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
-                    mode === "ai"
-                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-md"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  AI Assistant
-                </button>
-                <button
-                  onClick={() => switchMode("agent")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
-                    mode === "agent"
-                      ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  <User className="w-3.5 h-3.5" />
-                  Live Agent
-                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                </button>
-              </div>
             </div>
 
-            {/* ── Live Agent Intake Form View (if in agent mode and not yet escalated) ── */}
-            {mode === "agent" && !isEscalated ? (
+            {/* ── Live Agent Intake Form View (only shown when visitor clicks 'Talk to Live Agent') ── */}
+            {showLiveForm && !isEscalated ? (
               <div className="flex-1 overflow-y-auto px-5 py-6 custom-scrollbar flex flex-col justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowLiveForm(false)}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white mb-3 transition cursor-pointer self-start"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back to AI Assistant
+                </button>
                 <div className="text-center mb-5">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-500/10">
                     <Headphones className="w-6 h-6" />
                   </div>
-                  <h4 className="text-white font-bold text-base">Connect to a Live Advisor</h4>
+                  <h4 className="text-white font-bold text-base">Connect to Live Admissions Advisor</h4>
                   <p className="text-slate-400 text-xs mt-1">
                     Please provide your contact information so an admissions advisor can review your inquiry.
                   </p>
@@ -620,15 +614,13 @@ function ChatWidgetContent() {
                     <label className="block text-slate-300 text-xs font-medium mb-1">
                       Full Name <span className="text-red-400">*</span>
                     </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="e.g. Sarah Jenkins"
-                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. Sarah Jenkins"
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                    />
                     {formErrors.fullName && (
                       <p className="text-[11px] text-red-400 mt-1">{formErrors.fullName}</p>
                     )}
@@ -638,15 +630,13 @@ function ChatWidgetContent() {
                     <label className="block text-slate-300 text-xs font-medium mb-1">
                       Email Address <span className="text-red-400">*</span>
                     </label>
-                    <div className="relative">
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="e.g. sarah@example.com"
-                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
-                      />
-                    </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. sarah@example.com"
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                    />
                     {formErrors.email && (
                       <p className="text-[11px] text-red-400 mt-1">{formErrors.email}</p>
                     )}
@@ -656,15 +646,13 @@ function ChatWidgetContent() {
                     <label className="block text-slate-300 text-xs font-medium mb-1">
                       Phone Number <span className="text-red-400">*</span>
                     </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="e.g. +1 555 123 4567"
-                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
-                      />
-                    </div>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. +1 555 123 4567"
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                    />
                     {formErrors.phone && (
                       <p className="text-[11px] text-red-400 mt-1">{formErrors.phone}</p>
                     )}
@@ -703,12 +691,12 @@ function ChatWidgetContent() {
                   {mode === "ai" ? (
                     <>
                       <Sparkles className="w-3 h-3 flex-shrink-0" />
-                      Powered by Google Gemini · 4 Free Inquiries
+                      Admify AI Admissions Assistant · {Math.max(0, 4 - aiCount)} Inquiries Remaining
                     </>
                   ) : (
                     <>
                       <Clock className="w-3 h-3 flex-shrink-0" />
-                      Admify Live Support Desk · Real-time Admin Desk
+                      Admify Live Support Desk · Real-time Admin Desk Connected
                     </>
                   )}
                 </div>
@@ -719,9 +707,37 @@ function ChatWidgetContent() {
                     key={msg.id}
                     msg={msg}
                     mode={mode}
-                    onEscalateLive={() => switchMode("agent")}
+                    onEscalateLive={() => setShowLiveForm(true)}
                   />
                 ))}
+
+                {/* Prominent CTA below messages when AI limit reached in AI mode */}
+                {mode === "ai" && aiLimitReached && !isEscalated && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="my-3 p-3.5 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border border-emerald-500/40 rounded-2xl shadow-lg flex flex-col items-center text-center gap-2"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                      <Headphones className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h5 className="text-white font-bold text-xs">AI Inquiries Limit Reached</h5>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Connect with our admissions desk counselors for personalized assistance.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowLiveForm(true)}
+                      className="w-full mt-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition cursor-pointer active:scale-98"
+                    >
+                      <Headphones className="w-4 h-4" />
+                      Talk to Live Agent
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </motion.div>
+                )}
 
                 {/* Typing indicator */}
                 {isTyping && (mode === "ai" ? <TypingIndicator /> : <AgentTypingIndicator />)}
@@ -730,8 +746,8 @@ function ChatWidgetContent() {
               </div>
             )}
 
-            {/* ── Input bar (shown when in AI mode OR when escalated in Live mode) ── */}
-            {(mode === "ai" || isEscalated) && (
+            {/* ── Input bar (shown when not in intake form) ── */}
+            {!showLiveForm && (
               <div className="flex-shrink-0 border-t border-slate-700/50 bg-slate-900/80 backdrop-blur-sm px-4 py-3">
                 <div className="flex items-end gap-2">
                   <div className="flex-1 bg-slate-800/80 border border-slate-700/50 rounded-2xl px-4 py-2.5 focus-within:border-primary-500/50 focus-within:ring-2 focus-within:ring-primary-500/20 transition-all">
@@ -748,7 +764,7 @@ function ChatWidgetContent() {
                       placeholder={
                         mode === "ai"
                           ? aiLimitReached
-                            ? "AI limit reached. Talk to a Live Agent above."
+                            ? "AI limit reached. Click 'Talk to Live Agent' above."
                             : "Ask Admify AI anything about study abroad..."
                           : "Message your live admissions advisor..."
                       }
