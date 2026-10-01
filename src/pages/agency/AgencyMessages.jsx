@@ -14,9 +14,23 @@ import {
   Building2,
   Clock,
   CheckCircle2,
+  Mic,
+  Circle,
 } from "lucide-react";
 
 import { useAgencyBadges } from "../../context/AgencyBadgeContext";
+import MessageBubble from "../../components/chat/MessageBubble";
+import MessageAttachmentPicker from "../../components/chat/MessageAttachmentPicker";
+import VoiceRecorder from "../../components/chat/VoiceRecorder";
+import {
+  initSocket,
+  getSocket,
+  joinConversationRoom,
+  leaveConversationRoom,
+  emitTypingStart,
+  emitTypingStop,
+  fetchPresence,
+} from "../../lib/socket";
 
 export default function AgencyMessages() {
   const { markEntityAsSeen } = useAgencyBadges();
@@ -27,10 +41,18 @@ export default function AgencyMessages() {
   const [messages, setMessages] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [selectedContact, setSelectedContact] = useState(null);
+  const [activeConversationDoc, setActiveConversationDoc] = useState(null);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [contactPresence, setContactPresence] = useState("offline");
+  const [isRecording, setIsRecording] = useState(false);
+
   const messagesEndRef = useRef(null);
+  const typingTimerRef = useRef(null);
 
   // Load authorized contacts (students + agents + connected uni reps)
   const loadContactsAndMessages = async () => {
@@ -89,12 +111,22 @@ export default function AgencyMessages() {
 
   const handleSelectContact = (c, msgsList = messages) => {
     setSelectedContact(c);
+    // Resolve unified conversation doc
+    if (c?.id) {
+      api.post("/api/conversations/direct", { receiverId: c.id }).then((res) => {
+        if (res?.success && res.data?.conversation) {
+          setActiveConversationDoc(res.data.conversation);
+          api.post(`/api/conversations/${res.data.conversation._id}/read`).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     // Mark any unseen incoming messages from this contact as seen
     const unseenMsgs = (msgsList || []).filter(
       (m) =>
         m.isSeenByAgency === false &&
         m.sender !== "agency" &&
-        ((m.user?.toString() === c.id || m.receiver?.toString() === c.id) ||
+        (((m.senderId || m.user)?.toString() === c.id || (m.receiverId || m.receiver)?.toString() === c.id) ||
          (m.sessionId && m.sessionId.includes(c.id)))
     );
     unseenMsgs.forEach((m) => {
@@ -113,24 +145,201 @@ export default function AgencyMessages() {
     loadContactsAndMessages();
   }, [defaultRecipient]);
 
+  // Socket.io Real-Time listeners for Agency
+  useEffect(() => {
+    const token = localStorage.getItem("admify_token") || localStorage.getItem("token");
+    if (!token || !activeConversationDoc?._id) return;
+
+    const socket = initSocket(token);
+    if (!socket) return;
+
+    const convId = activeConversationDoc._id;
+    joinConversationRoom(socket, convId);
+
+    if (selectedContact?.id) {
+      fetchPresence(selectedContact.id).then((st) => setContactPresence(st));
+    }
+
+    const handleIncomingNewMessage = (msg) => {
+      if (!msg) return;
+      if (msg.conversationId === convId || (selectedContact?.id && msg.sessionId?.includes(selectedContact.id))) {
+        setMessages((prev) => {
+          if (prev.some((m) => m._id === msg._id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    };
+
+    const handleIncomingMessageEdited = (msg) => {
+      if (!msg) return;
+      setMessages((prev) => prev.map((m) => (m._id === msg._id ? msg : m)));
+    };
+
+    const handleIncomingMessageDeleted = ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, isDeleted: true, text: "This message was deleted", attachments: [] }
+            : m
+        )
+      );
+    };
+
+    const handleIncomingReactionUpdated = ({ messageId, reactions }) => {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
+      );
+    };
+
+    const handleIncomingUserTyping = ({ conversationId, userId }) => {
+      if (conversationId === convId && userId === selectedContact?.id) {
+        setIsOtherTyping(true);
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = setTimeout(() => setIsOtherTyping(false), 3500);
+      }
+    };
+
+    const handleIncomingUserStoppedTyping = ({ conversationId, userId }) => {
+      if (conversationId === convId && userId === selectedContact?.id) {
+        setIsOtherTyping(false);
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      }
+    };
+
+    const handleIncomingPresenceChanged = ({ userId, status }) => {
+      if (userId === selectedContact?.id) {
+        setContactPresence(status);
+      }
+    };
+
+    const handleReconnect = () => {
+      joinConversationRoom(socket, convId);
+      api.get(`/api/conversations/${convId}/messages`).then((res) => {
+        if (res?.success && Array.isArray(res.data?.messages)) {
+          setMessages((prev) => {
+            const map = new Map();
+            prev.forEach((m) => map.set(m._id, m));
+            res.data.messages.forEach((m) => map.set(m._id, m));
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            );
+          });
+        }
+      }).catch(() => {});
+    };
+
+    socket.on("new_message", handleIncomingNewMessage);
+    socket.on("message_edited", handleIncomingMessageEdited);
+    socket.on("message_deleted", handleIncomingMessageDeleted);
+    socket.on("message_reaction_updated", handleIncomingReactionUpdated);
+    socket.on("user_typing", handleIncomingUserTyping);
+    socket.on("user_stopped_typing", handleIncomingUserStoppedTyping);
+    socket.on("user_presence_changed", handleIncomingPresenceChanged);
+    socket.on("connect", handleReconnect);
+
+    return () => {
+      leaveConversationRoom(socket, convId);
+      socket.off("new_message", handleIncomingNewMessage);
+      socket.off("message_edited", handleIncomingMessageEdited);
+      socket.off("message_deleted", handleIncomingMessageDeleted);
+      socket.off("message_reaction_updated", handleIncomingReactionUpdated);
+      socket.off("user_typing", handleIncomingUserTyping);
+      socket.off("user_stopped_typing", handleIncomingUserStoppedTyping);
+      socket.off("user_presence_changed", handleIncomingPresenceChanged);
+      socket.off("connect", handleReconnect);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    };
+  }, [activeConversationDoc?._id, selectedContact?.id]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, selectedContact]);
 
+  const handleFileSelect = (file) => {
+    setAttachmentFile(file);
+    if (file.type?.startsWith("image/")) {
+      setAttachmentPreview(URL.createObjectURL(file));
+    } else {
+      setAttachmentPreview(null);
+    }
+  };
+
+  const handleClearAttachment = () => {
+    if (attachmentPreview) {
+      URL.revokeObjectURL(attachmentPreview);
+    }
+    setAttachmentFile(null);
+    setAttachmentPreview(null);
+  };
+
+  const handleSaveEdit = async (msgId, newText) => {
+    const targetMsg = messages.find((m) => m._id === msgId);
+    const convId = activeConversationDoc?._id || targetMsg?.conversationId || targetMsg?.sessionId;
+    if (!convId) return;
+
+    const res = await api.patch(`/api/conversations/${convId}/messages/${msgId}`, {
+      text: newText,
+    });
+    if (res?.success && res.data?.message) {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === msgId ? res.data.message : m))
+      );
+      toast.success("Message edited successfully.");
+    }
+  };
+
+  const handleToggleReaction = async (msgId, emoji) => {
+    const targetMsg = messages.find((m) => m._id === msgId);
+    const convId = activeConversationDoc?._id || targetMsg?.conversationId || targetMsg?.sessionId;
+    if (!convId) return;
+
+    try {
+      await api.post(`/api/conversations/${convId}/messages/${msgId}/reactions`, { emoji });
+    } catch (err) {
+      toast.error(err.message || "Failed to update reaction.");
+    }
+  };
+
+  const handleTextChange = (e) => {
+    setText(e.target.value);
+    if (activeConversationDoc?._id) {
+      emitTypingStart(activeConversationDoc._id);
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!text.trim() || !selectedContact) return;
+    if ((!text.trim() && !attachmentFile) || !selectedContact) return;
+
+    if (activeConversationDoc?._id) {
+      emitTypingStop(activeConversationDoc._id);
+    }
 
     setSending(true);
     try {
-      const res = await api.post("/api/agency/messages", {
-        receiverId: selectedContact.id,
-        text: text.trim(),
-        sessionId: `AGY-CONV-${selectedContact.id}`,
-      });
-      if (res.success) {
+      let res;
+      if (attachmentFile) {
+        const formData = new FormData();
+        formData.append("receiverId", selectedContact.id);
+        if (text.trim()) formData.append("text", text.trim());
+        formData.append("attachment", attachmentFile);
+        formData.append("sessionId", `AGY-CONV-${selectedContact.id}`);
+        res = await api.post("/api/agency/messages", formData);
+      } else {
+        res = await api.post("/api/agency/messages", {
+          receiverId: selectedContact.id,
+          text: text.trim(),
+          sessionId: `AGY-CONV-${selectedContact.id}`,
+        });
+      }
+
+      if (res.success && res.data?.message) {
         setText("");
-        setMessages((prev) => [...prev, res.data.message]);
+        handleClearAttachment();
+        setMessages((prev) => {
+          if (prev.some((m) => m._id === res.data.message._id)) return prev;
+          return [...prev, res.data.message];
+        });
       }
     } catch (err) {
       toast.error(err.message || "Failed to send message");
@@ -142,7 +351,7 @@ export default function AgencyMessages() {
   // Filter messages for current selected contact
   const activeConversation = messages.filter(
     (m) =>
-      (m.user?.toString() === selectedContact?.id || m.receiver?.toString() === selectedContact?.id) ||
+      (((m.senderId || m.user)?.toString() === selectedContact?.id || (m.receiverId || m.receiver)?.toString() === selectedContact?.id)) ||
       (m.sessionId && selectedContact && m.sessionId.includes(selectedContact.id))
   );
 
@@ -195,7 +404,7 @@ export default function AgencyMessages() {
                   (m) =>
                     m.isSeenByAgency === false &&
                     m.sender !== "agency" &&
-                    ((m.user?.toString() === c.id || m.receiver?.toString() === c.id) ||
+                    (((m.senderId || m.user)?.toString() === c.id || (m.receiverId || m.receiver)?.toString() === c.id) ||
                      (m.sessionId && m.sessionId.includes(c.id)))
                 );
                 return (
@@ -239,7 +448,14 @@ export default function AgencyMessages() {
               <div className="p-4 border-b border-white/5 flex items-center justify-between">
                 <div>
                   <h3 className="text-white font-bold text-sm">{selectedContact.name}</h3>
-                  <span className="text-[11px] text-violet-400 font-medium">{selectedContact.type}</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] text-violet-400 font-medium">{selectedContact.type}</span>
+                    <span className="text-slate-600">•</span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <span className={`w-2 h-2 rounded-full ${contactPresence === "online" ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
+                      {contactPresence === "online" ? "Online" : "Offline"}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -254,53 +470,80 @@ export default function AgencyMessages() {
                     </p>
                   </div>
                 ) : (
-                  activeConversation.map((msg, i) => {
-                    const isAgencySender = msg.sender === "agency" || msg.user?.toString() === user?._id?.toString();
-                    return (
-                      <div
-                        key={msg._id || i}
-                        className={`flex flex-col ${isAgencySender ? "items-end" : "items-start"}`}
-                      >
-                        <div
-                          className={`max-w-md p-3 rounded-2xl text-xs leading-relaxed ${
-                            isAgencySender
-                              ? "bg-violet-600 text-white rounded-br-sm"
-                              : "bg-white/10 text-slate-200 rounded-bl-sm"
-                          }`}
-                        >
-                          {msg.text}
-                        </div>
-                        <span className="text-[10px] text-slate-500 mt-1 px-1">
-                          {new Date(msg.createdAt || Date.now()).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                    );
-                  })
+                  activeConversation.map((msg, i) => (
+                    <MessageBubble
+                      key={msg._id || i}
+                      msg={msg}
+                      currentUserId={user?._id}
+                      senderAvatar={selectedContact?.avatar}
+                      senderName={selectedContact?.name}
+                      themeColor="violet"
+                      onSaveEdit={handleSaveEdit}
+                      onToggleReaction={handleToggleReaction}
+                    />
+                  ))
+                )}
+                {isOtherTyping && (
+                  <div className="px-4 py-1 text-xs text-violet-400 italic flex items-center gap-1.5 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-ping" />
+                    <span>{selectedContact.name} is typing...</span>
+                  </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Message Input Form */}
-              <form onSubmit={handleSendMessage} className="p-3 border-t border-white/5 flex gap-2">
-                <input
-                  type="text"
-                  placeholder={`Write a message to ${selectedContact.name}...`}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
-                />
-                <button
-                  type="submit"
-                  disabled={sending || !text.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-lg shadow-violet-600/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Send</span>
-                </button>
-              </form>
+              {/* Message Input Form or Voice Recorder */}
+              {isRecording ? (
+                <div className="p-3 border-t border-white/5">
+                  <VoiceRecorder
+                    onRecordingComplete={(audioFile) => {
+                      setAttachmentFile(audioFile);
+                      setIsRecording(false);
+                      toast.success("Voice note attached. Click Send to deliver.");
+                    }}
+                    onCancel={() => setIsRecording(false)}
+                    disabled={sending}
+                  />
+                </div>
+              ) : (
+                <form onSubmit={handleSendMessage} className="relative p-3 border-t border-white/5 flex items-center gap-2">
+                  <MessageAttachmentPicker
+                    attachment={attachmentFile}
+                    previewUrl={attachmentPreview}
+                    onSelect={handleFileSelect}
+                    onClear={handleClearAttachment}
+                    disabled={sending}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsRecording(true)}
+                    disabled={sending}
+                    className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition-colors shrink-0"
+                    title="Record Voice Note"
+                  >
+                    <Mic className="w-4 h-4 text-violet-400" />
+                  </button>
+                  <input
+                    type="text"
+                    placeholder={
+                      attachmentFile
+                        ? "Add an optional caption..."
+                        : `Write a message to ${selectedContact.name}...`
+                    }
+                    value={text}
+                    onChange={handleTextChange}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={sending || (!text.trim() && !attachmentFile)}
+                    className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-lg shadow-violet-600/30 transition-all flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send</span>
+                  </button>
+                </form>
+              )}
             </>
           ) : (
             <div className="h-full flex items-center justify-center text-slate-500 text-xs">

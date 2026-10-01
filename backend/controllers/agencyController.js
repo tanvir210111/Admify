@@ -15,6 +15,12 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import devStore from '../utils/devStore.js';
 import { resolveAuthenticatedAgency } from '../utils/agencyResolver.js';
+import {
+  resolveConversation,
+  createMessage,
+  verifyMessagingPermission,
+  getUserById,
+} from '../services/messagingService.js';
 
 // Helper to reliably obtain the resolved Agency context from the request
 const getResolvedAgencyContext = async (req) => {
@@ -234,7 +240,7 @@ export const markAgencyEntityAsSeenHelper = async (agencyId, entityType, entityI
       );
     } else if (['chat_message', 'message', 'messages'].includes(entityType)) {
       await ChatMessage.updateMany(
-        { $or: [{ sessionId: entityId }, { _id: entityId }] },
+        { $or: [{ sessionId: entityId }, { _id: entityId }, { conversationId: entityId }, { user: entityId }, { senderId: entityId }] },
         { isSeenByAgency: true, agencySeenAt: now }
       );
     } else if (['report', 'reports'].includes(entityType)) {
@@ -2225,12 +2231,21 @@ export const getAgencyMessages = async (req, res, next) => {
     let messages = [];
     if (mongoose.connection.readyState === 1) {
       messages = await ChatMessage.find({
-        $or: [{ user: req.user._id }, { receiver: req.user._id }],
+        $or: [
+          { user: req.user._id },
+          { receiver: req.user._id },
+          { senderId: req.user._id },
+          { receiverId: req.user._id },
+        ],
       }).sort({ createdAt: 1 });
     } else {
       const db = devStore.read();
       messages = (db.chatMessages || []).filter(
-        (m) => m.user?.toString() === agencyIdStr || m.receiver?.toString() === agencyIdStr
+        (m) =>
+          m.user?.toString() === agencyIdStr ||
+          m.receiver?.toString() === agencyIdStr ||
+          m.senderId?.toString() === agencyIdStr ||
+          m.receiverId?.toString() === agencyIdStr
       );
     }
 
@@ -2257,35 +2272,59 @@ export const getAgencyMessages = async (req, res, next) => {
 // @access  Private (Verified Agency)
 export const sendAgencyMessage = async (req, res, next) => {
   try {
-    const { receiverId, text, sessionId } = req.body;
-    if (!text || !text.trim()) {
-      return res.status(400).json({ success: false, message: 'Message text is required.' });
+    const { receiverId, text, context } = req.body;
+    if (!receiverId) {
+      return res.status(400).json({ success: false, message: 'Recipient ID (receiverId) is required.' });
+    }
+    const attachments = req.file
+      ? [
+          {
+            originalName: req.file.originalname,
+            filename: req.file.filename,
+            mimeType: req.file.mimetype,
+            size: req.file.size,
+            path: req.file.path,
+          },
+        ]
+      : [];
+
+    if ((!text || !text.trim()) && attachments.length === 0) {
+      return res.status(400).json({ success: false, message: 'Message must contain either text or an attachment.' });
     }
 
-    const payload = {
-      user: req.user._id,
-      sender: 'agency',
-      receiver: receiverId || null,
-      text: text.trim(),
-      sessionId: sessionId || `SESSION-AGY-${req.user._id}-${Date.now()}`,
-      createdAt: new Date(),
-    };
-
-    let newMsg = null;
-    if (mongoose.connection.readyState === 1) {
-      newMsg = await ChatMessage.create(payload);
-    } else {
-      newMsg = await devStore.addChatMessage(payload);
+    const receiverUser = await getUserById(receiverId);
+    if (!receiverUser) {
+      return res.status(404).json({ success: false, message: 'Recipient user not found.' });
     }
+
+    // Verify relationship authorization
+    const permission = await verifyMessagingPermission(req.user, receiverUser);
+    if (!permission.authorized) {
+      return res.status(403).json({ success: false, message: permission.message });
+    }
+
+    // Resolve or retrieve persistent 1-to-1 conversation
+    const conversation = await resolveConversation(req.user, receiverUser, context);
+
+    const newMsg = await createMessage({
+      conversationId: conversation._id,
+      senderUser: req.user,
+      text: text ? text.trim() : '',
+      attachments,
+    });
 
     return res.status(201).json({
       success: true,
-      data: { message: newMsg },
+      data: { message: newMsg, conversationId: conversation._id },
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };
+
 
 // ── 8. Agency Documents ───────────────────────────────────────────────────────
 // @desc    Get all agency compliance and application documents

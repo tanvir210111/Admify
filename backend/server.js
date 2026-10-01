@@ -1,9 +1,11 @@
 import express from 'express';
+import http from 'http';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import morgan from 'morgan';
 import mongoose from 'mongoose';
 import connectDB from './config/db.js';
+import { initSocketServer } from './socket/socketServer.js';
 
 // Route imports
 import authRoutes from './routes/authRoutes.js';
@@ -21,6 +23,7 @@ import agentRoutes from './routes/agentRoutes.js';
 import universityRepRoutes from './routes/universityRepRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
+import conversationRoutes from './routes/conversationRoutes.js';
 
 // Middleware imports
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
@@ -80,6 +83,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 // Enable pre-flight for all routes
 app.options('*', cors(corsOptions));
+
+// ── HTTP & Socket.io Server Setup ───────────────────────────────────────────
+const httpServer = http.createServer(app);
+const io = initSocketServer(httpServer, allowedOrigins);
 
 // ── Health Check Endpoint ────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -144,6 +151,7 @@ app.use('/api/agent', agentRoutes);
 app.use('/api/university-rep', universityRepRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/student', studentRoutes);
+app.use('/api/conversations', conversationRoutes);
 
 // ── Error Handling Middleware ────────────────────────────────────────────────
 app.use(notFound);
@@ -189,13 +197,14 @@ const startServer = async () => {
     }
   }
 
-  if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, () => {
-      console.log(`[Admify API] Server running in ${process.env.NODE_ENV || 'production'} mode on port ${PORT}`);
+  if (process.env.NODE_ENV !== 'test' && !httpServer.listening) {
+    httpServer.listen(PORT, () => {
+      console.log(`[Admify API] Server (HTTP + Socket.io) running in ${process.env.NODE_ENV || 'production'} mode on port ${PORT}`);
     });
   }
 };
 
 startServer();
 
+export { httpServer, io };
 export default app;

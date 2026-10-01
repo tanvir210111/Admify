@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import {
@@ -7,113 +7,39 @@ import {
   Send,
   Bot,
   User,
-  ChevronDown,
   Sparkles,
   Phone,
+  Mail,
   Clock,
   CheckCheck,
-  Paperclip,
-  Smile,
-  ArrowLeft,
   Circle,
-  GripHorizontal,
+  AlertCircle,
+  Headphones,
+  ArrowRight,
+  Loader2,
 } from "lucide-react";
+import toast from "react-hot-toast";
+import { api } from "../../services/api";
+import { initVisitorSocket, getVisitorSocket } from "../../lib/socket";
 
-// ── AI smart reply engine ──────────────────────────────────────────────────
-const AI_REPLIES = {
-  keywords: [
-    {
-      keys: ["hello", "hi", "hey", "helo"],
-      reply:
-        "Hi there! 👋 I'm Admify AI. I can help you with university recommendations, application deadlines, scholarship eligibility, SOP generation, and much more. What would you like to know?",
-    },
-    {
-      keys: ["university", "universities", "college", "colleges"],
-      reply:
-        "I can recommend universities based on your GPA, test scores, and budget. 🎓 We have data on 3,000+ institutions globally. Want me to show you your best matches right now?",
-    },
-    {
-      keys: ["scholarship", "scholarships", "grant", "funding", "money"],
-      reply:
-        "Great question! 💰 Admify matches you with scholarships automatically. Based on a typical profile (3.5+ GPA), you may be eligible for scholarships ranging from $5,000 to $50,000. Shall I run a match analysis?",
-    },
-    {
-      keys: ["sop", "statement", "purpose", "essay", "document", "lor"],
-      reply:
-        "Our AI SOP Generator creates personalized Statements of Purpose in minutes! ✍️ It tailors the narrative to your target university's values and program. It costs only 150 credits. Want to try it?",
-    },
-    {
-      keys: ["deadline", "when", "date", "time"],
-      reply:
-        "⏰ Application deadlines vary by university:\n• Stanford: Dec 15\n• MIT: Dec 1\n• Oxford: Jan 10\n• University of Toronto: Feb 1\n\nI can set reminders for any deadline you choose!",
-    },
-    {
-      keys: ["gpa", "score", "grade", "ielts", "toefl", "sat", "gre"],
-      reply:
-        "Your academic scores play a big role in matching! 📊 Typically:\n• GPA 3.5+: Top 50 universities\n• GPA 3.0–3.5: Strong mid-tier options\n• IELTS 6.5+ preferred by most English universities\n\nShall I assess your eligibility?",
-    },
-    {
-      keys: ["apply", "application", "apply", "how"],
-      reply:
-        "Applying through Admify is simple! 🚀\n1. Complete your profile\n2. Get AI university matches\n3. One-click apply to multiple universities\n4. Track all applications in one dashboard\n\nYou can start right now — it's free to sign up!",
-    },
-    {
-      keys: ["cost", "fee", "price", "pricing", "plan", "credit"],
-      reply:
-        "Admify offers flexible plans 💳:\n• **Free**: Basic recommendations\n• **Pro ($29/mo)**: Full AI + unlimited applications\n• **Elite ($79/mo)**: Personal advisor + priority review\n\nCredits are used for premium AI features like SOP generation.",
-    },
-    {
-      keys: ["agent", "human", "person", "advisor", "counselor", "support"],
-      reply:
-        "You can switch to a **Live Agent** using the tab above! 👆 Our human advisors are available 24/7 and specialize in your target region. Average wait time is under 2 minutes.",
-    },
-    {
-      keys: ["canada", "usa", "uk", "australia", "germany", "europe"],
-      reply:
-        "Each destination has unique advantages! 🌍\n• **USA**: World's top ranked universities\n• **Canada**: Post-study work permit friendly\n• **UK**: 1-2 year Master's programs\n• **Germany**: Low/no tuition fees\n• **Australia**: Relaxed student visa rules\n\nWhere are you considering?",
-    },
-    {
-      keys: ["visa", "student visa", "immigration"],
-      reply:
-        "Student visa guidance is part of our Elite plan! 🛂 Generally:\n• Apply after receiving your university offer letter\n• Prepare financial documents showing 12 months of living costs\n• Our agents can guide you step by step!\n\nWant to connect with a visa expert?",
-    },
-    {
-      keys: ["thank", "thanks", "great", "awesome", "good", "helpful"],
-      reply:
-        "You're very welcome! 😊 I'm here 24/7 whenever you need help. Is there anything else about your university journey I can assist with?",
-    },
-  ],
-  fallback: [
-    "That's a great question! Let me connect you with more specific information. Could you tell me a bit more about what you're looking for — your target country, program, or GPA range?",
-    "I want to make sure I give you the most accurate answer! Are you asking about university applications, scholarships, or document preparation?",
-    "I'm still learning some specifics on that! 🤔 For complex queries, I'd recommend switching to a **Live Agent** (tab above) — they're online right now and can help immediately.",
-    "Great topic! Admify specializes in this area. To give you the best answer, could you share your academic background and target destination?",
-  ],
-};
+export const EXACT_AI_WARNING =
+  "I’m an AI chatbot and may not always provide accurate or up-to-date information. For accurate information and personalized assistance, please talk to a live agent.";
 
-function getAIReply(message) {
-  const lower = message.toLowerCase();
-  for (const group of AI_REPLIES.keywords) {
-    if (group.keys.some((k) => lower.includes(k))) {
-      return group.reply;
+// Helper to get or initialize secure visitor session token
+function getVisitorToken() {
+  if (typeof window === "undefined") return "vis_ssr_fallback";
+  try {
+    let token = sessionStorage.getItem("admify_visitor_token");
+    if (!token || !token.startsWith("vis_")) {
+      const rand = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+      token = `vis_${rand}`;
+      sessionStorage.setItem("admify_visitor_token", token);
     }
+    return token;
+  } catch {
+    return `vis_${Date.now()}`;
   }
-  return AI_REPLIES.fallback[Math.floor(Math.random() * AI_REPLIES.fallback.length)];
 }
-
-// ── Human agent messages ───────────────────────────────────────────────────
-const AGENT_INTRO =
-  "Hi! I'm Sarah, your Admify admissions advisor. I've helped 200+ students get accepted to their dream universities! How can I assist you today? 😊";
-
-const AGENT_REPLIES = [
-  "That's a great point! Let me pull up the details for you right away.",
-  "I completely understand your concern. Many students ask the same thing. Here's what I recommend...",
-  "Absolutely! I've worked with students in similar situations. The best approach would be to start with your profile completion first.",
-  "Great news — based on what you've shared, you have very strong chances at your target universities! Let me show you a few options.",
-  "I'd suggest booking a one-on-one consultation with me so I can review your full profile and give personalized advice. Would that work for you?",
-  "I'll make a note of that. Just to clarify, are you targeting for the Fall 2027 or Spring 2027 intake?",
-  "Don't worry, this is very common! Let me walk you through the process step by step.",
-];
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 function TypingIndicator() {
@@ -141,19 +67,15 @@ function TypingIndicator() {
 function AgentTypingIndicator() {
   return (
     <div className="flex items-end gap-2 mb-4">
-      <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0">
-        <img
-          src="https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah&backgroundColor=b6e3f4"
-          alt="Agent"
-          className="w-full h-full object-cover"
-        />
+      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0 text-white font-bold text-xs">
+        <Headphones className="w-3.5 h-3.5" />
       </div>
       <div className="bg-slate-800 border border-slate-700/50 rounded-2xl rounded-bl-sm px-4 py-3">
         <div className="flex gap-1 items-center h-4">
           {[0, 1, 2].map((i) => (
             <motion.div
               key={i}
-              className="w-1.5 h-1.5 bg-slate-400 rounded-full"
+              className="w-1.5 h-1.5 bg-emerald-400 rounded-full"
               animate={{ y: [0, -5, 0] }}
               transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
             />
@@ -164,9 +86,21 @@ function AgentTypingIndicator() {
   );
 }
 
-function MessageBubble({ msg, mode }) {
-  const isUser = msg.from === "user";
-  const isAI = msg.from === "ai";
+function MessageBubble({ msg, mode, onEscalateLive }) {
+  const isUser = msg.from === "user" || msg.sender === "visitor";
+  const isAI = msg.from === "ai" || msg.sender === "ai";
+  const isSystem = msg.from === "system" || msg.sender === "system";
+  const isLimitWarning = Boolean(msg.isLimitWarning);
+
+  if (isSystem) {
+    return (
+      <div className="my-2 text-center px-4">
+        <div className="inline-block bg-slate-800/80 border border-slate-700/60 rounded-xl px-3 py-1.5 text-[11px] text-slate-300">
+          {msg.text}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -183,37 +117,52 @@ function MessageBubble({ msg, mode }) {
               <Bot className="w-3.5 h-3.5 text-white" />
             </div>
           ) : (
-            <img
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah&backgroundColor=b6e3f4"
-              alt="Agent"
-              className="w-full h-full object-cover"
-            />
+            <div className="w-full h-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white">
+              <Headphones className="w-3.5 h-3.5" />
+            </div>
           )}
         </div>
       )}
 
-      <div className={`max-w-[78%] flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`max-w-[82%] flex flex-col ${isUser ? "items-end" : "items-start"}`}>
         {/* Sender label */}
         {!isUser && (
           <span className="text-[10px] text-slate-500 mb-1 px-1 font-medium">
-            {isAI ? "Admify AI" : "Sarah • Advisor"}
+            {isAI ? "Admify AI" : "Live Admissions Advisor"}
           </span>
         )}
 
         {/* Bubble */}
         <div
-          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${
+          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-line shadow-sm ${
             isUser
               ? "bg-gradient-to-br from-primary-600 to-blue-600 text-white rounded-br-sm"
+              : isLimitWarning
+              ? "bg-amber-950/40 border border-amber-500/40 text-amber-200 rounded-bl-sm"
               : "bg-slate-800 border border-slate-700/50 text-slate-200 rounded-bl-sm"
           }`}
         >
           {msg.text}
+
+          {/* Prominent Talk to Live Agent CTA when 4-message ceiling is reached */}
+          {isLimitWarning && onEscalateLive && (
+            <div className="mt-3 pt-2 border-t border-amber-500/30 flex justify-end">
+              <button
+                type="button"
+                onClick={onEscalateLive}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold text-xs shadow-md hover:brightness-110 active:scale-95 transition"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                TALK TO LIVE AGENT
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Timestamp + read */}
+        {/* Timestamp */}
         <div className={`flex items-center gap-1 mt-1 px-1 ${isUser ? "flex-row-reverse" : ""}`}>
-          <span className="text-[10px] text-slate-600">{msg.time}</span>
+          <span className="text-[10px] text-slate-600">{msg.time || "Just now"}</span>
           {isUser && <CheckCheck className="w-3 h-3 text-primary-400" />}
         </div>
       </div>
@@ -230,11 +179,21 @@ function ChatWidgetContent() {
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [unreadCount, setUnreadCount] = useState(1);
-  const [hasGreeted, setHasGreeted] = useState(false);
-  const [agentHasGreeted, setAgentHasGreeted] = useState(false);
-  const [agentConnecting, setAgentConnecting] = useState(false);
+  const [aiLimitReached, setAiLimitReached] = useState(false);
+  const [aiCount, setAiCount] = useState(0);
+
+  // Live Agent form state
+  const [isConnectingLive, setIsConnectingLive] = useState(false);
+  const [isEscalated, setIsEscalated] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [formErrors, setFormErrors] = useState({});
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const visitorTokenRef = useRef(getVisitorToken());
+
   const now = () => {
     const d = new Date();
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -242,9 +201,9 @@ function ChatWidgetContent() {
 
   const [aiMessages, setAiMessages] = useState([
     {
-      id: 1,
+      id: "ai-init",
       from: "ai",
-      text: "👋 Hello! I'm Admify AI — your 24/7 university admissions assistant. Ask me anything about universities, scholarships, deadlines, or SOPs!",
+      text: "👋 Hello! I'm Admify AI — your 24/7 global study admissions assistant. Ask me anything about universities, scholarships, admission criteria, or application guidance!",
       time: now(),
     },
   ]);
@@ -252,7 +211,6 @@ function ChatWidgetContent() {
   const [agentMessages, setAgentMessages] = useState([]);
 
   const messages = mode === "ai" ? aiMessages : agentMessages;
-  const setMessages = mode === "ai" ? setAiMessages : setAgentMessages;
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -267,60 +225,167 @@ function ChatWidgetContent() {
     }
   }, [isOpen]);
 
-  // Agent greeting when switching to agent mode
+  // Connect socket and fetch history on initial open
   useEffect(() => {
-    let timer;
-    if (mode === "agent" && !agentHasGreeted) {
-      setAgentConnecting(true);
-      setAgentHasGreeted(true);
-      timer = setTimeout(() => {
-        setAgentConnecting(false);
-        setAgentMessages([
-          {
-            id: Date.now(),
-            from: "agent",
-            text: AGENT_INTRO,
-            time: now(),
-          },
-        ]);
-      }, 2000);
+    const token = visitorTokenRef.current;
+    if (!token) return;
+
+    // Initialize visitor socket
+    const socket = initVisitorSocket(token);
+
+    if (socket) {
+      const handleSupportReply = (data) => {
+        if (data?.message) {
+          const newMsg = {
+            id: data.message._id || `rep-${Date.now()}`,
+            from: data.message.sender === "agent" ? "agent" : "ai",
+            text: data.message.text,
+            time: new Date(data.message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          };
+          setAgentMessages((prev) => [...prev, newMsg]);
+        }
+      };
+
+      socket.on("admin_support_reply", handleSupportReply);
+      socket.on("support_connected", () => {
+        setIsEscalated(true);
+      });
+
+      return () => {
+        socket.off("admin_support_reply", handleSupportReply);
+      };
     }
-    return () => clearTimeout(timer);
-  }, [mode, agentHasGreeted]);
+  }, []);
+
+  // Fetch session history if previously active
+  const loadHistory = useCallback(async () => {
+    try {
+      const token = visitorTokenRef.current;
+      const res = await api.get(`/api/chat/history/${token}`);
+      if (res?.success && res.data?.messages) {
+        const loaded = res.data.messages;
+        const loadedAi = [];
+        const loadedAgent = [];
+
+        for (const m of loaded) {
+          const formatted = {
+            id: m._id || String(Math.random()),
+            from: m.sender === "visitor" ? "user" : m.sender,
+            text: m.text,
+            time: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            isLimitWarning: m.isLimitWarning || m.text === EXACT_AI_WARNING,
+          };
+          if (m.isLiveAgentRequest || m.sender === "agent" || res.status === "waiting_live_agent" || res.status === "live") {
+            loadedAgent.push(formatted);
+          } else {
+            loadedAi.push(formatted);
+          }
+        }
+
+        if (loadedAi.length > 0) {
+          setAiMessages((prev) => [prev[0], ...loadedAi]);
+        }
+        if (loadedAgent.length > 0) {
+          setAgentMessages(loadedAgent);
+        }
+        if (res.visitorInfo) {
+          setIsEscalated(true);
+        }
+        if (res.limitReached || res.aiMessageCount >= 4) {
+          setAiLimitReached(true);
+          setAiCount(res.aiMessageCount || 4);
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadHistory();
+    }
+  }, [isOpen, loadHistory]);
 
   const handleOpen = () => {
     setIsOpen(true);
     setUnreadCount(0);
   };
 
-  const sendMessage = () => {
+  // ── Send Message Logic ──────────────────────────────────────────────────
+  const sendMessage = async () => {
     const text = inputValue.trim();
     if (!text) return;
 
-    const userMsg = { id: Date.now(), from: "user", text, time: now() };
-    setMessages((prev) => [...prev, userMsg]);
+    const token = visitorTokenRef.current;
+    const userMsg = { id: `usr-${Date.now()}`, from: "user", text, time: now() };
+
     setInputValue("");
-    setIsTyping(true);
 
-    const delay = mode === "ai" ? 900 + text.length * 15 : 1200 + Math.random() * 1000;
+    if (mode === "ai") {
+      setAiMessages((prev) => [...prev, userMsg]);
+      setIsTyping(true);
 
-    setTimeout(() => {
-      setIsTyping(false);
-      const replyText =
-        mode === "ai"
-          ? getAIReply(text)
-          : AGENT_REPLIES[Math.floor(Math.random() * AGENT_REPLIES.length)];
+      try {
+        const res = await api.post("/api/chat/message", {
+          text,
+          visitorToken: token,
+        });
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          from: mode === "ai" ? "ai" : "agent",
-          text: replyText,
-          time: now(),
-        },
-      ]);
-    }, delay);
+        setIsTyping(false);
+
+        if (res?.success) {
+          if (res.visitorToken) {
+            visitorTokenRef.current = res.visitorToken;
+            sessionStorage.setItem("admify_visitor_token", res.visitorToken);
+          }
+
+          if (res.limitReached) {
+            setAiLimitReached(true);
+          }
+
+          const replyMsg = {
+            id: res.data?.reply?._id || `ai-${Date.now()}`,
+            from: "ai",
+            text: res.data?.reply?.text || res.warning || res.reply?.text,
+            time: now(),
+            isLimitWarning: Boolean(res.limitReached || res.warning),
+          };
+
+          setAiMessages((prev) => [...prev, replyMsg]);
+        } else {
+          setAiMessages((prev) => [
+            ...prev,
+            {
+              id: `err-${Date.now()}`,
+              from: "ai",
+              text: res?.message || "I apologize, but I am currently unable to process your request. Please try again or talk to a live agent.",
+              time: now(),
+            },
+          ]);
+        }
+      } catch (err) {
+        setIsTyping(false);
+        const errMsg =
+          err?.response?.status === 429
+            ? "Too many messages sent. Please wait a minute before asking another question."
+            : "An error occurred connecting to Admify AI. Please try again shortly.";
+        setAiMessages((prev) => [
+          ...prev,
+          { id: `err-${Date.now()}`, from: "ai", text: errMsg, time: now() },
+        ]);
+      }
+    } else {
+      // In Live Agent mode
+      setAgentMessages((prev) => [...prev, userMsg]);
+
+      try {
+        await api.post("/api/chat/visitor-reply", {
+          visitorToken: token,
+          text,
+        });
+      } catch (err) {
+        toast.error("Failed to deliver message to support desk.");
+      }
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -336,9 +401,76 @@ function ChatWidgetContent() {
     setIsTyping(false);
   };
 
+  // ── Live Agent Intake Form Submission ─────────────────────────────────────
+  const handleLiveAgentSubmit = async (e) => {
+    e.preventDefault();
+    const errors = {};
+
+    if (!fullName || fullName.trim().length < 2) {
+      errors.fullName = "Please enter your full name (at least 2 characters).";
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email.trim())) {
+      errors.email = "Please enter a valid email address.";
+    }
+
+    const phoneRegex = /^[\d+\-\s()]{7,25}$/;
+    if (!phone || !phoneRegex.test(phone.trim())) {
+      errors.phone = "Please enter a valid phone number (at least 7 digits).";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    setFormErrors({});
+    setIsConnectingLive(true);
+
+    try {
+      const token = visitorTokenRef.current;
+      const res = await api.post("/api/chat/live-agent-request", {
+        visitorToken: token,
+        fullName: fullName.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone.trim(),
+      });
+
+      if (res?.success) {
+        setIsEscalated(true);
+        setMode("agent");
+
+        // Initialize and bind socket
+        initVisitorSocket(token);
+
+        setAgentMessages([
+          {
+            id: `sys-${Date.now()}`,
+            from: "system",
+            text: `Support request created for ${fullName.trim()}. You are connected to the Admify Live Admissions Desk.`,
+            time: now(),
+          },
+          {
+            id: `agent-welcome-${Date.now()}`,
+            from: "agent",
+            text: `Hello ${fullName.trim()}! 👋 Thank you for reaching out. An admissions advisor has been notified and will join this live thread shortly. Feel free to type your question below!`,
+            time: now(),
+          },
+        ]);
+        toast.success("Connected to Admify Live Admissions Desk");
+      } else {
+        toast.error(res?.message || "Failed to initiate live support.");
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to connect to live agent.");
+    } finally {
+      setIsConnectingLive(false);
+    }
+  };
+
   return (
     <>
-      {/* ── Floating Button ─────────────────────────────── */}
       {/* ── Floating Button (Freely Draggable Anywhere) ─────────────────────────────── */}
       <AnimatePresence>
         {!isOpen && (
@@ -374,7 +506,6 @@ function ChatWidgetContent() {
                   {unreadCount}
                 </motion.span>
               )}
-              {/* Pulse ring */}
               <span className="absolute inset-0 rounded-full bg-cyan-400/30 animate-ping pointer-events-none" />
             </button>
           </motion.div>
@@ -395,7 +526,7 @@ function ChatWidgetContent() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 30 }}
             transition={{ type: "spring", stiffness: 350, damping: 30 }}
-            className="fixed bottom-24 right-6 z-[9999] w-[370px] max-w-[calc(100vw-1.5rem)] h-[580px] max-h-[calc(100vh-5rem)] flex flex-col rounded-3xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.7)] border border-slate-700/60 touch-none"
+            className="fixed bottom-24 right-6 z-[9999] w-[385px] max-w-[calc(100vw-1.5rem)] h-[610px] max-h-[calc(100vh-5rem)] flex flex-col rounded-3xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.7)] border border-slate-700/60 touch-none"
             style={{ background: "linear-gradient(180deg, #0f1a2e 0%, #0a1220 100%)" }}
           >
             {/* ── Header with Drag Handle ── */}
@@ -423,10 +554,10 @@ function ChatWidgetContent() {
                     <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-slate-900" />
                   </div>
                   <div>
-                    <h3 className="text-white font-bold text-sm leading-tight">Admify Support</h3>
+                    <h3 className="text-white font-bold text-sm leading-tight">Admify Live Support</h3>
                     <p className="text-green-400 text-[11px] font-semibold flex items-center gap-1">
                       <Circle className="w-2 h-2 fill-green-400" />
-                      Online • 24/7 Available
+                      Gemini 3.5 AI & Live Counselors
                     </p>
                   </div>
                 </div>
@@ -471,46 +602,98 @@ function ChatWidgetContent() {
               </div>
             </div>
 
-            {/* ── Agent connecting overlay ── */}
-            <AnimatePresence>
-              {agentConnecting && mode === "agent" && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-sm"
-                >
-                  <div className="w-16 h-16 rounded-full overflow-hidden mb-4 ring-4 ring-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
-                    <img
-                      src="https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah&backgroundColor=b6e3f4"
-                      alt="Agent"
-                    />
+            {/* ── Live Agent Intake Form View (if in agent mode and not yet escalated) ── */}
+            {mode === "agent" && !isEscalated ? (
+              <div className="flex-1 overflow-y-auto px-5 py-6 custom-scrollbar flex flex-col justify-center">
+                <div className="text-center mb-5">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-3">
+                    <Headphones className="w-6 h-6" />
                   </div>
-                  <p className="text-white font-bold mb-1">Connecting to Sarah...</p>
-                  <p className="text-slate-400 text-sm mb-4">Admissions Advisor</p>
-                  <div className="flex gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="w-2 h-2 bg-emerald-500 rounded-full"
-                        animate={{ scale: [1, 1.5, 1] }}
-                        transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.2 }}
-                      />
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <h4 className="text-white font-bold text-base">Connect to a Live Advisor</h4>
+                  <p className="text-slate-400 text-xs mt-1">
+                    Please provide your contact information so an admissions advisor can review your inquiry.
+                  </p>
+                </div>
 
-            {/* ── Messages area ── */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-0 custom-scrollbar">
-              {/* Mode info banner */}
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={mode}
-                  initial={{ opacity: 0, y: -5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
+                <form onSubmit={handleLiveAgentSubmit} className="space-y-3.5">
+                  <div>
+                    <label className="block text-slate-300 text-xs font-medium mb-1">
+                      Full Name <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="e.g. Sarah Jenkins"
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                      />
+                    </div>
+                    {formErrors.fullName && (
+                      <p className="text-[11px] text-red-400 mt-1">{formErrors.fullName}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 text-xs font-medium mb-1">
+                      Email Address <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="e.g. sarah@example.com"
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                      />
+                    </div>
+                    {formErrors.email && (
+                      <p className="text-[11px] text-red-400 mt-1">{formErrors.email}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 text-xs font-medium mb-1">
+                      Phone Number <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="e.g. +1 555 123 4567"
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition"
+                      />
+                    </div>
+                    {formErrors.phone && (
+                      <p className="text-[11px] text-red-400 mt-1">{formErrors.phone}</p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isConnectingLive}
+                    className="w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+                  >
+                    {isConnectingLive ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Connecting...
+                      </>
+                    ) : (
+                      <>
+                        <Headphones className="w-4 h-4" />
+                        Connect to Live Agent
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              /* ── Standard Messages Area ── */
+              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-0 custom-scrollbar">
+                {/* Mode info banner */}
+                <div
                   className={`flex items-center gap-2 text-[11px] rounded-xl px-3 py-2 mb-4 border ${
                     mode === "ai"
                       ? "bg-primary-900/30 border-primary-700/30 text-primary-300"
@@ -520,111 +703,80 @@ function ChatWidgetContent() {
                   {mode === "ai" ? (
                     <>
                       <Sparkles className="w-3 h-3 flex-shrink-0" />
-                      AI powered by Admify Intelligence · Instant replies
+                      Powered by Google Gemini · 4 Free Inquiries
                     </>
                   ) : (
                     <>
                       <Clock className="w-3 h-3 flex-shrink-0" />
-                      Live human advisor · Avg. wait &lt; 2 min · Available 24/7
+                      Admify Live Support Desk · Real-time Admin Desk
                     </>
                   )}
-                </motion.div>
-              </AnimatePresence>
+                </div>
 
-              {/* Message list */}
-              {messages.map((msg) => (
-                <MessageBubble key={msg.id} msg={msg} mode={mode} />
-              ))}
-
-              {/* Typing indicator */}
-              {isTyping && (mode === "ai" ? <TypingIndicator /> : <AgentTypingIndicator />)}
-
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* ── Quick replies ── */}
-            {messages.length <= 1 && !isTyping && (
-              <div className="px-4 pb-2 flex gap-2 overflow-x-auto custom-scrollbar flex-shrink-0">
-                {(mode === "ai"
-                  ? ["Best universities for CS?", "Scholarship matches", "How to apply?", "Check deadlines"]
-                  : ["Talk about my SOP", "I need visa help", "Review my profile", "Scholarship advice"]
-                ).map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => {
-                      setInputValue(q);
-                      setTimeout(() => {
-                        const fakeEvent = { preventDefault: () => {} };
-                        const text = q;
-                        const userMsg = { id: Date.now(), from: "user", text, time: now() };
-                        setMessages((prev) => [...prev, userMsg]);
-                        setInputValue("");
-                        setIsTyping(true);
-                        const delay = mode === "ai" ? 900 + text.length * 15 : 1500;
-                        setTimeout(() => {
-                          setIsTyping(false);
-                          const replyText =
-                            mode === "ai"
-                              ? getAIReply(text)
-                              : AGENT_REPLIES[Math.floor(Math.random() * AGENT_REPLIES.length)];
-                          setMessages((prev) => [
-                            ...prev,
-                            { id: Date.now() + 1, from: mode === "ai" ? "ai" : "agent", text: replyText, time: now() },
-                          ]);
-                        }, delay);
-                      }, 0);
-                    }}
-                    className="whitespace-nowrap text-[11px] font-medium px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700/50 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex-shrink-0"
-                  >
-                    {q}
-                  </button>
+                {/* Message list */}
+                {messages.map((msg) => (
+                  <MessageBubble
+                    key={msg.id}
+                    msg={msg}
+                    mode={mode}
+                    onEscalateLive={() => switchMode("agent")}
+                  />
                 ))}
+
+                {/* Typing indicator */}
+                {isTyping && (mode === "ai" ? <TypingIndicator /> : <AgentTypingIndicator />)}
+
+                <div ref={messagesEndRef} />
               </div>
             )}
 
-            {/* ── Input bar ── */}
-            <div className="flex-shrink-0 border-t border-slate-700/50 bg-slate-900/80 backdrop-blur-sm px-4 py-3">
-              <div className="flex items-end gap-2">
-                <div className="flex-1 bg-slate-800/80 border border-slate-700/50 rounded-2xl px-4 py-2.5 focus-within:border-primary-500/50 focus-within:ring-2 focus-within:ring-primary-500/20 transition-all">
-                  <textarea
-                    ref={inputRef}
-                    rows={1}
-                    value={inputValue}
-                    onChange={(e) => {
-                      setInputValue(e.target.value);
-                      e.target.style.height = "auto";
-                      e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px";
-                    }}
-                    onKeyDown={handleKeyDown}
-                    placeholder={
-                      mode === "ai"
-                        ? "Ask Admify AI anything..."
-                        : "Message your advisor..."
-                    }
-                    className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 resize-none outline-none leading-snug max-h-24 custom-scrollbar"
-                    style={{ height: "20px" }}
-                  />
+            {/* ── Input bar (shown when in AI mode OR when escalated in Live mode) ── */}
+            {(mode === "ai" || isEscalated) && (
+              <div className="flex-shrink-0 border-t border-slate-700/50 bg-slate-900/80 backdrop-blur-sm px-4 py-3">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 bg-slate-800/80 border border-slate-700/50 rounded-2xl px-4 py-2.5 focus-within:border-primary-500/50 focus-within:ring-2 focus-within:ring-primary-500/20 transition-all">
+                    <textarea
+                      ref={inputRef}
+                      rows={1}
+                      value={inputValue}
+                      onChange={(e) => {
+                        setInputValue(e.target.value);
+                        e.target.style.height = "auto";
+                        e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px";
+                      }}
+                      onKeyDown={handleKeyDown}
+                      placeholder={
+                        mode === "ai"
+                          ? aiLimitReached
+                            ? "AI limit reached. Talk to a Live Agent above."
+                            : "Ask Admify AI anything about study abroad..."
+                          : "Message your live admissions advisor..."
+                      }
+                      className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 resize-none outline-none leading-snug max-h-24 custom-scrollbar"
+                      style={{ height: "20px" }}
+                    />
+                  </div>
+                  <motion.button
+                    whileHover={{ scale: 1.07 }}
+                    whileTap={{ scale: 0.93 }}
+                    onClick={sendMessage}
+                    disabled={!inputValue.trim()}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
+                      inputValue.trim()
+                        ? mode === "ai"
+                          ? "bg-gradient-to-br from-primary-500 to-blue-600 shadow-lg shadow-primary-500/30 text-white cursor-pointer"
+                          : "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30 text-white cursor-pointer"
+                        : "bg-slate-800 text-slate-600 cursor-not-allowed"
+                    }`}
+                  >
+                    <Send className="w-4 h-4" />
+                  </motion.button>
                 </div>
-                <motion.button
-                  whileHover={{ scale: 1.07 }}
-                  whileTap={{ scale: 0.93 }}
-                  onClick={sendMessage}
-                  disabled={!inputValue.trim()}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
-                    inputValue.trim()
-                      ? mode === "ai"
-                        ? "bg-gradient-to-br from-primary-500 to-blue-600 shadow-lg shadow-primary-500/30 text-white"
-                        : "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30 text-white"
-                      : "bg-slate-800 text-slate-600 cursor-not-allowed"
-                  }`}
-                >
-                  <Send className="w-4 h-4" />
-                </motion.button>
+                <p className="text-center text-[10px] text-slate-500 mt-2">
+                  Admify Global Study Platform · Encrypted Visitor Session
+                </p>
               </div>
-              <p className="text-center text-[10px] text-slate-600 mt-2">
-                Powered by Admify Intelligence · End-to-end encrypted
-              </p>
-            </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -667,12 +819,14 @@ export default function ChatWidget() {
     pathname.startsWith("/login") ||
     pathname.startsWith("/register");
 
-  // Hide chat widget completely on student dashboard, admin, agent portals, auth pages, or while intro is active
+  // Hide chat widget completely on student dashboard, admin, agent, agency, and university rep portals, auth pages, or while intro is active
   if (
     pathname.startsWith("/student") ||
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/admin") ||
     pathname.startsWith("/agent") ||
+    pathname.startsWith("/agency") ||
+    pathname.startsWith("/university-rep") ||
     isAuthPage ||
     introActive
   ) {

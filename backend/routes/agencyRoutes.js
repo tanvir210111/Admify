@@ -38,6 +38,7 @@ import {
 } from '../controllers/agencyController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { resolveAuthenticatedAgency } from '../utils/agencyResolver.js';
+import { handleAttachmentUpload } from '../middleware/attachmentMiddleware.js';
 
 const router = express.Router();
 
@@ -148,7 +149,7 @@ router.delete('/university-connections/:id', requireVerifiedAgency, cancelAgency
 
 // Messaging
 router.get('/messages', requireVerifiedAgency, getAgencyMessages);
-router.post('/messages', requireVerifiedAgency, sendAgencyMessage);
+router.post('/messages', requireVerifiedAgency, handleAttachmentUpload('attachment'), sendAgencyMessage);
 
 // Documents
 router.get('/documents', requireVerifiedAgency, getAgencyDocuments);

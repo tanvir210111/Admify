@@ -13,6 +13,10 @@ const client = {
     const res = await libApi.put(url, body, config);
     return { data: res, ...res };
   },
+  patch: async (url, body, config) => {
+    const res = await libApi.patch(url, body, config);
+    return { data: res, ...res };
+  },
   delete: async (url, config) => {
     const res = await libApi.delete(url, config);
     return { data: res, ...res };

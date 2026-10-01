@@ -14,6 +14,12 @@ import Task from '../models/Task.js';
 import AuditLog from '../models/AuditLog.js';
 import AgentSeenItem from '../models/AgentSeenItem.js';
 import devStore from '../utils/devStore.js';
+import {
+  resolveConversation,
+  createMessage,
+  verifyMessagingPermission,
+  getUserById,
+} from '../services/messagingService.js';
 
 // ── Helper: Agent Seen Tracking & Counts ─────────────────────────────────────
 export const isAgentDocSeen = (entityType, doc, seenItems = []) => {
@@ -89,7 +95,10 @@ export const markAgentEntityAsSeenHelper = async (agentId, entityType, entityId)
       );
     } else if (['chat_message', 'message', 'messages'].includes(entityType)) {
       await ChatMessage.updateMany(
-        { $or: [{ sessionId: entityId }, { _id: entityId }], $or: [{ user: agentId }, { receiver: agentId }] },
+        {
+          $or: [{ sessionId: entityId }, { _id: entityId }, { conversationId: entityId }, { user: entityId }, { senderId: entityId }],
+          $and: [{ $or: [{ user: agentId }, { receiver: agentId }, { senderId: agentId }, { receiverId: agentId }] }]
+        },
         { isSeenByAgent: true, agentSeenAt: now }
       );
     } else if (['report', 'reports'].includes(entityType)) {
@@ -1004,12 +1013,21 @@ export const getAgentMessages = async (req, res, next) => {
 
     if (mongoose.connection.readyState === 1) {
       messages = await ChatMessage.find({
-        $or: [{ user: req.user._id }, { receiver: req.user._id }],
+        $or: [
+          { user: req.user._id },
+          { receiver: req.user._id },
+          { senderId: req.user._id },
+          { receiverId: req.user._id },
+        ],
       }).sort({ createdAt: 1 });
     } else {
       const db = devStore.read();
       messages = (db.chatMessages || []).filter(
-        (m) => m.user?.toString() === agentIdStr || m.receiver?.toString() === agentIdStr
+        (m) =>
+          m.user?.toString() === agentIdStr ||
+          m.receiver?.toString() === agentIdStr ||
+          m.senderId?.toString() === agentIdStr ||
+          m.receiverId?.toString() === agentIdStr
       );
     }
 
@@ -1028,35 +1046,59 @@ export const getAgentMessages = async (req, res, next) => {
 // @access  Private (Agent)
 export const sendAgentMessage = async (req, res, next) => {
   try {
-    const { receiverId, text, sessionId } = req.body;
-    if (!text || !text.trim()) {
-      return res.status(400).json({ success: false, message: 'Message text is required.' });
+    const { receiverId, text, context } = req.body;
+    if (!receiverId) {
+      return res.status(400).json({ success: false, message: 'Recipient ID (receiverId) is required.' });
+    }
+    const attachments = req.file
+      ? [
+          {
+            originalName: req.file.originalname,
+            filename: req.file.filename,
+            mimeType: req.file.mimetype,
+            size: req.file.size,
+            path: req.file.path,
+          },
+        ]
+      : [];
+
+    if ((!text || !text.trim()) && attachments.length === 0) {
+      return res.status(400).json({ success: false, message: 'Message must contain either text or an attachment.' });
     }
 
-    const payload = {
-      user: req.user._id,
-      sender: 'agent',
-      receiver: receiverId || null,
-      text: text.trim(),
-      sessionId: sessionId || `SESSION-AGT-${req.user._id}-${Date.now()}`,
-      createdAt: new Date(),
-    };
-
-    let newMsg = null;
-    if (mongoose.connection.readyState === 1) {
-      newMsg = await ChatMessage.create(payload);
-    } else {
-      newMsg = await devStore.addChatMessage(payload);
+    const receiverUser = await getUserById(receiverId);
+    if (!receiverUser) {
+      return res.status(404).json({ success: false, message: 'Recipient user not found.' });
     }
+
+    // Verify relationship authorization
+    const permission = await verifyMessagingPermission(req.user, receiverUser);
+    if (!permission.authorized) {
+      return res.status(403).json({ success: false, message: permission.message });
+    }
+
+    // Resolve or retrieve persistent 1-to-1 conversation
+    const conversation = await resolveConversation(req.user, receiverUser, context);
+
+    const newMsg = await createMessage({
+      conversationId: conversation._id,
+      senderUser: req.user,
+      text: text ? text.trim() : '',
+      attachments,
+    });
 
     return res.status(201).json({
       success: true,
-      data: { message: newMsg },
+      data: { message: newMsg, conversationId: conversation._id },
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };
+
 
 // ── 8. Tasks & Deadlines ─────────────────────────────────────────────────────
 // @desc    Get personal tasks and deadlines for this agent
@@ -1698,8 +1740,17 @@ export const markAgentEntityAsSeen = async (req, res, next) => {
           });
         }
       } else if (['chat_message', 'message', 'messages'].includes(entityType)) {
-        const msg = await ChatMessage.findOne({ $or: [{ sessionId: entityId }, { _id: entityId }] });
-        if (msg && msg.user?.toString() !== aidStr && msg.receiver?.toString() !== aidStr) {
+        const msg = await ChatMessage.findOne({
+          $or: [
+            { sessionId: entityId },
+            { _id: entityId },
+            { conversationId: entityId },
+            { user: entityId },
+            { senderId: entityId },
+            { receiverId: entityId }
+          ]
+        });
+        if (msg && msg.user?.toString() !== aidStr && msg.receiver?.toString() !== aidStr && msg.senderId?.toString() !== aidStr && msg.receiverId?.toString() !== aidStr) {
           return res.status(403).json({
             success: false,
             message: 'Forbidden: You are not a participant in this conversation',

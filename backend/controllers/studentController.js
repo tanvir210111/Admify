@@ -60,7 +60,12 @@ export const markStudentEntityAsSeenHelper = async (studentId, entityType, entit
       );
     } else if (['chat_message', 'message', 'messages', 'support'].includes(entityType)) {
       await ChatMessage.updateMany(
-        { $or: [{ sessionId: entityId }, { _id: entityId }], user: studentId },
+        {
+          $and: [
+            { $or: [{ conversationId: entityId }, { sessionId: entityId }, { _id: entityId }] },
+            { $or: [{ user: studentId }, { receiverId: studentId }, { receiver: studentId }] },
+          ],
+        },
         { isSeenByStudent: true, studentSeenAt: now }
       );
     } else if (['report', 'reports'].includes(entityType)) {
@@ -116,7 +121,10 @@ export const calculateStudentUnseenCounts = async (studentId) => {
     ] = await Promise.all([
       Application.find({ user: studentId }).lean(),
       AgencyServiceOrder.find({ user: studentId }).lean(),
-      ChatMessage.find({ user: studentId, sender: { $ne: 'user' } }).lean(),
+      ChatMessage.find({
+        $or: [{ user: studentId }, { receiverId: studentId }, { receiver: studentId }],
+        sender: { $nin: ['user', 'student'] },
+      }).lean(),
       Report.find({ reportedBy: studentId }).lean(),
       Notification.find({ user: studentId, read: false }).lean(),
     ]);
@@ -137,8 +145,15 @@ export const calculateStudentUnseenCounts = async (studentId) => {
       (o) => o.user?.toString() === uidStr
     );
     allMessages = (db.chatMessages || []).filter(
-      (m) => (m.user?.toString() === uidStr || !m.user) && m.sender !== 'user'
+      (m) =>
+        (m.user?.toString() === uidStr ||
+          m.receiverId?.toString() === uidStr ||
+          m.receiver?.toString() === uidStr ||
+          !m.user) &&
+        m.sender !== 'user' &&
+        m.sender !== 'student'
     );
+
     allReports = (db.reports || []).filter(
       (r) => r.reportedBy?.toString() === uidStr
     );

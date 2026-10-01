@@ -243,9 +243,11 @@ const getInitialData = () => {
     auditLogs: [],
     platformSettings: DEFAULT_PLATFORM_SETTINGS,
     chatMessages: [],
+    conversations: [],
     announcements: [],
   };
 };
+
 
 class DevStore {
   constructor() {
@@ -2287,12 +2289,30 @@ class DevStore {
       isSeenByStudent: data.sender === 'user' ? true : Boolean(data.isSeenByStudent),
       ...data,
       user: data.user?.toString(),
-      createdAt: new Date().toISOString(),
+      senderId: data.senderId?.toString() || data.user?.toString(),
+      receiverId: data.receiverId?.toString() || data.receiver?.toString(),
+      receiver: data.receiverId?.toString() || data.receiver?.toString(),
+      createdAt: data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     db.chatMessages.push(newMsg);
     this.write(db);
     return newMsg;
+  }
+
+  async findConversations(userId) {
+    const db = this.read();
+    if (!Array.isArray(db.conversations)) return [];
+    const uidStr = userId.toString();
+    return db.conversations.filter((c) =>
+      (c.participants || []).some((p) => (p.user?._id || p.user)?.toString() === uidStr)
+    );
+  }
+
+  async findConversationByParticipantKey(key) {
+    const db = this.read();
+    if (!Array.isArray(db.conversations)) return null;
+    return db.conversations.find((c) => c.participantKey === key) || null;
   }
 
   // ── Applications ───────────────────────────────────────────────────────────

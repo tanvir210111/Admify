@@ -24,6 +24,12 @@ import Task from '../models/Task.js';
 import devStore from '../utils/devStore.js';
 import emailService from '../services/emailService.js';
 import { getActiveCreditsBreakdown } from './walletController.js';
+import {
+  getSupervisoryConversations,
+  getSupervisoryConversationTimeline,
+  getSupervisoryAttachmentStream,
+} from '../services/messagingService.js';
+import { emitToVisitor } from '../socket/socketServer.js';
 
 // ── Audit Logging Utility ───────────────────────────────────────────────────
 export const recordAuditLog = async ({
@@ -3332,6 +3338,15 @@ export const replyAdminSupportConversation = async (req, res, next) => {
       });
     }
 
+    try {
+      emitToVisitor(sessionId, 'admin_support_reply', {
+        sessionId,
+        message: saved,
+      });
+    } catch (sockErr) {
+      console.warn('[Socket Visitor Emit Error]', sockErr.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Support reply sent',
@@ -6225,6 +6240,78 @@ export const deleteAgencyVerification = async (req, res, next) => {
       });
     }
   } catch (error) {
+    next(error);
+  }
+};
+
+// ── 27. Supervisory Messaging Monitoring (Read-Only) ──────────────────────────
+export const getAdminSupervisoryConversations = async (req, res, next) => {
+  try {
+    const result = await getSupervisoryConversations(req.query, req.user);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    next(error);
+  }
+};
+
+export const getAdminSupervisoryConversationTimeline = async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const result = await getSupervisoryConversationTimeline(conversationId, req.user);
+
+    // Audit log for supervisory inspection
+    await recordAuditLog({
+      req,
+      action: 'SUPERVISORY_CONVERSATION_VIEWED',
+      module: 'supervisory_messaging',
+      targetType: 'Conversation',
+      targetId: conversationId,
+      targetName: `Conversation ${conversationId}`,
+      reason: 'Admin compliance oversight',
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    next(error);
+  }
+};
+
+export const getAdminSupervisoryAttachment = async (req, res, next) => {
+  try {
+    const { conversationId, filename } = req.params;
+    const streamInfo = await getSupervisoryAttachmentStream(conversationId, filename, req.user);
+
+    // Audit log for attachment access
+    await recordAuditLog({
+      req,
+      action: 'SUPERVISORY_ATTACHMENT_VIEWED',
+      module: 'supervisory_messaging',
+      targetType: 'Attachment',
+      targetId: filename,
+      targetName: filename,
+      reason: 'Admin compliance attachment review',
+    });
+
+    res.setHeader('Content-Type', streamInfo.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(streamInfo.originalName)}"`);
+
+    return res.sendFile(streamInfo.filePath);
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };

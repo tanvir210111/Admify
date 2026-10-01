@@ -341,21 +341,48 @@ You have completed ${currentCount} of 4 required AI inquiries (${needed} remaini
         setIsTyping(false);
       }
     } else {
-      // In AI Mode: Generate Bot Response
-      setTimeout(() => {
-        const responseData = generateBotReply(query, user);
-        const botMessage = {
-          id: `bot-${Date.now()}`,
-          sender: "bot",
-          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          title: responseData.title,
-          text: responseData.text,
-        };
-        setMessages((prev) => [...prev, botMessage]);
-        setIsTyping(false);
-      }, 700);
+      // In AI Mode: Call Real Gemini API with intelligent fallback
+      try {
+        const historyForAi = messages.slice(-4).map((m) => ({
+          sender: m.sender === "user" ? "user" : "ai",
+          text: m.text,
+        }));
+        const res = await api.post("/api/ai/chat", {
+          prompt: query.trim(),
+          conversationHistory: historyForAi,
+        });
+
+        const replyText = res?.data?.reply || res?.reply;
+        if (replyText) {
+          const botMessage = {
+            id: `bot-${Date.now()}`,
+            sender: "bot",
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            title: "Admify AI Advisor",
+            text: replyText,
+          };
+          setMessages((prev) => [...prev, botMessage]);
+          setIsTyping(false);
+          return;
+        }
+      } catch (aiErr) {
+        console.warn("AI chat API error, using intelligent fallback:", aiErr.message);
+      }
+
+      // Fallback generator if offline
+      const responseData = generateBotReply(query, user);
+      const botMessage = {
+        id: `bot-${Date.now()}`,
+        sender: "bot",
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        title: responseData.title,
+        text: responseData.text,
+      };
+      setMessages((prev) => [...prev, botMessage]);
+      setIsTyping(false);
     }
   };
+
 
   const handleClearChat = () => {
     setMessages(INITIAL_MESSAGES);

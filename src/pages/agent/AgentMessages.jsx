@@ -10,11 +10,25 @@ import {
   RefreshCw,
   Clock,
   CheckCheck,
+  Mic,
+  Circle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../services/api";
 import toast from "react-hot-toast";
 import { useAgentBadges } from "../../context/AgentBadgeContext";
+import MessageBubble from "../../components/chat/MessageBubble";
+import MessageAttachmentPicker from "../../components/chat/MessageAttachmentPicker";
+import VoiceRecorder from "../../components/chat/VoiceRecorder";
+import {
+  initSocket,
+  getSocket,
+  joinConversationRoom,
+  leaveConversationRoom,
+  emitTypingStart,
+  emitTypingStop,
+  fetchPresence,
+} from "../../lib/socket";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -28,12 +42,19 @@ export default function AgentMessages() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeContact, setActiveContact] = useState(null);
+  const [activeConversationDoc, setActiveConversationDoc] = useState(null);
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [contactPresence, setContactPresence] = useState("offline");
+  const [isRecording, setIsRecording] = useState(false);
   const { sidebarCounts, markEntityAsSeen } = useAgentBadges();
 
   const chatEndRef = useRef(null);
+  const typingTimerRef = useRef(null);
 
   const fetchData = async () => {
     try {
@@ -66,6 +87,123 @@ export default function AgentMessages() {
   }, []);
 
   useEffect(() => {
+    if (!activeContact?._id) return;
+    api.post("/api/conversations/direct", { receiverId: activeContact._id }).then((res) => {
+      const conv = res?.data?.data?.conversation || res?.data?.conversation;
+      if (conv) {
+        setActiveConversationDoc(conv);
+        api.post(`/api/conversations/${conv._id}/read`).catch(() => {});
+      }
+    }).catch(() => {});
+  }, [activeContact?._id]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("admify_token") || localStorage.getItem("token");
+    if (!token || !activeConversationDoc?._id) return;
+
+    const socket = initSocket(token);
+    if (!socket) return;
+
+    const convId = activeConversationDoc._id;
+    joinConversationRoom(socket, convId);
+
+    if (activeContact?._id) {
+      fetchPresence(activeContact._id).then((st) => setContactPresence(st));
+    }
+
+    const handleIncomingNewMessage = (msg) => {
+      if (!msg) return;
+      if (msg.conversationId === convId) {
+        setMessages((prev) => {
+          if (prev.some((m) => m._id === msg._id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    };
+
+    const handleIncomingMessageEdited = (msg) => {
+      if (!msg) return;
+      setMessages((prev) => prev.map((m) => (m._id === msg._id ? msg : m)));
+    };
+
+    const handleIncomingMessageDeleted = ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === messageId
+            ? { ...m, isDeleted: true, text: "This message was deleted", attachments: [] }
+            : m
+        )
+      );
+    };
+
+    const handleIncomingReactionUpdated = ({ messageId, reactions }) => {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
+      );
+    };
+
+    const handleIncomingUserTyping = ({ conversationId, userId }) => {
+      if (conversationId === convId && userId === activeContact?._id) {
+        setIsOtherTyping(true);
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = setTimeout(() => setIsOtherTyping(false), 3500);
+      }
+    };
+
+    const handleIncomingUserStoppedTyping = ({ conversationId, userId }) => {
+      if (conversationId === convId && userId === activeContact?._id) {
+        setIsOtherTyping(false);
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      }
+    };
+
+    const handleIncomingPresenceChanged = ({ userId, status }) => {
+      if (userId === activeContact?._id) {
+        setContactPresence(status);
+      }
+    };
+
+    const handleReconnect = () => {
+      joinConversationRoom(socket, convId);
+      api.get(`/api/conversations/${convId}/messages`).then((res) => {
+        const msgs = res?.data?.data?.messages || res?.data?.messages;
+        if (Array.isArray(msgs)) {
+          setMessages((prev) => {
+            const map = new Map();
+            prev.forEach((m) => map.set(m._id, m));
+            msgs.forEach((m) => map.set(m._id, m));
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            );
+          });
+        }
+      }).catch(() => {});
+    };
+
+    socket.on("new_message", handleIncomingNewMessage);
+    socket.on("message_edited", handleIncomingMessageEdited);
+    socket.on("message_deleted", handleIncomingMessageDeleted);
+    socket.on("message_reaction_updated", handleIncomingReactionUpdated);
+    socket.on("user_typing", handleIncomingUserTyping);
+    socket.on("user_stopped_typing", handleIncomingUserStoppedTyping);
+    socket.on("user_presence_changed", handleIncomingPresenceChanged);
+    socket.on("connect", handleReconnect);
+
+    return () => {
+      leaveConversationRoom(socket, convId);
+      socket.off("new_message", handleIncomingNewMessage);
+      socket.off("message_edited", handleIncomingMessageEdited);
+      socket.off("message_deleted", handleIncomingMessageDeleted);
+      socket.off("message_reaction_updated", handleIncomingReactionUpdated);
+      socket.off("user_typing", handleIncomingUserTyping);
+      socket.off("user_stopped_typing", handleIncomingUserStoppedTyping);
+      socket.off("user_presence_changed", handleIncomingPresenceChanged);
+      socket.off("connect", handleReconnect);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    };
+  }, [activeConversationDoc?._id, activeContact?._id]);
+
+  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeContact]);
 
@@ -75,24 +213,94 @@ export default function AgentMessages() {
     }
   }, [activeContact, markEntityAsSeen]);
 
+  const handleFileSelect = (file) => {
+    setAttachmentFile(file);
+    if (file.type?.startsWith("image/")) {
+      setAttachmentPreview(URL.createObjectURL(file));
+    } else {
+      setAttachmentPreview(null);
+    }
+  };
+
+  const handleClearAttachment = () => {
+    if (attachmentPreview) {
+      URL.revokeObjectURL(attachmentPreview);
+    }
+    setAttachmentFile(null);
+    setAttachmentPreview(null);
+  };
+
+  const handleSaveEdit = async (msgId, newText) => {
+    const targetMsg = messages.find((m) => m._id === msgId);
+    const convId = activeConversationDoc?._id || targetMsg?.conversationId || targetMsg?.sessionId;
+    if (!convId) return;
+
+    const res = await api.patch(`/api/conversations/${convId}/messages/${msgId}`, {
+      text: newText,
+    });
+    const updated = res?.data?.data?.message || res?.data?.message;
+    if (updated) {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === msgId ? updated : m))
+      );
+      toast.success("Message edited successfully.");
+    }
+  };
+
+  const handleToggleReaction = async (msgId, emoji) => {
+    const targetMsg = messages.find((m) => m._id === msgId);
+    const convId = activeConversationDoc?._id || targetMsg?.conversationId || targetMsg?.sessionId;
+    if (!convId) return;
+
+    try {
+      await api.post(`/api/conversations/${convId}/messages/${msgId}/reactions`, { emoji });
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || "Failed to update reaction.");
+    }
+  };
+
+  const handleTextChange = (e) => {
+    setInputText(e.target.value);
+    if (activeConversationDoc?._id) {
+      emitTypingStart(activeConversationDoc._id);
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeContact) return;
+    if ((!inputText.trim() && !attachmentFile) || !activeContact) return;
+
+    if (activeConversationDoc?._id) {
+      emitTypingStop(activeConversationDoc._id);
+    }
 
     try {
       setSending(true);
-      const res = await api.post("/api/agent/messages", {
-        receiverId: activeContact._id,
-        text: inputText.trim(),
-      });
+      let res;
+      if (attachmentFile) {
+        const formData = new FormData();
+        formData.append("receiverId", activeContact._id);
+        if (inputText.trim()) formData.append("text", inputText.trim());
+        formData.append("attachment", attachmentFile);
+        res = await api.post("/api/agent/messages", formData);
+      } else {
+        res = await api.post("/api/agent/messages", {
+          receiverId: activeContact._id,
+          text: inputText.trim(),
+        });
+      }
 
-      if (res?.data?.success) {
+      const newMsg = res?.data?.data?.message || res?.data?.message;
+      if (newMsg) {
         setInputText("");
-        // append locally
-        setMessages((prev) => [...prev, res.data.data.message]);
+        handleClearAttachment();
+        setMessages((prev) => {
+          if (prev.some((m) => m._id === newMsg._id)) return prev;
+          return [...prev, newMsg];
+        });
       }
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to send message.");
+      toast.error(err?.response?.data?.message || err?.message || "Failed to send message.");
     } finally {
       setSending(false);
     }
@@ -104,8 +312,8 @@ export default function AgentMessages() {
     const agentId = user?._id?.toString();
     const contactId = activeContact._id?.toString();
 
-    const mUser = (m.user?._id || m.user)?.toString();
-    const mReceiver = (m.receiver?._id || m.receiver)?.toString();
+    const mUser = (m.senderId?._id || m.senderId || m.user?._id || m.user)?.toString();
+    const mReceiver = (m.receiverId?._id || m.receiverId || m.receiver?._id || m.receiver)?.toString();
 
     return (
       (mUser === agentId && mReceiver === contactId) ||
@@ -189,7 +397,7 @@ export default function AgentMessages() {
                 const contactId = contact._id?.toString();
                 const hasUnseen = messages.some(
                   (m) =>
-                    (m.user?._id || m.user)?.toString() === contactId &&
+                    (m.senderId?._id || m.senderId || m.user?._id || m.user)?.toString() === contactId &&
                     m.isSeenByAgent === false
                 );
 
@@ -241,7 +449,14 @@ export default function AgentMessages() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">{activeContact.name}</h3>
-                    <p className="text-[11px] text-slate-400">{activeContact.email}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-[11px] text-slate-400">{activeContact.email}</p>
+                      <span className="text-slate-600">•</span>
+                      <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <span className={`w-2 h-2 rounded-full ${contactPresence === "online" ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
+                        {contactPresence === "online" ? "Online" : "Offline"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -261,56 +476,83 @@ export default function AgentMessages() {
                     </p>
                   </div>
                 ) : (
-                  activeThread.map((msg, idx) => {
-                    const isMe = (msg.user?._id || msg.user)?.toString() === user?._id?.toString();
-                    return (
-                      <div
-                        key={idx}
-                        className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
-                      >
-                        <div
-                          className={`max-w-[75%] p-3 rounded-2xl text-xs leading-relaxed ${
-                            isMe
-                              ? "bg-violet-600 text-white rounded-br-xs"
-                              : "bg-slate-900 border border-white/10 text-slate-200 rounded-bl-xs"
-                          }`}
-                        >
-                          <p>{msg.text}</p>
-                        </div>
-                        <span className="text-[9px] text-slate-500 mt-1 px-1">
-                          {new Date(msg.createdAt || Date.now()).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                    );
-                  })
+                  activeThread.map((msg, idx) => (
+                    <MessageBubble
+                      key={msg._id || idx}
+                      msg={msg}
+                      currentUserId={user?._id}
+                      senderAvatar={null}
+                      senderName={activeContact?.name}
+                      themeColor="violet"
+                      onSaveEdit={handleSaveEdit}
+                      onToggleReaction={handleToggleReaction}
+                    />
+                  ))
+                )}
+                {isOtherTyping && (
+                  <div className="px-4 py-1 text-xs text-violet-400 italic flex items-center gap-1.5 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-ping" />
+                    <span>{activeContact.name} is typing...</span>
+                  </div>
                 )}
                 <div ref={chatEndRef} />
               </div>
 
-              {/* Message Input */}
-              <form
-                onSubmit={handleSendMessage}
-                className="p-3 border-t border-white/10 flex gap-2 bg-slate-900/40"
-              >
-                <input
-                  type="text"
-                  placeholder={`Write guidance message to ${activeContact.name}...`}
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  className="flex-1 px-4 py-2 rounded-xl text-xs bg-slate-900 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
-                />
-                <button
-                  type="submit"
-                  disabled={sending || !inputText.trim()}
-                  className="px-4 py-2 rounded-xl font-bold bg-violet-600 hover:bg-violet-500 text-white text-xs transition-colors flex items-center gap-1.5 disabled:opacity-40"
+              {/* Message Input or Voice Recorder */}
+              {isRecording ? (
+                <div className="p-3 border-t border-white/10 bg-slate-900/40">
+                  <VoiceRecorder
+                    onRecordingComplete={(audioFile) => {
+                      setAttachmentFile(audioFile);
+                      setIsRecording(false);
+                      toast.success("Voice note attached. Click Send to deliver.");
+                    }}
+                    onCancel={() => setIsRecording(false)}
+                    disabled={sending}
+                  />
+                </div>
+              ) : (
+                <form
+                  onSubmit={handleSendMessage}
+                  className="relative p-3 border-t border-white/10 flex items-center gap-2 bg-slate-900/40"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  Send
-                </button>
-              </form>
+                  <MessageAttachmentPicker
+                    attachment={attachmentFile}
+                    previewUrl={attachmentPreview}
+                    onSelect={handleFileSelect}
+                    onClear={handleClearAttachment}
+                    disabled={sending}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsRecording(true)}
+                    disabled={sending}
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition-colors shrink-0"
+                    title="Record Voice Note"
+                  >
+                    <Mic className="w-4 h-4 text-violet-400" />
+                  </button>
+                  <input
+                    type="text"
+                    placeholder={
+                      attachmentFile
+                        ? "Add an optional caption..."
+                        : `Write guidance message to ${activeContact.name}...`
+                    }
+                    value={inputText}
+                    onChange={handleTextChange}
+                    className="flex-1 px-4 py-2 rounded-xl text-xs bg-slate-900 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={sending || (!inputText.trim() && !attachmentFile)}
+                    className="px-4 py-2 rounded-xl font-bold bg-violet-600 hover:bg-violet-500 text-white text-xs transition-colors flex items-center gap-1.5 disabled:opacity-40 shrink-0"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Send
+                  </button>
+                </form>
+              )}
             </>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">

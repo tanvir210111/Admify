@@ -47,6 +47,7 @@ import {
   markUniRepEntityAsSeenPost,
 } from '../controllers/universityRepController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import { handleAttachmentUpload } from '../middleware/attachmentMiddleware.js';
 
 const router = express.Router();
 
@@ -137,7 +138,7 @@ router.get('/documents', getUniRepDocuments);
 
 // Messages
 router.get('/messages', getUniRepMessages);
-router.post('/messages', sendUniRepMessage);
+router.post('/messages', handleAttachmentUpload('attachment'), sendUniRepMessage);
 
 // Announcements
 router.get('/announcements', getUniRepAnnouncements);

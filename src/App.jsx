@@ -57,6 +57,7 @@ import AdmPayments from "./pages/admin/AdminPayments";
 import AdmNotifications from "./pages/admin/AdminNotifications";
 import AdmReports from "./pages/admin/AdminReports";
 import AdmSupport from "./pages/admin/AdminSupport";
+import AdmConversations from "./pages/admin/AdminConversations";
 import AdmAI from "./pages/admin/AdminAI";
 import AdmAuditLogs from "./pages/admin/AdminAuditLogs";
 import AdmAdmins from "./pages/admin/AdminAdmins";
@@ -310,6 +311,7 @@ function App() {
             <Route path="countries" element={<AdmCountries />} />
             <Route path="reports" element={<AdmReports />} />
             <Route path="support" element={<AdmSupport />} />
+            <Route path="conversations" element={<AdmConversations />} />
             <Route path="notifications" element={<AdmNotifications />} />
             <Route path="ai" element={<AdmAI />} />
             <Route path="audit-logs" element={<AdmAuditLogs />} />

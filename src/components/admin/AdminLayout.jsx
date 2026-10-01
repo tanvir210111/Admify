@@ -29,6 +29,7 @@ const NAV = [
   { icon: Globe,           label: "Countries",             path: "/admin/countries" },
   { icon: AlertCircle,     label: "Reports & Complaints",  path: "/admin/reports", countKey: "reports" },
   { icon: MessageSquare,   label: "Support Inbox",         path: "/admin/support", countKey: "supportInbox" },
+  { icon: ShieldCheck,     label: "Supervisory Monitor",   path: "/admin/conversations" },
   { icon: Bell,            label: "Notifications",         path: "/admin/notifications", countKey: "notifications" },
   { icon: Sparkles,        label: "AI Engine",             path: "/admin/ai" },
   { icon: ShieldAlert,     label: "Audit Logs",            path: "/admin/audit-logs" },

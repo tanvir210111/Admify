@@ -29,6 +29,7 @@ import {
   markAgentEntityAsSeenPost,
 } from '../controllers/agentController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import { handleAttachmentUpload } from '../middleware/attachmentMiddleware.js';
 
 const router = express.Router();
 
@@ -93,7 +94,7 @@ router.get('/universities', getAgentUniversities);
 
 // Messaging
 router.get('/messages', getAgentMessages);
-router.post('/messages', sendAgentMessage);
+router.post('/messages', handleAttachmentUpload('attachment'), sendAgentMessage);
 
 // Tasks & Deadlines
 router.get('/tasks', getAgentTasks);

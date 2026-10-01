@@ -1,133 +1,202 @@
+import crypto from 'crypto';
+import mongoose from 'mongoose';
 import ChatMessage from '../models/ChatMessage.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import devStore from '../utils/devStore.js';
+import geminiService from '../services/geminiService.js';
+import { emitToAdminSupport, emitToVisitor } from '../socket/socketServer.js';
 
-// Knowledge replies for chat engine
-const KNOWLEDGE_RESPONSES = [
-  {
-    keys: ['hello', 'hi', 'hey'],
-    reply: "Hi there! 👋 I'm Admify AI. I can help you with university recommendations, application deadlines, scholarship eligibility, and SOP generation. What would you like to know?",
-  },
-  {
-    keys: ['university', 'universities', 'college'],
-    reply: 'I can recommend universities based on your GPA, test scores, and budget. 🎓 We partner with over 450 top global institutions. Would you like me to analyze your profile?',
-  },
-  {
-    keys: ['scholarship', 'scholarships', 'funding', 'money'],
-    reply: 'Great question! 💰 Admify matches you with institutional and government scholarships automatically, ranging from $5,000 to full tuition. Check our Scholarships tab!',
-  },
-  {
-    keys: ['sop', 'statement of purpose', 'lor', 'essay'],
-    reply: 'Our AI SOP & LOR Generator crafts high-impact, university-aligned personal statements in seconds! Head over to the Documents section in your dashboard to try it.',
-  },
-  {
-    keys: ['fee', 'cost', 'tuition', 'price'],
-    reply: 'Tuition fees vary by destination. For example, US universities average $30k–$60k/yr, Canadian universities average $20k–$40k CAD, while German public universities offer virtually tuition-free education!',
-  },
-];
+import { defaultChatStore, extractClientIp } from '../middleware/rateLimiter.js';
 
+export const EXACT_AI_WARNING =
+  'I’m an AI chatbot and may not always provide accurate or up-to-date information. For accurate information and personalized assistance, please talk to a live agent.';
+
+// ── Rate Limiter Integration via centralized Storage Abstraction ───────────
+async function checkPublicRateLimit(req) {
+  const clientIp = extractClientIp(req);
+  const result = await defaultChatStore.increment(clientIp, 60 * 1000);
+  return result.count > 25;
+}
+
+// ── In-Memory Visitor Session Registry with devStore sync ─────────────────────
+const visitorSessions = new Map();
+
+function getOrCreateVisitorSession(token) {
+  let sessionToken = typeof token === 'string' ? token.trim() : '';
+  if (!sessionToken) {
+    sessionToken = `vis_${crypto.randomBytes(16).toString('hex')}`;
+  }
+
+  if (visitorSessions.has(sessionToken)) {
+    return visitorSessions.get(sessionToken);
+  }
+
+  // Check devStore backup
+  const db = devStore.read();
+  const existingInDb = (db.visitorSessions || []).find((s) => s.visitorToken === sessionToken);
+  if (existingInDb) {
+    visitorSessions.set(sessionToken, existingInDb);
+    return existingInDb;
+  }
+
+  const newSession = {
+    visitorToken: sessionToken,
+    aiMessageCount: 0,
+    status: 'ai', // 'ai' | 'waiting_live_agent' | 'live' | 'closed'
+    visitorInfo: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  visitorSessions.set(sessionToken, newSession);
+  if (!Array.isArray(db.visitorSessions)) db.visitorSessions = [];
+  db.visitorSessions.push(newSession);
+  devStore.write(db);
+
+  return newSession;
+}
+
+function saveVisitorSession(session) {
+  session.updatedAt = new Date().toISOString();
+  visitorSessions.set(session.visitorToken, session);
+
+  try {
+    const db = devStore.read();
+    if (!Array.isArray(db.visitorSessions)) db.visitorSessions = [];
+    const idx = db.visitorSessions.findIndex((s) => s.visitorToken === session.visitorToken);
+    if (idx !== -1) {
+      db.visitorSessions[idx] = session;
+    } else {
+      db.visitorSessions.push(session);
+    }
+    devStore.write(db);
+  } catch (err) {
+    console.warn('[Visitor Session Save Error]', err.message);
+  }
+}
+
+// ── 1. Website Chatbot Message Handler (Real Gemini + 4-Message Cap) ──────────
 export const sendMessage = async (req, res, next) => {
   try {
-    const { sessionId = 'guest_session', text, isLiveAgentRequest = false } = req.body;
+    if (await checkPublicRateLimit(req)) {
+      return res.status(429).json({
+        success: false,
+        message: 'Too many requests. Please wait a moment before sending another message.',
+      });
+    }
 
-    if (!text || text.trim() === '') {
+    const text = req.body.text || req.body.message;
+    const incomingToken = req.body.visitorToken || req.body.sessionId;
+
+    if (!text || typeof text !== 'string' || text.trim() === '') {
       return res.status(400).json({
         success: false,
-        message: 'Message text is required',
+        message: 'Message text is required.',
       });
     }
 
-    const userId = req.user ? req.user._id : undefined;
+    const trimmedText = text.trim().slice(0, 1000);
+    const session = getOrCreateVisitorSession(incomingToken || req.headers['x-visitor-token']);
 
-    // Save student message if database is available
-    try {
-      await ChatMessage.create({
-        sessionId,
-        user: userId,
-        sender: 'user',
-        text,
-        isLiveAgentRequest,
+    // ── Enforce 4 AI Message Limit Server-Side ──
+    if (session.aiMessageCount >= 4) {
+      return res.status(200).json({
+        success: true,
+        visitorToken: session.visitorToken,
+        sessionId: session.visitorToken,
+        aiMessageCount: session.aiMessageCount,
+        remainingMessages: 0,
+        limitReached: true,
+        offerLiveAgent: true,
+        warning: EXACT_AI_WARNING,
+        canEscalateToLive: true,
+        reply: EXACT_AI_WARNING,
+        data: {
+          reply: {
+            sessionId: session.visitorToken,
+            sender: 'ai',
+            text: EXACT_AI_WARNING,
+            isLimitWarning: true,
+            createdAt: new Date().toISOString(),
+          },
+        },
       });
-    } catch (dbErr) {
-      console.warn('[Chat DB]', dbErr.message);
     }
 
-    let replyText = "I'm processing your inquiry. An Admify advisor can provide detailed assistance or you can explore universities directly through our search engine!";
-
-    if (isLiveAgentRequest) {
-      replyText = 'Connecting you to a certified study abroad counselor... An agent has been alerted and will join shortly.';
-      try {
-        const agencies = await User.find({ role: 'agency' });
-        for (const ag of agencies) {
-          await Notification.create({
-            user: ag._id,
-            title: 'Incoming Student Live Chat Request',
-            message: `Student inquiry: "${text.slice(0, 80)}..."`,
-            type: 'info',
-            link: '/agency/messages',
-            actionUrl: '/agency/messages',
-            relatedEntityType: 'message',
-            relatedEntityId: sessionId,
-          });
-        }
-      } catch {
-        try {
-          const db = devStore.read();
-          const agencies = (db.users || []).filter((u) => u.role === 'agency');
-          for (const ag of agencies) {
-            if (!Array.isArray(db.notifications)) db.notifications = [];
-            db.notifications.push({
-              _id: `notif-${Date.now()}-${Math.random()}`,
-              user: ag._id,
-              title: 'Incoming Student Live Chat Request',
-              message: `Student inquiry: "${text.slice(0, 80)}..."`,
-              type: 'info',
-              link: '/agency/messages',
-              actionUrl: '/agency/messages',
-              relatedEntityType: 'message',
-              relatedEntityId: sessionId,
-              read: false,
-              createdAt: new Date().toISOString(),
-            });
-          }
-          devStore.write(db);
-        } catch {}
-      }
+    // Persist visitor question in ChatMessage
+    let savedVisitorMsg = null;
+    if (mongoose.connection.readyState === 1) {
+      savedVisitorMsg = await ChatMessage.create({
+        sessionId: session.visitorToken,
+        user: req.user?._id || undefined,
+        sender: 'visitor',
+        text: trimmedText,
+      });
     } else {
-      const lower = text.toLowerCase();
-      for (const item of KNOWLEDGE_RESPONSES) {
-        if (item.keys.some((k) => lower.includes(k))) {
-          replyText = item.reply;
-          break;
-        }
-      }
+      savedVisitorMsg = await devStore.addChatMessage({
+        sessionId: session.visitorToken,
+        user: req.user?._id?.toString() || undefined,
+        sender: 'visitor',
+        text: trimmedText,
+      });
     }
 
-    let aiMessage = {
-      sessionId,
-      sender: isLiveAgentRequest ? 'agent' : 'ai',
-      text: replyText,
-      createdAt: new Date().toISOString(),
-    };
+    // Retrieve recent session history for context
+    let history = [];
+    if (mongoose.connection.readyState === 1) {
+      history = await ChatMessage.find({ sessionId: session.visitorToken })
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .lean();
+      history.reverse();
+    } else {
+      const db = devStore.read();
+      history = (db.chatMessages || [])
+        .filter((m) => m.sessionId === session.visitorToken)
+        .slice(-6);
+    }
 
-    // Save bot reply if database is available
-    try {
-      const saved = await ChatMessage.create({
-        sessionId,
-        user: userId,
-        sender: isLiveAgentRequest ? 'agent' : 'ai',
-        text: replyText,
+    // Execute real Gemini generation
+    const aiResponseText = await geminiService.generateChatResponse({
+      prompt: trimmedText,
+      conversationHistory: history,
+      dbGrounding: 'Admify offers 1 Free Direct Application for international students, verified scholarships (DAAD, Chevening, Fulbright), and study options across UK, USA, Canada, Germany, Australia, and Europe.',
+    });
+
+    session.aiMessageCount += 1;
+    const isNowAtLimit = session.aiMessageCount >= 4;
+    saveVisitorSession(session);
+
+    let savedAiMsg = null;
+    if (mongoose.connection.readyState === 1) {
+      savedAiMsg = await ChatMessage.create({
+        sessionId: session.visitorToken,
+        sender: 'ai',
+        text: aiResponseText,
       });
-      aiMessage = saved;
-    } catch (dbErr) {
-      console.warn('[Chat DB]', dbErr.message);
+    } else {
+      savedAiMsg = await devStore.addChatMessage({
+        sessionId: session.visitorToken,
+        sender: 'ai',
+        text: aiResponseText,
+      });
     }
 
     return res.status(200).json({
       success: true,
+      visitorToken: session.visitorToken,
+      sessionId: session.visitorToken,
+      aiMessageCount: session.aiMessageCount,
+      remainingMessages: Math.max(0, 4 - session.aiMessageCount),
+      limitReached: isNowAtLimit,
+      warning: isNowAtLimit ? EXACT_AI_WARNING : null,
+      offerLiveAgent: isNowAtLimit,
+      canEscalateToLive: isNowAtLimit,
+      reply: savedAiMsg?.text,
       data: {
-        reply: aiMessage,
+        reply: savedAiMsg,
+        visitorMessage: savedVisitorMsg,
       },
     });
   } catch (error) {
@@ -135,17 +204,205 @@ export const sendMessage = async (req, res, next) => {
   }
 };
 
-export const getSessionHistory = async (req, res, next) => {
+// ── 2. Live Agent Intake & Escalation ─────────────────────────────────────────
+export const requestLiveAgent = async (req, res, next) => {
   try {
-    const { sessionId } = req.params;
-    const messages = await ChatMessage.find({ sessionId }).sort({ createdAt: 1 }).limit(50);
+    if (await checkPublicRateLimit(req)) {
+      return res.status(429).json({
+        success: false,
+        message: 'Too many requests. Please wait a moment before sending another request.',
+      });
+    }
+
+    const { visitorToken: incomingToken, fullName, email, phone } = req.body;
+
+    // Strict form validation
+    if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2 || fullName.trim().length > 100) {
+      return res.status(400).json({ success: false, message: 'Valid Full Name is required (2–100 characters).' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || typeof email !== 'string' || !emailRegex.test(email.trim())) {
+      return res.status(400).json({ success: false, message: 'A valid email address is required.' });
+    }
+
+    const phoneRegex = /^[\d+\-\s()]{7,25}$/;
+    if (!phone || typeof phone !== 'string' || !phoneRegex.test(phone.trim())) {
+      return res.status(400).json({ success: false, message: 'A valid phone number is required (7–25 digits).' });
+    }
+
+    const session = getOrCreateVisitorSession(incomingToken || req.headers['x-visitor-token']);
+    session.visitorInfo = {
+      fullName: fullName.trim(),
+      email: email.trim().toLowerCase(),
+      phone: phone.trim(),
+    };
+    session.status = 'waiting_live_agent';
+    saveVisitorSession(session);
+
+    // Save escalation notice in ChatMessage
+    const escalationNotice = `[LIVE SUPPORT ESCALATION] Visitor: ${session.visitorInfo.fullName} | Email: ${session.visitorInfo.email} | Phone: ${session.visitorInfo.phone}`;
+    if (mongoose.connection.readyState === 1) {
+      await ChatMessage.create({
+        sessionId: session.visitorToken,
+        sender: 'system',
+        text: escalationNotice,
+        isLiveAgentRequest: true,
+      });
+    } else {
+      await devStore.addChatMessage({
+        sessionId: session.visitorToken,
+        sender: 'system',
+        text: escalationNotice,
+        isLiveAgentRequest: true,
+      });
+    }
+
+    // Create Admin notification
+    try {
+      let adminUser = null;
+      if (mongoose.connection.readyState === 1) {
+        adminUser = await User.findOne({ role: 'admin' });
+        if (adminUser) {
+          await Notification.create({
+            user: adminUser._id,
+            title: 'New Website Visitor Support Request',
+            message: `${session.visitorInfo.fullName} (${session.visitorInfo.email}) requested Live Support.`,
+            type: 'info',
+            link: '/admin/support',
+            actionUrl: '/admin/support',
+            relatedEntityType: 'support',
+            relatedEntityId: session.visitorToken,
+          });
+        }
+      } else {
+        const db = devStore.read();
+        adminUser = (db.users || []).find((u) => u.role === 'admin');
+        if (adminUser) {
+          if (!Array.isArray(db.notifications)) db.notifications = [];
+          db.notifications.push({
+            _id: `notif_sup_${Date.now()}`,
+            user: adminUser._id,
+            title: 'New Website Visitor Support Request',
+            message: `${session.visitorInfo.fullName} (${session.visitorInfo.email}) requested Live Support.`,
+            type: 'info',
+            link: '/admin/support',
+            actionUrl: '/admin/support',
+            relatedEntityType: 'support',
+            relatedEntityId: session.visitorToken,
+            read: false,
+            createdAt: new Date().toISOString(),
+          });
+          devStore.write(db);
+        }
+      }
+    } catch (notifErr) {
+      console.warn('[Admin Notification Error]', notifErr.message);
+    }
+
+    // Broadcast real-time support notification to Admin desk
+    try {
+      emitToAdminSupport('new_support_request', {
+        sessionId: session.visitorToken,
+        visitorInfo: session.visitorInfo,
+        requestedAt: new Date().toISOString(),
+      });
+    } catch {}
 
     return res.status(200).json({
       success: true,
+      visitorToken: session.visitorToken,
+      sessionId: session.visitorToken,
+      status: 'waiting_live_agent',
+      message: 'Your request has been routed to our live admissions desk. An advisor will respond shortly.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── 3. Visitor Sends Message to Admin (Live Mode) ─────────────────────────────
+export const sendVisitorReply = async (req, res, next) => {
+  try {
+    const { visitorToken: incomingToken, text } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ success: false, message: 'Message text is required.' });
+    }
+
+    const session = getOrCreateVisitorSession(incomingToken || req.headers['x-visitor-token']);
+    const trimmedText = text.trim().slice(0, 1000);
+
+    let savedMsg = null;
+    if (mongoose.connection.readyState === 1) {
+      savedMsg = await ChatMessage.create({
+        sessionId: session.visitorToken,
+        sender: 'visitor',
+        text: trimmedText,
+      });
+    } else {
+      savedMsg = await devStore.addChatMessage({
+        sessionId: session.visitorToken,
+        sender: 'visitor',
+        text: trimmedText,
+      });
+    }
+
+    // Broadcast live to Admin support desk
+    try {
+      emitToAdminSupport('support_message_received', {
+        sessionId: session.visitorToken,
+        message: savedMsg,
+      });
+    } catch {}
+
+    return res.status(201).json({
+      success: true,
+      data: { message: savedMsg },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── 4. Retrieve Visitor Session History (Secure, Token-Scoped) ────────────────
+export const getSessionHistory = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    if (!sessionId || typeof sessionId !== 'string') {
+      return res.status(400).json({ success: false, message: 'Session ID is required.' });
+    }
+
+    const session = visitorSessions.get(sessionId) || getOrCreateVisitorSession(sessionId);
+
+    let messages = [];
+    if (mongoose.connection.readyState === 1) {
+      messages = await ChatMessage.find({ sessionId }).sort({ createdAt: 1 }).limit(100).lean();
+    } else {
+      const db = devStore.read();
+      messages = (db.chatMessages || [])
+        .filter((m) => m.sessionId === sessionId)
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    }
+
+    return res.status(200).json({
+      success: true,
+      visitorToken: session.visitorToken,
+      aiMessageCount: session.aiMessageCount || 0,
+      limitReached: (session.aiMessageCount || 0) >= 4,
+      status: session.status || 'ai',
+      visitorInfo: session.visitorInfo || null,
       count: messages.length,
       data: { messages },
     });
   } catch (error) {
     next(error);
   }
+};
+
+export default {
+  sendMessage,
+  requestLiveAgent,
+  sendVisitorReply,
+  getSessionHistory,
+  EXACT_AI_WARNING,
 };

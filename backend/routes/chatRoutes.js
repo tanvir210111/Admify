@@ -1,5 +1,11 @@
 import express from 'express';
-import { sendMessage, getSessionHistory } from '../controllers/chatController.js';
+import {
+  sendMessage,
+  requestLiveAgent,
+  sendVisitorReply,
+  getSessionHistory,
+} from '../controllers/chatController.js';
+import { publicChatRateLimiter } from '../middleware/rateLimiter.js';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
@@ -21,7 +27,10 @@ const optionalProtect = async (req, res, next) => {
   next();
 };
 
-router.post('/message', optionalProtect, sendMessage);
-router.get('/history/:sessionId', getSessionHistory);
+// Public Chatbot Endpoints with Pluggable Rate Limiting
+router.post('/message', publicChatRateLimiter, optionalProtect, sendMessage);
+router.post('/live-agent-request', publicChatRateLimiter, optionalProtect, requestLiveAgent);
+router.post('/visitor-reply', optionalProtect, sendVisitorReply);
+router.get('/history/:sessionId', optionalProtect, getSessionHistory);
 
 export default router;

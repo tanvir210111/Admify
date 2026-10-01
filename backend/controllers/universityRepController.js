@@ -13,6 +13,12 @@ import AuditLog from '../models/AuditLog.js';
 import UniRepSeenItem from '../models/UniRepSeenItem.js';
 import bcrypt from 'bcryptjs';
 import devStore from '../utils/devStore.js';
+import {
+  resolveConversation,
+  createMessage,
+  verifyMessagingPermission,
+  getUserById,
+} from '../services/messagingService.js';
 
 // Audit log recorder helper
 const recordUniRepAuditLog = async ({ req, action, module, targetType, targetId, targetName, previousValue, newValue, reason }) => {
@@ -474,6 +480,7 @@ export const verifyUniRepEntityOwnership = async (repUser, university, entityTyp
         const msg = await ChatMessage.findOne({
           $or: [
             { _id: mongoose.isValidObjectId(eidStr) ? eidStr : null },
+            { conversationId: mongoose.isValidObjectId(eidStr) ? eidStr : null },
             { sessionId: eidStr }
           ]
         });
@@ -481,17 +488,21 @@ export const verifyUniRepEntityOwnership = async (repUser, university, entityTyp
         return (
           msg.receiver?.toString() === ridStr ||
           msg.user?.toString() === ridStr ||
+          msg.receiverId?.toString() === ridStr ||
+          msg.senderId?.toString() === ridStr ||
           (typeof msg.sessionId === 'string' && msg.sessionId.includes(ridStr))
         );
       } else {
         const db = devStore.read();
         const msg = (db.chatMessages || []).find(
-          (m) => m._id?.toString() === eidStr || m.sessionId === eidStr
+          (m) => m._id?.toString() === eidStr || m.conversationId?.toString() === eidStr || m.sessionId === eidStr
         );
         if (!msg) return false;
         return (
           msg.receiver?.toString() === ridStr ||
           msg.user?.toString() === ridStr ||
+          msg.receiverId?.toString() === ridStr ||
+          msg.senderId?.toString() === ridStr ||
           (typeof msg.sessionId === 'string' && msg.sessionId.includes(ridStr))
         );
       }
@@ -2274,19 +2285,31 @@ export const getUniRepMessages = async (req, res, next) => {
 
     if (mongoose.connection.readyState === 1) {
       messages = await ChatMessage.find({
-        $or: [{ user: req.user._id }, { receiver: req.user._id }],
+        $or: [
+          { user: req.user._id },
+          { receiver: req.user._id },
+          { senderId: req.user._id },
+          { receiverId: req.user._id },
+        ],
       }).sort({ createdAt: 1 });
     } else {
       const db = devStore.read();
       messages = (db.chatMessages || []).filter(
-        (m) => m.user?.toString() === userId || m.receiver?.toString() === userId
+        (m) =>
+          m.user?.toString() === userId ||
+          m.receiver?.toString() === userId ||
+          m.senderId?.toString() === userId ||
+          m.receiverId?.toString() === userId
       );
     }
 
     const seenMap = await getUniRepSeenMap(req.user._id);
     const enrichedMessages = messages.map((m) => {
       const msg = m.toObject ? m.toObject() : { ...m };
-      msg.isSeenByUniRep = isUniRepDocSeen('message', msg._id, seenMap) || isUniRepDocSeen('message', msg.sessionId, seenMap);
+      msg.isSeenByUniRep =
+        isUniRepDocSeen('message', msg._id, seenMap) ||
+        isUniRepDocSeen('message', msg.conversationId, seenMap) ||
+        isUniRepDocSeen('message', msg.sessionId, seenMap);
       return msg;
     });
 
@@ -2305,112 +2328,59 @@ export const getUniRepMessages = async (req, res, next) => {
 // @access  Private (University Rep)
 export const sendUniRepMessage = async (req, res, next) => {
   try {
-    const { receiverId, text, sessionId } = req.body;
-    if (!text || !text.trim()) {
-      return res.status(400).json({ success: false, message: 'Message text is required.' });
+    const { receiverId, text, context } = req.body;
+    if (!receiverId) {
+      return res.status(400).json({ success: false, message: 'Recipient ID (receiverId) is required.' });
+    }
+    const attachments = req.file
+      ? [
+          {
+            originalName: req.file.originalname,
+            filename: req.file.filename,
+            mimeType: req.file.mimetype,
+            size: req.file.size,
+            path: req.file.path,
+          },
+        ]
+      : [];
+
+    if ((!text || !text.trim()) && attachments.length === 0) {
+      return res.status(400).json({ success: false, message: 'Message must contain either text or an attachment.' });
     }
 
-    const university = await resolveUniversityForUser(req.user);
-    if (!university) {
-      return res.status(404).json({ success: false, message: 'University profile not found.' });
+    const receiverUser = await getUserById(receiverId);
+    if (!receiverUser) {
+      return res.status(404).json({ success: false, message: 'Recipient user not found.' });
     }
 
-    // MESSAGE SECURITY CHECK: Verify receiver is an authorized partner agency with an ACCEPTED connection
-    if (receiverId) {
-      const recIdStr = receiverId.toString();
-      let isAuthorizedPartner = false;
-      if (mongoose.connection.readyState === 1) {
-        const conn = await UniversityAgencyConnection.findOne({
-          status: 'ACCEPTED',
-          agencyId: receiverId,
-          $or: [
-            { universityRepresentativeId: req.user._id },
-            ...(university._id ? [{ universityId: university._id }] : []),
-          ],
-        });
-        if (conn) isAuthorizedPartner = true;
-      } else {
-        const db = devStore.read();
-        const conn = (db.universityAgencyConnections || []).find(
-          (c) =>
-            c.status === 'ACCEPTED' &&
-            c.agencyId?.toString() === recIdStr &&
-            (c.universityRepresentativeId?.toString() === req.user._id.toString() ||
-              (university._id && c.universityId?.toString() === university._id.toString()))
-        );
-        if (conn) isAuthorizedPartner = true;
-      }
-
-      if (!isAuthorizedPartner) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access Denied: You can only communicate with authorized partner agencies with an active, accepted connection.',
-        });
-      }
+    // Verify relationship authorization
+    const permission = await verifyMessagingPermission(req.user, receiverUser);
+    if (!permission.authorized) {
+      return res.status(403).json({ success: false, message: permission.message });
     }
 
-    const payload = {
-      user: req.user._id,
-      sender: 'agent', // ChatMessage schema enum: ['user', 'ai', 'agent']
-      receiver: receiverId || null,
-      text: text.trim(),
-      sessionId: sessionId || `SESSION-UREP-${req.user._id}-${Date.now()}`,
-      createdAt: new Date(),
-    };
+    // Resolve or retrieve persistent 1-to-1 conversation
+    const conversation = await resolveConversation(req.user, receiverUser, context);
 
-    let newMsg = null;
-    if (mongoose.connection.readyState === 1) {
-      newMsg = await ChatMessage.create(payload);
-    } else {
-      newMsg = await devStore.addChatMessage(payload);
-    }
-
-    if (receiverId) {
-      try {
-        if (mongoose.connection.readyState === 1) {
-          const rxUser = await User.findById(receiverId);
-          if (rxUser && rxUser.role === 'agency') {
-            await Notification.create({
-              user: rxUser._id,
-              title: `New Message from ${req.user.name || 'University Representative'}`,
-              message: text.trim().slice(0, 100),
-              type: 'info',
-              link: '/agency/messages',
-              actionUrl: '/agency/messages',
-              relatedEntityType: 'message',
-              relatedEntityId: payload.sessionId,
-              read: false,
-            });
-          }
-        } else {
-          const rxUser = await devStore.findUserById(receiverId);
-          if (rxUser && rxUser.role === 'agency') {
-            await devStore.createNotification({
-              userId: rxUser._id,
-              title: `New Message from ${req.user.name || 'University Representative'}`,
-              message: text.trim().slice(0, 100),
-              type: 'info',
-              link: '/agency/messages',
-              actionUrl: '/agency/messages',
-              relatedEntityType: 'message',
-              relatedEntityId: payload.sessionId,
-              read: false,
-            });
-          }
-        }
-      } catch (notifErr) {
-        console.warn('[UniRep message notif warning]:', notifErr.message);
-      }
-    }
+    const newMsg = await createMessage({
+      conversationId: conversation._id,
+      senderUser: req.user,
+      text: text ? text.trim() : '',
+      attachments,
+    });
 
     return res.status(201).json({
       success: true,
-      data: { message: newMsg },
+      data: { message: newMsg, conversationId: conversation._id },
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 };
+
 
 // ── 7. ANNOUNCEMENTS ─────────────────────────────────────────────────────────
 // @desc    Get announcements created for this university

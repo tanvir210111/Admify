@@ -58,8 +58,10 @@ export async function apiRequest(endpoint, options = {}) {
       (sessionStorage.getItem('admify_token') || sessionStorage.getItem('token'))) ||
     null;
 
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
@@ -124,12 +126,18 @@ export const api = {
   getApiUrl,
   request: apiRequest,
   get: (endpoint, options) => apiRequest(endpoint, { ...options, method: 'GET' }),
-  post: (endpoint, body, options) =>
-    apiRequest(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) }),
-  put: (endpoint, body, options) =>
-    apiRequest(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) }),
-  patch: (endpoint, body, options) =>
-    apiRequest(endpoint, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
+  post: (endpoint, body, options) => {
+    const isFD = typeof FormData !== 'undefined' && body instanceof FormData;
+    return apiRequest(endpoint, { ...options, method: 'POST', body: isFD ? body : JSON.stringify(body) });
+  },
+  put: (endpoint, body, options) => {
+    const isFD = typeof FormData !== 'undefined' && body instanceof FormData;
+    return apiRequest(endpoint, { ...options, method: 'PUT', body: isFD ? body : JSON.stringify(body) });
+  },
+  patch: (endpoint, body, options) => {
+    const isFD = typeof FormData !== 'undefined' && body instanceof FormData;
+    return apiRequest(endpoint, { ...options, method: 'PATCH', body: isFD ? body : JSON.stringify(body) });
+  },
   delete: (endpoint, options) => apiRequest(endpoint, { ...options, method: 'DELETE' }),
 };
 

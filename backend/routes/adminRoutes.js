@@ -64,6 +64,9 @@ import {
   approveUniRepApplication,
   rejectUniRepApplication,
   deleteUniRepApplication,
+  getAdminSupervisoryConversations,
+  getAdminSupervisoryConversationTimeline,
+  getAdminSupervisoryAttachment,
 } from '../controllers/adminController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { authorize } from '../middleware/roleMiddleware.js';
@@ -209,5 +212,10 @@ router.put('/university-representatives/:id/status', approveUniRepApplication);
 router.get('/ai/metrics', getAdminAIMetrics);
 router.post('/users/:id/adjust-credits', adjustUserCredits);
 router.patch('/reports/:id', updateAdminReport);
+
+// ── Supervisory Messaging Monitoring (Read-Only) ───────────────────────────
+router.get('/conversations', getAdminSupervisoryConversations);
+router.get('/conversations/:conversationId', getAdminSupervisoryConversationTimeline);
+router.get('/conversations/:conversationId/attachments/:filename', getAdminSupervisoryAttachment);
 
 export default router;
