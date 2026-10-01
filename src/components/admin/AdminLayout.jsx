@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import { AdminBadgeProvider, useAdminBadges } from "../../context/AdminBadgeContext";
@@ -40,6 +40,8 @@ const NAV = [
 function AdminLayoutInner() {
   const { user, signOut } = useAuth();
   const { sidebarCounts, formatBadgeCount } = useAdminBadges();
+  const location = useLocation();
+  const isSupportPage = location.pathname.startsWith("/admin/support");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -121,7 +123,10 @@ function AdminLayoutInner() {
     .toUpperCase() || "AD";
 
   return (
-    <div className="flex min-h-screen" style={{ background: "#050B1F", fontFamily: "'Inter',sans-serif" }}>
+    <div
+      className={`flex ${isSupportPage ? "h-screen max-h-screen overflow-hidden" : "min-h-screen"}`}
+      style={{ background: "#050B1F", fontFamily: "'Inter',sans-serif" }}
+    >
 
       {/* ── Mobile Overlay ── */}
       <AnimatePresence>
@@ -221,7 +226,11 @@ function AdminLayoutInner() {
       </aside>
 
       {/* ── Main Area ── */}
-      <div className="flex-1 xl:pl-64 flex flex-col min-h-screen min-w-0 max-w-full overflow-x-hidden">
+      <div
+        className={`flex-1 xl:pl-64 flex flex-col ${
+          isSupportPage ? "h-screen max-h-screen overflow-hidden" : "min-h-screen"
+        } min-w-0 max-w-full overflow-x-hidden`}
+      >
 
         {/* ── Fixed Top Header ── */}
         <header className="sticky top-0 z-30 h-16 flex items-center justify-between px-4 md:px-6 flex-shrink-0"
@@ -408,7 +417,13 @@ function AdminLayoutInner() {
         </header>
 
         {/* ── Page Content ── */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 min-w-0 max-w-full">
+        <main
+          className={`flex-1 min-w-0 max-w-full ${
+            isSupportPage
+              ? "overflow-hidden flex flex-col min-h-0 p-3 md:p-4"
+              : "overflow-y-auto custom-scrollbar p-4 md:p-6"
+          }`}
+        >
           <Outlet />
         </main>
       </div>

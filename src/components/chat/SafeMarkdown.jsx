@@ -20,6 +20,9 @@ function cleanUnclosedAsterisks(str) {
   if (!str) return "";
   let cleaned = str;
 
+  // Remove standalone orphan delimiter lines like "* **"
+  cleaned = cleaned.replace(/(^|\n)\s*\*\s*\*\*\s*(\n|$)/g, "$1");
+
   // Auto-close dangling odd count of ** bold delimiters
   const boldMatches = cleaned.match(/\*\*/g);
   if (boldMatches && boldMatches.length % 2 !== 0) {
@@ -276,6 +279,11 @@ function parseBlocks(markdown) {
     // 5. Unordered list item (*, -, +, •)
     const ulMatch = rawLine.match(/^(\s*)[*+\-•]\s+(.+)$/);
     if (ulMatch) {
+      const itemText = ulMatch[2].trim();
+      // Skip empty list items containing only delimiter characters
+      if (!itemText.replace(/[*_`]/g, "").trim()) {
+        continue;
+      }
       flushParagraph();
       const indent = ulMatch[1].length;
       if (currentList && currentList.type !== "ul") {
@@ -285,7 +293,7 @@ function parseBlocks(markdown) {
         currentList = { type: "ul", items: [] };
       }
       currentList.items.push({
-        text: ulMatch[2].trim(),
+        text: itemText,
         isNested: indent >= 2,
       });
       continue;
