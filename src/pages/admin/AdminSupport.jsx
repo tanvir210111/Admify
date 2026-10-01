@@ -238,8 +238,11 @@ export default function AdminSupport() {
         </div>
       </div>
 
-      {/* Main grid */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-0 lg:gap-4 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+      {/* Main grid — controlled height so the box never fills the entire viewport */}
+      <div
+        className="grid grid-cols-1 lg:grid-cols-12 gap-0 lg:gap-4 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl"
+        style={{ height: "min(650px, calc(100vh - 220px))" }}
+      >
 
         {/* LEFT: Conversation list */}
         <div className={`${selectedConv ? "hidden lg:flex" : "flex"} lg:col-span-4 lg:border-r border-slate-800 flex-col h-full min-h-0 bg-slate-950/40 overflow-hidden`}>
