@@ -22,6 +22,7 @@ import {
 import toast from "react-hot-toast";
 import { api } from "../../services/api";
 import { initVisitorSocket, getVisitorSocket } from "../../lib/socket";
+import SafeMarkdown from "./SafeMarkdown";
 
 export const EXACT_AI_WARNING =
   "I’m an AI chatbot and may not always provide accurate or up-to-date information. For accurate information and personalized assistance, please talk to a live agent.";
@@ -135,15 +136,19 @@ function MessageBubble({ msg, mode, onEscalateLive }) {
 
         {/* Bubble */}
         <div
-          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-line shadow-sm ${
+          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${
             isUser
-              ? "bg-gradient-to-br from-primary-600 to-blue-600 text-white rounded-br-sm"
+              ? "bg-gradient-to-br from-primary-600 to-blue-600 text-white rounded-br-sm whitespace-pre-line"
               : isLimitWarning
-              ? "bg-amber-950/40 border border-amber-500/40 text-amber-200 rounded-bl-sm"
+              ? "bg-amber-950/40 border border-amber-500/40 text-amber-200 rounded-bl-sm whitespace-pre-line"
               : "bg-slate-800 border border-slate-700/50 text-slate-200 rounded-bl-sm"
           }`}
         >
-          {msg.text}
+          {isAI ? (
+            <SafeMarkdown content={msg.text} />
+          ) : (
+            msg.text
+          )}
 
           {/* Prominent Talk to Live Agent CTA when 4-message ceiling is reached */}
           {isLimitWarning && onEscalateLive && (

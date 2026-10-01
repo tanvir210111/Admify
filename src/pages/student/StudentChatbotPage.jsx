@@ -23,6 +23,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import SafeMarkdown from "../../components/chat/SafeMarkdown";
 
 // Helper to cleanly format text: strip regional indicator flags (e.g. "DE", "US") and convert **bold** into clean bold elements without any asterisks (*)
 function cleanRegionalFlags(str) {
@@ -567,27 +568,11 @@ You have completed ${currentCount} of 4 required AI inquiries (${needed} remaini
                       </h4>
                     )}
 
-                    <div className="whitespace-pre-wrap space-y-2">
-                      {msg.text.split("\n").map((line, idx) => {
-                        const trimmed = line.trim();
-                        if (trimmed.startsWith("### ")) {
-                          return (
-                            <h4 key={idx} className="text-base font-extrabold text-cyan-300 mt-2 mb-1">
-                              {renderCleanFormattedText(trimmed.replace("### ", ""))}
-                            </h4>
-                          );
-                        }
-                        if (trimmed.startsWith("• ")) {
-                          return (
-                            <div key={idx} className="flex items-start gap-2 pl-1">
-                              <span className="text-cyan-400 shrink-0">•</span>
-                              <div className="flex-1">{renderCleanFormattedText(trimmed.replace("• ", ""))}</div>
-                            </div>
-                          );
-                        }
-                        return <div key={idx}>{renderCleanFormattedText(line)}</div>;
-                      })}
-                    </div>
+                    {isBot ? (
+                      <SafeMarkdown content={msg.text} />
+                    ) : (
+                      <div className="whitespace-pre-wrap">{msg.text}</div>
+                    )}
 
                     {/* Transfer to Live Agent action prompt: ONLY shown if user has sent >= 4 inquiries */}
                     {isBot && canShowLiveAgent && chatMode === "ai" && (

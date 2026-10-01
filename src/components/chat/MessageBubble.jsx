@@ -12,6 +12,7 @@ import {
   Volume2,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import SafeMarkdown from "./SafeMarkdown";
 
 const AVAILABLE_EMOJIS = ["👍", "❤️", "🎉", "💡", "🎓", "🚀", "🔥", "👏"];
 
@@ -56,6 +57,15 @@ export default function MessageBubble({
   )?.toString();
 
   const isUser = msgSenderId === myId;
+  const isAI = Boolean(
+    msg.isAI ||
+    msg.from === "ai" ||
+    msg.sender === "ai" ||
+    msg.role === "assistant" ||
+    msg.senderModel === "AI" ||
+    msg.senderName === "Admify AI" ||
+    senderName === "Admify AI"
+  );
   const isDeleted = Boolean(msg.isDeleted);
   const isEdited = Boolean(msg.isEdited);
 
@@ -184,7 +194,11 @@ export default function MessageBubble({
             >
               {/* Message Text */}
               {msg.text && (
-                <div className="whitespace-pre-wrap break-words">{msg.text}</div>
+                isAI ? (
+                  <SafeMarkdown content={msg.text} />
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">{msg.text}</div>
+                )
               )}
 
               {/* Attachments Section */}
