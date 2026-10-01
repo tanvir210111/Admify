@@ -364,10 +364,10 @@ function ChatWidgetContent() {
         }
       } catch (err) {
         setIsTyping(false);
-        const errMsg =
-          err?.response?.status === 429
-            ? "Too many messages sent. Please wait a minute before asking another question."
-            : "An error occurred connecting to Admify AI. Please try again shortly.";
+        const isRateLimit = err?.status === 429 || err?.response?.status === 429;
+        const errMsg = isRateLimit
+          ? "Too many messages sent. Please wait a minute before asking another question."
+          : (err?.data?.message || err?.message || "An error occurred connecting to Admify AI. Please try again shortly.");
         setAiMessages((prev) => [
           ...prev,
           { id: `err-${Date.now()}`, from: "ai", text: errMsg, time: now() },
@@ -557,7 +557,7 @@ function ChatWidgetContent() {
                     <h3 className="text-white font-bold text-sm leading-tight">Admify Live Support</h3>
                     <p className="text-green-400 text-[11px] font-semibold flex items-center gap-1">
                       <Circle className="w-2 h-2 fill-green-400" />
-                      Gemini 3.5 AI & Live Counselors
+                      AI & Live Agent Counselors
                     </p>
                   </div>
                 </div>

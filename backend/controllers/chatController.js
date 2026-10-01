@@ -7,17 +7,8 @@ import devStore from '../utils/devStore.js';
 import geminiService from '../services/geminiService.js';
 import { emitToAdminSupport, emitToVisitor } from '../socket/socketServer.js';
 
-import { defaultChatStore, extractClientIp } from '../middleware/rateLimiter.js';
-
 export const EXACT_AI_WARNING =
   'I’m an AI chatbot and may not always provide accurate or up-to-date information. For accurate information and personalized assistance, please talk to a live agent.';
-
-// ── Rate Limiter Integration via centralized Storage Abstraction ───────────
-async function checkPublicRateLimit(req) {
-  const clientIp = extractClientIp(req);
-  const result = await defaultChatStore.increment(clientIp, 60 * 1000);
-  return result.count > 25;
-}
 
 // ── In-Memory Visitor Session Registry with devStore sync ─────────────────────
 const visitorSessions = new Map();
@@ -32,12 +23,16 @@ function getOrCreateVisitorSession(token) {
     return visitorSessions.get(sessionToken);
   }
 
-  // Check devStore backup
-  const db = devStore.read();
-  const existingInDb = (db.visitorSessions || []).find((s) => s.visitorToken === sessionToken);
-  if (existingInDb) {
-    visitorSessions.set(sessionToken, existingInDb);
-    return existingInDb;
+  // Check devStore backup only in development/test offline mode
+  if (process.env.NODE_ENV !== 'production' && mongoose.connection.readyState !== 1) {
+    try {
+      const db = devStore.read();
+      const existingInDb = (db.visitorSessions || []).find((s) => s.visitorToken === sessionToken);
+      if (existingInDb) {
+        visitorSessions.set(sessionToken, existingInDb);
+        return existingInDb;
+      }
+    } catch {}
   }
 
   const newSession = {
@@ -50,9 +45,15 @@ function getOrCreateVisitorSession(token) {
   };
 
   visitorSessions.set(sessionToken, newSession);
-  if (!Array.isArray(db.visitorSessions)) db.visitorSessions = [];
-  db.visitorSessions.push(newSession);
-  devStore.write(db);
+
+  if (process.env.NODE_ENV !== 'production' && mongoose.connection.readyState !== 1) {
+    try {
+      const db = devStore.read();
+      if (!Array.isArray(db.visitorSessions)) db.visitorSessions = [];
+      db.visitorSessions.push(newSession);
+      devStore.write(db);
+    } catch {}
+  }
 
   return newSession;
 }
@@ -61,31 +62,26 @@ function saveVisitorSession(session) {
   session.updatedAt = new Date().toISOString();
   visitorSessions.set(session.visitorToken, session);
 
-  try {
-    const db = devStore.read();
-    if (!Array.isArray(db.visitorSessions)) db.visitorSessions = [];
-    const idx = db.visitorSessions.findIndex((s) => s.visitorToken === session.visitorToken);
-    if (idx !== -1) {
-      db.visitorSessions[idx] = session;
-    } else {
-      db.visitorSessions.push(session);
+  if (process.env.NODE_ENV !== 'production' && mongoose.connection.readyState !== 1) {
+    try {
+      const db = devStore.read();
+      if (!Array.isArray(db.visitorSessions)) db.visitorSessions = [];
+      const idx = db.visitorSessions.findIndex((s) => s.visitorToken === session.visitorToken);
+      if (idx !== -1) {
+        db.visitorSessions[idx] = session;
+      } else {
+        db.visitorSessions.push(session);
+      }
+      devStore.write(db);
+    } catch (err) {
+      console.warn('[Visitor Session Save Error]', err.message);
     }
-    devStore.write(db);
-  } catch (err) {
-    console.warn('[Visitor Session Save Error]', err.message);
   }
 }
 
 // ── 1. Website Chatbot Message Handler (Real Gemini + 4-Message Cap) ──────────
 export const sendMessage = async (req, res, next) => {
   try {
-    if (await checkPublicRateLimit(req)) {
-      return res.status(429).json({
-        success: false,
-        message: 'Too many requests. Please wait a moment before sending another message.',
-      });
-    }
-
     const text = req.body.text || req.body.message;
     const incomingToken = req.body.visitorToken || req.body.sessionId;
 
@@ -98,6 +94,16 @@ export const sendMessage = async (req, res, next) => {
 
     const trimmedText = text.trim().slice(0, 1000);
     const session = getOrCreateVisitorSession(incomingToken || req.headers['x-visitor-token']);
+
+    // If returning visitor with existing token in production with MongoDB, restore message count if session was fresh
+    if (mongoose.connection.readyState === 1 && incomingToken && session.aiMessageCount === 0) {
+      try {
+        const pastAiCount = await ChatMessage.countDocuments({ sessionId: session.visitorToken, sender: 'ai' });
+        if (pastAiCount > 0) {
+          session.aiMessageCount = pastAiCount;
+        }
+      } catch {}
+    }
 
     // ── Enforce 4 AI Message Limit Server-Side ──
     if (session.aiMessageCount >= 4) {
@@ -133,13 +139,21 @@ export const sendMessage = async (req, res, next) => {
         sender: 'visitor',
         text: trimmedText,
       });
-    } else {
+    } else if (process.env.NODE_ENV !== 'production') {
       savedVisitorMsg = await devStore.addChatMessage({
         sessionId: session.visitorToken,
         user: req.user?._id?.toString() || undefined,
         sender: 'visitor',
         text: trimmedText,
       });
+    } else {
+      savedVisitorMsg = {
+        _id: `vis_${Date.now()}`,
+        sessionId: session.visitorToken,
+        sender: 'visitor',
+        text: trimmedText,
+        createdAt: new Date().toISOString(),
+      };
     }
 
     // Retrieve recent session history for context
@@ -150,11 +164,13 @@ export const sendMessage = async (req, res, next) => {
         .limit(6)
         .lean();
       history.reverse();
-    } else {
-      const db = devStore.read();
-      history = (db.chatMessages || [])
-        .filter((m) => m.sessionId === session.visitorToken)
-        .slice(-6);
+    } else if (process.env.NODE_ENV !== 'production') {
+      try {
+        const db = devStore.read();
+        history = (db.chatMessages || [])
+          .filter((m) => m.sessionId === session.visitorToken)
+          .slice(-6);
+      } catch {}
     }
 
     // Execute real Gemini generation
@@ -175,12 +191,20 @@ export const sendMessage = async (req, res, next) => {
         sender: 'ai',
         text: aiResponseText,
       });
-    } else {
+    } else if (process.env.NODE_ENV !== 'production') {
       savedAiMsg = await devStore.addChatMessage({
         sessionId: session.visitorToken,
         sender: 'ai',
         text: aiResponseText,
       });
+    } else {
+      savedAiMsg = {
+        _id: `ai_${Date.now()}`,
+        sessionId: session.visitorToken,
+        sender: 'ai',
+        text: aiResponseText,
+        createdAt: new Date().toISOString(),
+      };
     }
 
     return res.status(200).json({
@@ -207,13 +231,6 @@ export const sendMessage = async (req, res, next) => {
 // ── 2. Live Agent Intake & Escalation ─────────────────────────────────────────
 export const requestLiveAgent = async (req, res, next) => {
   try {
-    if (await checkPublicRateLimit(req)) {
-      return res.status(429).json({
-        success: false,
-        message: 'Too many requests. Please wait a moment before sending another request.',
-      });
-    }
-
     const { visitorToken: incomingToken, fullName, email, phone } = req.body;
 
     // Strict form validation
@@ -249,7 +266,7 @@ export const requestLiveAgent = async (req, res, next) => {
         text: escalationNotice,
         isLiveAgentRequest: true,
       });
-    } else {
+    } else if (process.env.NODE_ENV !== 'production') {
       await devStore.addChatMessage({
         sessionId: session.visitorToken,
         sender: 'system',
@@ -260,9 +277,8 @@ export const requestLiveAgent = async (req, res, next) => {
 
     // Create Admin notification
     try {
-      let adminUser = null;
       if (mongoose.connection.readyState === 1) {
-        adminUser = await User.findOne({ role: 'admin' });
+        const adminUser = await User.findOne({ role: 'admin' });
         if (adminUser) {
           await Notification.create({
             user: adminUser._id,
@@ -275,9 +291,9 @@ export const requestLiveAgent = async (req, res, next) => {
             relatedEntityId: session.visitorToken,
           });
         }
-      } else {
+      } else if (process.env.NODE_ENV !== 'production') {
         const db = devStore.read();
-        adminUser = (db.users || []).find((u) => u.role === 'admin');
+        const adminUser = (db.users || []).find((u) => u.role === 'admin');
         if (adminUser) {
           if (!Array.isArray(db.notifications)) db.notifications = [];
           db.notifications.push({
@@ -339,12 +355,20 @@ export const sendVisitorReply = async (req, res, next) => {
         sender: 'visitor',
         text: trimmedText,
       });
-    } else {
+    } else if (process.env.NODE_ENV !== 'production') {
       savedMsg = await devStore.addChatMessage({
         sessionId: session.visitorToken,
         sender: 'visitor',
         text: trimmedText,
       });
+    } else {
+      savedMsg = {
+        _id: `vis_${Date.now()}`,
+        sessionId: session.visitorToken,
+        sender: 'visitor',
+        text: trimmedText,
+        createdAt: new Date().toISOString(),
+      };
     }
 
     // Broadcast live to Admin support desk
@@ -377,11 +401,13 @@ export const getSessionHistory = async (req, res, next) => {
     let messages = [];
     if (mongoose.connection.readyState === 1) {
       messages = await ChatMessage.find({ sessionId }).sort({ createdAt: 1 }).limit(100).lean();
-    } else {
-      const db = devStore.read();
-      messages = (db.chatMessages || [])
-        .filter((m) => m.sessionId === sessionId)
-        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    } else if (process.env.NODE_ENV !== 'production') {
+      try {
+        const db = devStore.read();
+        messages = (db.chatMessages || [])
+          .filter((m) => m.sessionId === sessionId)
+          .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      } catch {}
     }
 
     return res.status(200).json({
