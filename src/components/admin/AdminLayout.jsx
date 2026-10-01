@@ -124,7 +124,7 @@ function AdminLayoutInner() {
 
   return (
     <div
-      className={`flex ${isSupportPage ? "h-screen max-h-screen overflow-hidden" : "min-h-screen"}`}
+      className="flex min-h-screen"
       style={{ background: "#050B1F", fontFamily: "'Inter',sans-serif" }}
     >
 
@@ -227,9 +227,7 @@ function AdminLayoutInner() {
 
       {/* ── Main Area ── */}
       <div
-        className={`flex-1 xl:pl-64 flex flex-col ${
-          isSupportPage ? "h-screen max-h-screen overflow-hidden" : "min-h-screen"
-        } min-w-0 max-w-full overflow-x-hidden`}
+        className="flex-1 xl:pl-64 flex flex-col min-h-screen min-w-0 max-w-full overflow-x-hidden"
       >
 
         {/* ── Fixed Top Header ── */}
@@ -420,7 +418,7 @@ function AdminLayoutInner() {
         <main
           className={`flex-1 min-w-0 max-w-full ${
             isSupportPage
-              ? "overflow-hidden flex flex-col min-h-0 p-3 md:p-4"
+              ? "overflow-y-auto custom-scrollbar flex flex-col min-h-0 p-3 md:p-4"
               : "overflow-y-auto custom-scrollbar p-4 md:p-6"
           }`}
         >

@@ -136,11 +136,7 @@ export default function AdminSupport() {
     }
   };
 
-  useEffect(() => {
-    const orig = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = orig; };
-  }, []);
+  // Body scroll lock removed — Admin Support uses internal scroll areas only.
 
   useEffect(() => {
     fetchConversations();
@@ -221,7 +217,7 @@ export default function AdminSupport() {
   const getSenderLabel = (type) => { if (type === "admin") return "Admin Staff"; if (type === "bot") return "Admify AI"; return visitorName; };
 
   return (
-    <motion.div initial="hidden" animate="show" variants={fade} className="flex-1 flex flex-col min-h-0 w-full max-w-[1600px] mx-auto text-slate-100 overflow-hidden">
+    <motion.div initial="hidden" animate="show" variants={fade} className="flex-1 flex flex-col min-h-0 w-full max-w-[1600px] mx-auto text-slate-100">
 
       {/* Page title */}
       <div className="flex-shrink-0 mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
