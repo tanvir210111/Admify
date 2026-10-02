@@ -418,7 +418,7 @@ function AdminLayoutInner() {
         <main
           className={`flex-1 min-w-0 max-w-full ${
             isSupportPage
-              ? "overflow-y-auto custom-scrollbar flex flex-col min-h-0 p-3 md:p-4"
+              ? "overflow-y-auto custom-scrollbar p-3 md:p-4"
               : "overflow-y-auto custom-scrollbar p-4 md:p-6"
           }`}
         >
