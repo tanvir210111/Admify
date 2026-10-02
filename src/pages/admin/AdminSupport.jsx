@@ -467,8 +467,9 @@ export default function AdminSupport() {
       <div
         className="support-workspace"
         style={{
-          height:              "min(650px, calc(100vh - 250px))",
-          minHeight:           420,
+          height:              650,
+          minHeight:           650,
+          maxHeight:           650,
           display:             "grid",
           gridTemplateColumns: "minmax(280px, 32%) minmax(0, 1fr)",
           overflow:            "hidden",
@@ -762,18 +763,36 @@ export default function AdminSupport() {
           Mobile: single column; JS mobileView toggles display.
       ═══════════════════════════════════════════════════════════════════════ */}
       <style>{`
+        /* Desktop (lg+): locked 650px, both panels side-by-side */
         @media (min-width: 1024px) {
-          .support-workspace { grid-template-columns: minmax(280px, 32%) minmax(0, 1fr) !important; }
+          .support-workspace {
+            height: 650px !important;
+            min-height: 650px !important;
+            max-height: 650px !important;
+            grid-template-columns: minmax(280px, 32%) minmax(0, 1fr) !important;
+          }
           .inbox-left  { display: flex !important; }
           .inbox-right { display: flex !important; }
         }
+        /* Tablet: locked 600px, both panels side-by-side */
         @media (min-width: 640px) and (max-width: 1023px) {
-          .support-workspace { grid-template-columns: minmax(220px, 38%) minmax(0, 1fr) !important; }
+          .support-workspace {
+            height: 600px !important;
+            min-height: 600px !important;
+            max-height: 600px !important;
+            grid-template-columns: minmax(220px, 38%) minmax(0, 1fr) !important;
+          }
           .inbox-left  { display: flex !important; }
           .inbox-right { display: flex !important; }
         }
+        /* Mobile: single column, deliberate fixed height (not content-driven) */
         @media (max-width: 639px) {
-          .support-workspace { grid-template-columns: 1fr !important; }
+          .support-workspace {
+            height: calc(100dvh - 130px) !important;
+            min-height: 480px !important;
+            max-height: calc(100dvh - 130px) !important;
+            grid-template-columns: 1fr !important;
+          }
         }
       `}</style>
 
