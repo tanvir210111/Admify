@@ -185,20 +185,24 @@ function UniRepLayoutContent() {
                 key={item.path}
                 to={item.path}
                 onClick={() => setSidebarOpen(false)}
-                className={({ isActive: linkActive }) =>
+                className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                    linkActive || isActive
+                    isActive
                       ? "bg-gradient-to-r from-purple-600/20 to-blue-600/15 text-white border border-purple-500/30 shadow-sm"
                       : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
                   }`
                 }
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-purple-400" : "text-slate-400"}`} />
-                <span className="truncate">{item.label}</span>
-                {formatted && (
-                  <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold bg-purple-500/30 text-purple-300 rounded-full border border-purple-500/40">
-                    {formatted}
-                  </span>
+                {({ isActive }) => (
+                  <>
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-purple-400" : "text-slate-400"}`} />
+                    <span className="truncate">{item.label}</span>
+                    {formatted && (
+                      <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold bg-purple-500/30 text-purple-300 rounded-full border border-purple-500/40">
+                        {formatted}
+                      </span>
+                    )}
+                  </>
                 )}
               </NavLink>
             );
